@@ -1,44 +1,43 @@
 import numpy as np
 
-# Physical constant
-k_B = 1.38064852e-23  # Boltzmann constant in J/K
+# 物理定数
+k_B = 1.38064852e-23  # ボルツマン定数 (J/K)
 
 def R_opt(e_n, i_n):
     """
-    Calculate optimal source resistance R_opt (Ω) 
-    where voltage-noise and current-noise contributions are equal.
+    電圧ノイズと電流ノイズの寄与が等しくなる最適な出力抵抗 R_opt (Ω) を計算
     
-    Parameters:
+    パラメータ:
       e_n : float
-        Input voltage noise density (V/√Hz)
+        入力電圧ノイズ密度 (V/√Hz)
       i_n : float
-        Input current noise density (A/√Hz)
-    Returns:
+        入力電流ノイズ密度 (A/√Hz)
+    戻り値:
       R_opt : float
-        Optimal resistance in ohms
+        オーム単位の最適抵抗値
     """
     return e_n / i_n
 
 def noise_densities(e_n, i_n, R, T=300):
     """
-    Calculate individual noise density contributions (in V/√Hz):
-      - voltage noise
-      - current noise (converted to voltage)
-      - thermal (Johnson) noise
-      - total noise density
+    各ノイズ密度成分（単位：V/√Hz）を計算:
+      - 電圧ノイズ
+      - 電流ノイズ（電圧に変換）
+      - 熱ノイズ（ジョンソンノイズ）
+      - 合計ノイズ密度
     
-    Parameters:
+    パラメータ:
       e_n : float
-        Input voltage noise density (V/√Hz)
+        入力電圧ノイズ密度 (V/√Hz)
       i_n : float
-        Input current noise density (A/√Hz)
+        入力電流ノイズ密度 (A/√Hz)
       R : float
-        Source resistance (Ω)
+        出力抵抗 (Ω)
       T : float
-        Temperature (K), default 300K
+        温度（K）, デフォルト 300K
     
-    Returns:
-      (e_n, i_n*R, thermal, total) : tuple of floats
+    戻り値:
+      (e_n, i_n*R, thermal, total) : floatのタプル
     """
     v_noise = e_n
     i_noise = i_n * R
@@ -48,29 +47,29 @@ def noise_densities(e_n, i_n, R, T=300):
 
 def rms_noise(e_n, i_n, R, bandwidth, T=300):
     """
-    Calculate RMS noise voltage (V_rms) over a given bandwidth.
+    与えられた帯域幅でのRMSノイズ電圧（V_rms）を計算
     
-    Parameters:
+    パラメータ:
       e_n : float
-        Input voltage noise density (V/√Hz)
+        入力電圧ノイズ密度 (V/√Hz)
       i_n : float
-        Input current noise density (A/√Hz)
+        入力電流ノイズ密度 (A/√Hz)
       R : float
-        Source resistance (Ω)
+        出力抵抗 (Ω)
       bandwidth : float
-        Bandwidth (Hz)
+        帯域幅 (Hz)
       T : float
-        Temperature (K), default 300K
+        温度（K）, デフォルト 300K
     
-    Returns:
+    戻り値:
       v_rms : float
-        RMS noise voltage over the bandwidth (V)
+        帯域幅全体でのRMSノイズ電圧 (V)
     """
     _, _, _, total_density = noise_densities(e_n, i_n, R, T)
     return total_density * np.sqrt(bandwidth)
 
 if __name__ == "__main__":
-    # Example for OPA1612
+    # OPA1612の例
     e_n = 1.1e-9    # 1.1 nV/√Hz
     i_n = 1.7e-12   # 1.7 pA/√Hz
     T = 300         # 300 K
@@ -80,10 +79,10 @@ if __name__ == "__main__":
     v_n, i_n_volt, th_n, total_nd = noise_densities(e_n, i_n, Ropt, T)
     v_rms = rms_noise(e_n, i_n, Ropt, bandwidth, T)
     
-    print(f"Optimal Resistance R_opt = {Ropt:.1f} Ω")
-    print(f"Noise densities at R_opt:")
-    print(f"  Voltage noise:        {v_n*1e9:.2f} nV/√Hz")
-    print(f"  Current noise:        {i_n_volt*1e9:.2f} nV/√Hz")
-    print(f"  Thermal noise (R):    {th_n*1e9:.2f} nV/√Hz")
-    print(f"  Total noise density:  {total_nd*1e9:.2f} nV/√Hz")
-    print(f"RMS noise over {bandwidth/1e3:.0f} Hz: {v_rms*1e6:.2f} μV rms")
+    print(f"最適な抵抗値 R_opt = {Ropt:.1f} Ω")
+    print(f"R_optでのノイズ密度:")
+    print(f"  電圧ノイズ:        {v_n*1e9:.2f} nV/√Hz")
+    print(f"  電流ノイズ:        {i_n_volt*1e9:.2f} nV/√Hz")
+    print(f"  熱ノイズ (R):    {th_n*1e9:.2f} nV/√Hz")
+    print(f"  合計ノイズ密度:  {total_nd*1e9:.2f} nV/√Hz")
+    print(f"{bandwidth/1e3:.0f} Hz帯域でのRMSノイズ: {v_rms*1e6:.2f} μV rms")
