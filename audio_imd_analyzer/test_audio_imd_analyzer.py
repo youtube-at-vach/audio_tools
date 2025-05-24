@@ -3,15 +3,7 @@ import numpy as np
 import scipy.signal
 import sys
 
-# Assuming audio_imd_analyzer.py is in the same directory or accessible via PYTHONPATH
-try:
-    from audio_imd_analyzer import generate_dual_tone, analyze_imd_smpte, dbfs_to_linear
-except ImportError:
-    # If running from a different context, or if the file isn't directly accessible,
-    # this provides a way to inform the user. For the sandbox, it should be fine.
-    sys.path.append('.') # Add current dir to path
-    from audio_imd_analyzer import generate_dual_tone, analyze_imd_smpte, dbfs_to_linear
-
+from .audio_imd_analyzer import generate_dual_tone, analyze_imd_smpte, dbfs_to_linear
 
 # Test Runner Storage
 test_results = {}

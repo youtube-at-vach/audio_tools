@@ -32,7 +32,7 @@ pip install numpy sounddevice scipy rich
 
 The script is run from the command line:
 ```bash
-python audio_imd_analyzer.py [OPTIONS]
+python audio_imd_analyzer/audio_imd_analyzer.py [OPTIONS]
 ```
 
 ### Main Options
@@ -58,7 +58,7 @@ python audio_imd_analyzer.py [OPTIONS]
 This command generates the standard SMPTE signal, plays it on the right channel of the default (or user-selected) audio device, records from the left channel, and analyzes for 3 sideband pairs using a Blackman-Harris window.
 
 ```bash
-python audio_imd_analyzer.py --f1 60 --f2 7000 --amplitude -12 --ratio 4 --oc R --ic L
+python audio_imd_analyzer/audio_imd_analyzer.py --f1 60 --f2 7000 --amplitude -12 --ratio 4 --oc R --ic L
 ```
 If no `--device` ID is provided, the script will list available devices and prompt for a selection.
 
