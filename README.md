@@ -4,6 +4,7 @@
 
 - `audio_analyzer`: 音声信号の歪や特性を解析するツール
 - `audio_signal_generator`: 任意波形やテストトーンを生成するためのツール
+- `audio_imd_analyzer`: オーディオ信号の相互変調歪（IMD）を測定するツール (詳細は `audio_imd_analyzer/README.md` を参照)
 
 ---
 
