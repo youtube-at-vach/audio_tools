@@ -102,7 +102,7 @@ def play_and_record(signal_to_play, device_max_output_channels, device_max_input
     total_frames_to_play = len(signal_to_play)
 
     def callback(indata, outdata, frames, time, status):
-        nonlocal current_frame_playback # Python 3 specific
+        global current_frame_playback # Python 3 specific
         if status:
             # Use sys.stderr directly for callback context as passing error_console is complex
             sys.stderr.write(f"Stream callback status: {status}\n")
