@@ -8,6 +8,14 @@
 - `audio_freq_response_analyzer`: オーディオデバイスの周波数応答（振幅および位相）を測定・プロットするツール (詳細は `audio_freq_response_analyzer/README.md` を参照)
 - `audio_crosstalk_analyzer`: チャンネル間のオーディオクロストーク（信号漏れ）を測定するツール。(詳細は `audio_crosstalk_analyzer/README.md` を参照)
 - `audio_transient_analyzer`: オーディオデバイスの過渡応答（立ち上がり時間、オーバーシュート、セトリング時間など）を測定するツール。(詳細は `audio_transient_analyzer/README.md` を参照)
+- `audio_phase_analyzer`: ステレオオーディオチャンネル間の位相差を測定および視覚化するツール。スピーカーの極性チェック、ステレオ機器の位相整合性の確認、位相効果の分析に役立ちます。(詳細は `audio_phase_analyzer/README.md` を参照)
+
+---
+
+### Audio Phase Analyzer (`audio_phase_analyzer/`)
+Measures and visualizes the phase difference between stereo audio channels. Useful for checking speaker polarity, stereo equipment integrity, and analyzing phase effects.
+Features: CLI, configurable test signal, device/channel selection, Lissajous plotting.
+(See [`audio_phase_analyzer/README.md`](audio_phase_analyzer/README.md) for more details.)
 
 ---
 
