@@ -82,28 +82,50 @@ def play_and_record(
         output_buffer_padded[:play_len, output_channel_device_idx] = signal_to_play[:play_len]
 
         console.print(f"Playing signal on device {play_device_idx}, output channel index {output_channel_device_idx}, "
-                      f"recording from input channel index {input_channel_device_idx}.")
+                      f"recording from input channel index {input_channel_device_idx} (all available input channels will be recorded).") # Updated message
         console.print(f"Output buffer shape: {output_buffer_padded.shape}, Max output channels: {device_max_output_ch}")
-        console.print(f"Input mapping: {[input_channel_device_idx + 1]}")
+        # console.print(f"Input mapping: {[input_channel_device_idx + 1]}") # Removed as input_mapping is removed
 
 
         recorded_audio = sd.playrec(
             output_buffer_padded,
             samplerate=sample_rate,
             channels=output_buffer_padded.shape[1], # Number of output channels for the device
-            input_mapping=[input_channel_device_idx + 1],  # 1-based index for input channel
+            # input_mapping argument removed
             device=play_device_idx,
             blocking=True
         )
         
-        # sd.playrec returns a 2D array (samples, channels). We want the first channel.
-        if recorded_audio.ndim > 1 and recorded_audio.shape[1] > 0:
-             return recorded_audio[:, 0]
-        elif recorded_audio.ndim == 1: # Should not happen with input_mapping as list, but good to check
-            return recorded_audio
-        else: # Should not happen if recording was successful
+        # New logic for handling recorded_audio
+        if recorded_audio is None: # Should ideally not be hit if playrec itself fails and raises error
+            error_console.print("Playrec returned None unexpectedly.")
+            return None
+
+        num_recorded_channels = 0
+        if recorded_audio.ndim == 1:
+            num_recorded_channels = 1
+        elif recorded_audio.ndim == 2:
+            num_recorded_channels = recorded_audio.shape[1]
+        else:
             error_console.print(f"Unexpected shape for recorded audio: {recorded_audio.shape}")
             return None
+        
+        if num_recorded_channels == 0:
+            error_console.print("No audio data recorded (0 channels).")
+            return None
+
+        if not (0 <= input_channel_device_idx < num_recorded_channels):
+            error_console.print(f"Error: Desired input channel index ({input_channel_device_idx}) is out of range "
+                                f"for the {num_recorded_channels} channel(s) actually recorded by the device.")
+            error_console.print(f"Please check your --input_channel argument and device capabilities.")
+            return None
+
+        if recorded_audio.ndim == 1:
+            single_channel_audio = recorded_audio # Assumes input_channel_device_idx must be 0 here
+        else: # recorded_audio.ndim == 2
+            single_channel_audio = recorded_audio[:, input_channel_device_idx]
+        
+        return single_channel_audio
 
     except sd.PortAudioError as e:
         error_console.print(f"[bold red]PortAudioError during playback/recording: {e}[/bold red]")
@@ -331,7 +353,7 @@ def select_device(console: Console, error_console: Console): # Changed ErrorCons
         table.add_row(
             str(i),
             device['name'],
-            device['hostapi_name'],
+            device.get('hostapi_name', 'N/A'), # Changed to use .get()
             str(device['max_input_channels']),
             str(device['max_output_channels']),
             str(int(device['default_samplerate'])),
@@ -385,8 +407,8 @@ if __name__ == '__main__':
     parser.add_argument('--amplitude', type=float, default=-6.0, help='Amplitude of the test signal in dBFS. Must be <= 0')
     parser.add_argument('--device', type=int, help='Audio device ID. Prompts if not provided')
     parser.add_argument('--sample_rate', type=int, default=48000, help='Sampling rate in Hz')
-    parser.add_argument('--output_channel', type=str, default='L', help="Output channel for test signal (e.g., 'L', 'R', or numeric index)")
-    parser.add_argument('--input_channel', type=str, default='L', help="Input channel for recording (e.g., 'L', 'R', or numeric index)")
+    parser.add_argument('--output_channel', type=str, default='L', help="Output channel for test signal (e.g., 'L', 'R', or a 1-based numeric index like '1', '2', ...)")
+    parser.add_argument('--input_channel', type=str, default='L', help="Input channel for recording (e.g., 'L', 'R', or a 1-based numeric index like '1', '2', ...)")
     parser.add_argument('--duration', type=float, default=0.1, help='Duration of the recording in seconds. Must be positive')
     parser.add_argument('--burst_freq', type=float, default=1000.0, help="Frequency of the tone burst in Hz (for signal_type 'tone_burst'). Must be positive")
     parser.add_argument('--burst_cycles', type=int, default=10, help="Number of cycles in the tone burst (for signal_type 'tone_burst'). Must be positive")
@@ -397,7 +419,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     console = Console()
-    error_console = Console(stderr=True, style="stderr") # Defined error_console
+    error_console = Console(stderr=True, style="bold red") # Updated style
 
     if args.amplitude > 0:
         error_console.print("Error: Amplitude must be less than or equal to 0 dBFS.")
@@ -456,25 +478,11 @@ if __name__ == '__main__':
         console.print(f"  Output CSV: {args.output_csv}")
 
     # Generate the test signal
-    test_signal = None
-    if args.signal_type == 'impulse':
-        test_signal = generate_impulse(args.amplitude, args.sample_rate)
-        console.print(f"\nGenerated impulse signal of length {len(test_signal)} samples.")
-    elif args.signal_type == 'tone_burst':
-        test_signal = generate_tone_burst(
-            frequency=args.burst_freq,
-            amplitude_dbfs=args.amplitude,
-            cycles=args.burst_cycles,
-            envelope_type=args.burst_envelope,
-            sample_rate=args.sample_rate
-        )
-        console.print(f"\nGenerated tone burst signal of length {len(test_signal)} samples.")
-        if len(test_signal) == int(0.001 * args.sample_rate) and len(test_signal) <=10 : # check if it fell back to impulse
-             console.print(f"[yellow]Warning: Tone burst generation might have defaulted to a short impulse due to parameters (freq/cycles/sr).[/yellow]")
-
-
-    # Generate the test signal
-    test_signal = None # Renamed from signal_to_play to test_signal for clarity before play_and_record
+    # The first block that was here has been removed.
+    # This is the second, correct block, which was previously marked with:
+    # test_signal = None # Renamed from signal_to_play to test_signal for clarity before play_and_record
+    # That specific comment is now part of this combined comment.
+    test_signal = None 
     if args.signal_type == 'impulse':
         test_signal = generate_impulse(args.amplitude, args.sample_rate)
         console.print(f"\nGenerated impulse signal of length {len(test_signal)} samples.")
@@ -531,7 +539,7 @@ if __name__ == '__main__':
             console.print(f"  Calculated Rise Time (10%-90%): {rise_time:.6f} s")
 
             overshoot = calculate_overshoot(recorded_audio, args.sample_rate, actual_start_index)
-            overshoot = calculate_overshoot(recorded_audio, args.sample_rate, actual_start_index)
+            # The duplicated line above was removed.
             # console.print(f"  Calculated Overshoot: {overshoot:.2f} %") # Will be printed in table
 
             settling_time = calculate_settling_time(recorded_audio, args.sample_rate, actual_start_index, settle_percentage=0.05)
