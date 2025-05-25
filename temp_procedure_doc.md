@@ -4,6 +4,7 @@
 
 ## 1. 企画・設計 (Planning and Design)
 
+-   **将来のアイデア確認**: まず `misc/future_tool_ideas.md` を確認し、既存の将来的なツール構想やアイデアに合致するものがないか、または参考にできる点がないかを確認します。(Check Future Ideas: First, review `misc/future_tool_ideas.md` to see if there are existing future tool concepts or ideas that align with the current task or can provide inspiration.)
 -   **目的の明確化**: 新しい測定プログラムが解決する課題、測定する具体的なオーディオ特性（例: THD+N, 周波数特性, IMDなど）を定義します。
 -   **既存ツールの確認**: リポジトリ内に類似の機能を持つツールがないか確認します。既存ツールを拡張できる場合は、新規作成よりも優先します。
     -   **未カバーの測定カテゴリ特定**: 基本的なオーディオ測定カテゴリ（例：高調波歪み、周波数特性、相互変調歪み、ノイズ、ステレオ特性、過渡応答など）をリストアップし、未カバーの領域を特定します。例えば `audio_crosstalk_analyzer` はステレオ特性の未カバー領域（信号漏れ）に焦点を当てています。(Identify uncovered basic audio measurement categories by listing them (e.g., harmonic distortion, frequency response, IMD, noise, stereo characteristics, transient response) and target an uncovered area. For example, `audio_crosstalk_analyzer` focuses on an uncovered area of stereo characteristics - signal leakage.)
@@ -101,6 +102,10 @@
 
 -   **ライセンス**: 本リポジトリの他のツールと同様に、Unlicense を適用し、著作権を放棄します。READMEにその旨を記載します。
 -   **ファイルエンコーディング**: すべてのテキストファイル（.py, .md, .txt など）は UTF-8 で保存します。
+
+## 8. 知見の記録と将来構想へのフィードバック (Logging Knowledge and Feedback to Future Concepts)
+
+-   **新たな知見・アイデアの記録**: 作業完了後、開発プロセスを通じて得られた新たな知見、または将来的に有用と思われる新しい測定ツールのアイデアが生まれた場合は、`misc/future_tool_ideas.md` に追記して下さい。これは将来のツール開発のための貴重なリソースとなります。(Record New Insights/Ideas: After completing the work, if new insights were gained through the development process, or if new ideas for potentially useful measurement tools emerged, append them to `misc/future_tool_ideas.md`. This serves as a valuable resource for future tool development.)
 
 ---
 
