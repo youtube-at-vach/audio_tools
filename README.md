@@ -9,6 +9,7 @@
 - `audio_crosstalk_analyzer`: チャンネル間のオーディオクロストーク（信号漏れ）を測定するツール。(詳細は `audio_crosstalk_analyzer/README.md` を参照)
 - `audio_transient_analyzer`: オーディオデバイスの過渡応答（立ち上がり時間、オーバーシュート、セトリング時間など）を測定するツール。(詳細は `audio_transient_analyzer/README.md` を参照)
 - `audio_phase_analyzer`: ステレオオーディオチャンネル間の位相差を測定および視覚化するツール。スピーカーの極性チェック、ステレオ機器の位相整合性の確認、位相効果の分析に役立ちます。(詳細は `audio_phase_analyzer/README.md` を参照)
+- `snr_analyzer`: テスト信号の再生と録音により、信号対雑音比（SNR）を測定します。(詳細は `snr_analyzer/README.md` を参照)
 
 ---
 
