@@ -94,9 +94,11 @@ def measure_snr(
             console.print(f"[bold red]Error: Input channel {input_channel} exceeds max input channels ({input_device_info['max_input_channels']}) for device {input_device_id}.[/bold red]")
             return None, None, None
 
-
-        output_buffer = np.zeros((len(signal), max_out_channels), dtype=signal.dtype)
-        output_buffer[:, output_channel - 1] = signal  # 0-indexed channel
+        # Prepare the output signal for sd.playrec.
+        # If output_mapping is used, 'data' must have len(output_mapping) columns.
+        # Since 'signal' is mono (1D) and we map it to a single output channel,
+        # it needs to be reshaped to a 2D array with one column.
+        output_signal_for_playrec = signal.reshape(-1, 1)
 
         # Playback Signal and Record (Signal + Noise)
         console.print("\n[bold yellow]Prepare for signal playback and recording (Signal + Noise)...[/bold yellow]")
@@ -107,11 +109,11 @@ def measure_snr(
         console.print(f"Playing signal on output device {output_device_id} (channel {output_channel}) and recording from input device {input_device_id} (channel {input_channel})...")
         
         recorded_signal_plus_noise = sd.playrec(
-            output_buffer,
+            output_signal_for_playrec, # Use the (N,1) reshaped signal
             samplerate=samplerate,
-            channels=1, # Number of channels to record based on input_mapping length
-            input_mapping=[input_channel], # 1-based physical channel
-            output_mapping=[output_channel], # 1-based physical channel
+            channels=1, # Number of input channels to record, len([input_channel]) = 1
+            input_mapping=[input_channel], # 1-based physical input channel
+            output_mapping=[output_channel], # 1-based physical output channel
             blocking=True # Wait for playback and recording to complete
         )
         sd.wait() # Ensure all audio has been processed
