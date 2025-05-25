@@ -127,8 +127,9 @@ def measure_snr(
         recorded_noise = sd.rec(
             int(noise_duration * samplerate),
             samplerate=samplerate,
-            channels=1,
-            input_mapping=[input_channel], # 1-based physical channel
+            mapping=[input_channel], # Corrected: 1-based physical channel for recording
+            channels=1, # Number of channels to record, must match len(mapping)
+            device=input_device_id, # Explicitly specify the input device
             blocking=True
         )
         sd.wait() # Ensure all audio has been processed
