@@ -82,28 +82,50 @@ def play_and_record(
         output_buffer_padded[:play_len, output_channel_device_idx] = signal_to_play[:play_len]
 
         console.print(f"Playing signal on device {play_device_idx}, output channel index {output_channel_device_idx}, "
-                      f"recording from input channel index {input_channel_device_idx}.")
+                      f"recording from input channel index {input_channel_device_idx} (all available input channels will be recorded).") # Updated message
         console.print(f"Output buffer shape: {output_buffer_padded.shape}, Max output channels: {device_max_output_ch}")
-        console.print(f"Input mapping: {[input_channel_device_idx + 1]}")
+        # console.print(f"Input mapping: {[input_channel_device_idx + 1]}") # Removed as input_mapping is removed
 
 
         recorded_audio = sd.playrec(
             output_buffer_padded,
             samplerate=sample_rate,
             channels=output_buffer_padded.shape[1], # Number of output channels for the device
-            input_mapping=[input_channel_device_idx + 1],  # 1-based index for input channel
+            # input_mapping argument removed
             device=play_device_idx,
             blocking=True
         )
         
-        # sd.playrec returns a 2D array (samples, channels). We want the first channel.
-        if recorded_audio.ndim > 1 and recorded_audio.shape[1] > 0:
-             return recorded_audio[:, 0]
-        elif recorded_audio.ndim == 1: # Should not happen with input_mapping as list, but good to check
-            return recorded_audio
-        else: # Should not happen if recording was successful
+        # New logic for handling recorded_audio
+        if recorded_audio is None: # Should ideally not be hit if playrec itself fails and raises error
+            error_console.print("Playrec returned None unexpectedly.")
+            return None
+
+        num_recorded_channels = 0
+        if recorded_audio.ndim == 1:
+            num_recorded_channels = 1
+        elif recorded_audio.ndim == 2:
+            num_recorded_channels = recorded_audio.shape[1]
+        else:
             error_console.print(f"Unexpected shape for recorded audio: {recorded_audio.shape}")
             return None
+        
+        if num_recorded_channels == 0:
+            error_console.print("No audio data recorded (0 channels).")
+            return None
+
+        if not (0 <= input_channel_device_idx < num_recorded_channels):
+            error_console.print(f"Error: Desired input channel index ({input_channel_device_idx}) is out of range "
+                                f"for the {num_recorded_channels} channel(s) actually recorded by the device.")
+            error_console.print(f"Please check your --input_channel argument and device capabilities.")
+            return None
+
+        if recorded_audio.ndim == 1:
+            single_channel_audio = recorded_audio # Assumes input_channel_device_idx must be 0 here
+        else: # recorded_audio.ndim == 2
+            single_channel_audio = recorded_audio[:, input_channel_device_idx]
+        
+        return single_channel_audio
 
     except sd.PortAudioError as e:
         error_console.print(f"[bold red]PortAudioError during playback/recording: {e}[/bold red]")
