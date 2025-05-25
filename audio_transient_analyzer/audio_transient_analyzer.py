@@ -385,8 +385,8 @@ if __name__ == '__main__':
     parser.add_argument('--amplitude', type=float, default=-6.0, help='Amplitude of the test signal in dBFS. Must be <= 0')
     parser.add_argument('--device', type=int, help='Audio device ID. Prompts if not provided')
     parser.add_argument('--sample_rate', type=int, default=48000, help='Sampling rate in Hz')
-    parser.add_argument('--output_channel', type=str, default='L', help="Output channel for test signal (e.g., 'L', 'R', or numeric index)")
-    parser.add_argument('--input_channel', type=str, default='L', help="Input channel for recording (e.g., 'L', 'R', or numeric index)")
+    parser.add_argument('--output_channel', type=str, default='L', help="Output channel for test signal (e.g., 'L', 'R', or a 1-based numeric index like '1', '2', ...)")
+    parser.add_argument('--input_channel', type=str, default='L', help="Input channel for recording (e.g., 'L', 'R', or a 1-based numeric index like '1', '2', ...)")
     parser.add_argument('--duration', type=float, default=0.1, help='Duration of the recording in seconds. Must be positive')
     parser.add_argument('--burst_freq', type=float, default=1000.0, help="Frequency of the tone burst in Hz (for signal_type 'tone_burst'). Must be positive")
     parser.add_argument('--burst_cycles', type=int, default=10, help="Number of cycles in the tone burst (for signal_type 'tone_burst'). Must be positive")
@@ -456,25 +456,11 @@ if __name__ == '__main__':
         console.print(f"  Output CSV: {args.output_csv}")
 
     # Generate the test signal
-    test_signal = None
-    if args.signal_type == 'impulse':
-        test_signal = generate_impulse(args.amplitude, args.sample_rate)
-        console.print(f"\nGenerated impulse signal of length {len(test_signal)} samples.")
-    elif args.signal_type == 'tone_burst':
-        test_signal = generate_tone_burst(
-            frequency=args.burst_freq,
-            amplitude_dbfs=args.amplitude,
-            cycles=args.burst_cycles,
-            envelope_type=args.burst_envelope,
-            sample_rate=args.sample_rate
-        )
-        console.print(f"\nGenerated tone burst signal of length {len(test_signal)} samples.")
-        if len(test_signal) == int(0.001 * args.sample_rate) and len(test_signal) <=10 : # check if it fell back to impulse
-             console.print(f"[yellow]Warning: Tone burst generation might have defaulted to a short impulse due to parameters (freq/cycles/sr).[/yellow]")
-
-
-    # Generate the test signal
-    test_signal = None # Renamed from signal_to_play to test_signal for clarity before play_and_record
+    # The first block that was here has been removed.
+    # This is the second, correct block, which was previously marked with:
+    # test_signal = None # Renamed from signal_to_play to test_signal for clarity before play_and_record
+    # That specific comment is now part of this combined comment.
+    test_signal = None 
     if args.signal_type == 'impulse':
         test_signal = generate_impulse(args.amplitude, args.sample_rate)
         console.print(f"\nGenerated impulse signal of length {len(test_signal)} samples.")
