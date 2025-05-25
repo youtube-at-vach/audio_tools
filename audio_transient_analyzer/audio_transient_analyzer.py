@@ -9,6 +9,7 @@ import math
 import numpy as np # Ensure numpy is imported, though it was already present
 from scipy.signal import windows # For tukey window, and hanning if not using np.hanning
 import csv # For CSV output
+from typing import Optional, Union # Added for 3.8+ compatibility
 
 def dbfs_to_linear(dbfs: float) -> float:
     """Converts a dBFS value to a linear amplitude value (0 dBFS = 1.0 linear)."""
@@ -66,7 +67,7 @@ def play_and_record(
     device_info_obj,
     console: Console,
     error_console: Console # Changed ErrorConsole to Console
-) -> np.ndarray | None:
+) -> Optional[np.ndarray]: # Changed from "np.ndarray | None" to "Optional[np.ndarray]"
     """Plays a signal on a specific output channel and records from a specific input channel."""
     try:
         device_max_output_ch = device_info_obj['max_output_channels']
