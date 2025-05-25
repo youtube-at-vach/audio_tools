@@ -12,13 +12,6 @@
 
 ---
 
-### Audio Phase Analyzer (`audio_phase_analyzer/`)
-Measures and visualizes the phase difference between stereo audio channels. Useful for checking speaker polarity, stereo equipment integrity, and analyzing phase effects.
-Features: CLI, configurable test signal, device/channel selection, Lissajous plotting.
-(See [`audio_phase_analyzer/README.md`](audio_phase_analyzer/README.md) for more details.)
-
----
-
 ## ライセンスについて
 
 ここに置かれたプログラムは著作権を放棄していますので、**誰でも自由に使用・改変・再配布・商用利用**することができます。  
