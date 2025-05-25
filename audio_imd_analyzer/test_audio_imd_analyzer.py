@@ -3,7 +3,7 @@ import numpy as np
 import scipy.signal
 import sys
 
-from .audio_imd_analyzer import generate_dual_tone, analyze_imd_smpte, dbfs_to_linear
+from .audio_imd_analyzer import generate_dual_tone, analyze_imd_smpte, analyze_imd_ccif, dbfs_to_linear
 
 # Test Runner Storage
 test_results = {}
@@ -185,15 +185,130 @@ class TestAudioImdAnalyzer(unittest.TestCase):
         self.assertTrue(results['imd_db'] == -np.inf)
         test_results['test_analyze_smpte_low_f2_signal'] = "PASS"
 
+    def test_analyze_ccif_clean_signal(self):
+        print("Running test_analyze_ccif_clean_signal...")
+        sr = 48000 # High sample rate for high frequency tones
+        duration = 1.0
+        f1, f2 = 19000.0, 20000.0 # CCIF standard frequencies
+        
+        # Equal amplitude, e.g., -12dBFS each.
+        # Total peak linear amplitude will be sum if in phase, so each should be < 0.5.
+        # -12dBFS is approx 0.25 linear. Sum is 0.5.
+        amp_dbfs = -12.0 
+        amp_lin = dbfs_to_linear(amp_dbfs)
+        
+        time_array = self._create_time_array(duration, sr)
+        signal = amp_lin * np.sin(2 * np.pi * f1 * time_array) + \
+                 amp_lin * np.sin(2 * np.pi * f2 * time_array)
+        
+        signal = np.clip(signal, -1.0, 1.0)
+
+        results = analyze_imd_ccif(signal, sr, f1, f2)
+        
+        self.assertIsNotNone(results)
+        # For a clean signal, IMD should be very low
+        self.assertTrue(np.isclose(results['imd_percentage'], 0.0, atol=1e-2))
+        # Check amplitudes of f1 and f2
+        self.assertTrue(np.isclose(results['amp_f1_linear'], amp_lin, rtol=0.15))
+        self.assertTrue(np.isclose(results['amp_f2_linear'], amp_lin, rtol=0.15))
+        test_results['test_analyze_ccif_clean_signal'] = "PASS"
+
+    def test_analyze_ccif_with_known_products(self):
+        print("Running test_analyze_ccif_with_known_products...")
+        sr = 48000 # High sample rate for high frequency tones
+        duration = 1.0
+        f1, f2 = 19000.0, 20000.0
+        
+        amp_lin = 0.25 # Linear amplitude for f1 and f2
+
+        time_array = self._create_time_array(duration, sr)
+        signal = amp_lin * np.sin(2 * np.pi * f1 * time_array) + \
+                 amp_lin * np.sin(2 * np.pi * f2 * time_array)
+        
+        # Add known IMD products
+        # d2 (f2-f1 = 1kHz): amplitude 0.01 * amp_lin
+        freq_d2 = f2 - f1
+        amp_d2 = 0.01 * amp_lin
+        signal += amp_d2 * np.sin(2 * np.pi * freq_d2 * time_array)
+        
+        # d3_lower (2*f1-f2 = 18kHz): amplitude 0.005 * amp_lin
+        freq_d3_lower = 2 * f1 - f2
+        amp_d3_lower = 0.005 * amp_lin
+        signal += amp_d3_lower * np.sin(2 * np.pi * freq_d3_lower * time_array)
+
+        # d3_upper (2*f2-f1 = 21kHz): amplitude 0.005 * amp_lin
+        freq_d3_upper = 2 * f2 - f1
+        amp_d3_upper = 0.005 * amp_lin
+        signal += amp_d3_upper * np.sin(2 * np.pi * freq_d3_upper * time_array)
+
+        signal = np.clip(signal, -1.0, 1.0)
+        results = analyze_imd_ccif(signal, sr, f1, f2)
+
+        self.assertIsNotNone(results)
+        self.assertTrue(np.isclose(results['amp_f1_linear'], amp_lin, rtol=0.15))
+        self.assertTrue(np.isclose(results['amp_f2_linear'], amp_lin, rtol=0.15))
+
+        # Check IMD products
+        details = results['imd_products_details']
+        found_d2, found_d3_lower, found_d3_upper = False, False, False
+
+        for p in details:
+            if np.isclose(p['freq_hz_nominal'], freq_d2):
+                self.assertTrue(np.isclose(p['amp_linear'], amp_d2, rtol=0.20)) # Increased rtol slightly for products
+                found_d2 = True
+            elif np.isclose(p['freq_hz_nominal'], freq_d3_lower):
+                self.assertTrue(np.isclose(p['amp_linear'], amp_d3_lower, rtol=0.20))
+                found_d3_lower = True
+            elif np.isclose(p['freq_hz_nominal'], freq_d3_upper):
+                self.assertTrue(np.isclose(p['amp_linear'], amp_d3_upper, rtol=0.20))
+                found_d3_upper = True
+        
+        self.assertTrue(found_d2, "d2 product not found or amplitude incorrect")
+        self.assertTrue(found_d3_lower, "d3_lower product not found or amplitude incorrect")
+        self.assertTrue(found_d3_upper, "d3_upper product not found or amplitude incorrect")
+
+        # Calculate expected IMD percentage
+        sum_amp_f1_f2 = amp_lin + amp_lin
+        rms_sum_distortion_products = np.sqrt(amp_d2**2 + amp_d3_lower**2 + amp_d3_upper**2)
+        expected_imd_percentage = (rms_sum_distortion_products / sum_amp_f1_f2) * 100
+        
+        self.assertTrue(np.isclose(results['imd_percentage'], expected_imd_percentage, rtol=0.15))
+        test_results['test_analyze_ccif_with_known_products'] = "PASS"
+
+    def test_analyze_ccif_low_signal(self):
+        print("Running test_analyze_ccif_low_signal...")
+        sr = 48000
+        duration = 1.0
+        f1, f2 = 19000.0, 20000.0
+        
+        amp_lin_very_low = 1e-12 # Effectively noise floor
+
+        time_array = self._create_time_array(duration, sr)
+        signal = amp_lin_very_low * np.sin(2 * np.pi * f1 * time_array) + \
+                 amp_lin_very_low * np.sin(2 * np.pi * f2 * time_array)
+        
+        results = analyze_imd_ccif(signal, sr, f1, f2)
+        
+        self.assertIsNotNone(results)
+        self.assertTrue(results['amp_f1_linear'] < 1e-9) # As per analyze_imd_ccif logic
+        self.assertTrue(results['amp_f2_linear'] < 1e-9)
+        self.assertTrue(results['imd_percentage'] == 0.0 or np.isinf(results['imd_percentage']))
+        self.assertTrue(results['imd_db'] == -np.inf)
+        test_results['test_analyze_ccif_low_signal'] = "PASS"
+
 
 def run_tests():
     suite = unittest.TestSuite()
     # Manually add tests if not using unittest.main() discovery
-    suite.addTest(TestAudioImdAnalyzer('test_gdt_amplitudes_and_clipping'))
-    suite.addTest(TestAudioImdAnalyzer('test_gdt_frequencies'))
-    suite.addTest(TestAudioImdAnalyzer('test_analyze_smpte_clean_signal'))
-    suite.addTest(TestAudioImdAnalyzer('test_analyze_smpte_with_known_sidebands'))
-    suite.addTest(TestAudioImdAnalyzer('test_analyze_smpte_low_f2_signal'))
+    # The custom runner below will pick them up via dir() and startswith('test_')
+    # suite.addTest(TestAudioImdAnalyzer('test_gdt_amplitudes_and_clipping'))
+    # suite.addTest(TestAudioImdAnalyzer('test_gdt_frequencies'))
+    # suite.addTest(TestAudioImdAnalyzer('test_analyze_smpte_clean_signal'))
+    # suite.addTest(TestAudioImdAnalyzer('test_analyze_smpte_with_known_sidebands'))
+    # suite.addTest(TestAudioImdAnalyzer('test_analyze_smpte_low_f2_signal'))
+    # suite.addTest(TestAudioImdAnalyzer('test_analyze_ccif_clean_signal'))
+    # suite.addTest(TestAudioImdAnalyzer('test_analyze_ccif_with_known_products'))
+    # suite.addTest(TestAudioImdAnalyzer('test_analyze_ccif_low_signal'))
     
     # Can use TextTestRunner for more detailed unittest output
     # runner = unittest.TextTestRunner()
