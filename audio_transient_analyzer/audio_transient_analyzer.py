@@ -331,7 +331,7 @@ def select_device(console: Console, error_console: Console): # Changed ErrorCons
         table.add_row(
             str(i),
             device['name'],
-            device['hostapi_name'],
+            device.get('hostapi_name', 'N/A'), # Changed to use .get()
             str(device['max_input_channels']),
             str(device['max_output_channels']),
             str(int(device['default_samplerate'])),
