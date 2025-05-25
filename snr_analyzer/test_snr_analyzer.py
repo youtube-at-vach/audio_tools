@@ -173,6 +173,20 @@ class TestSNRAnalyzer(unittest.TestCase):
             expected_num_samples = int(duration * samplerate)
             self.assertEqual(played_signal_data.shape[0], expected_num_samples, "Number of samples in data passed to playrec is incorrect.")
 
+        # Assert that sd.rec was called correctly with the 'mapping' argument
+        self.assertTrue(mock_sd_module.rec.called, "sd.rec was not called.")
+        if mock_sd_module.rec.called:
+            # The call to measure_snr in this helper uses input_channel=1 and input_device_id=device_id_in
+            # noise_duration is passed as 'duration' in this helper
+            mock_sd_module.rec.assert_called_once_with(
+                int(duration * samplerate), # frames (noise_duration)
+                samplerate=samplerate,
+                mapping=[1],                # input_channel = 1 from measure_snr call
+                channels=1,
+                device=device_id_in,        # input_device_id from measure_snr call
+                blocking=True
+            )
+
         # Assertions for SNR results
         # Check for unexpected error prints from measure_snr
         unexpected_error_prints = [
