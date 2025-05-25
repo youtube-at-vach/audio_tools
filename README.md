@@ -7,6 +7,7 @@
 - `audio_imd_analyzer`: オーディオ信号の相互変調歪（IMD）を測定するツール。SMPTE (RP120-1994) および CCIF (ITU-R) 規格をサポートしています。(詳細は `audio_imd_analyzer/README.md` を参照)
 - `audio_freq_response_analyzer`: オーディオデバイスの周波数応答（振幅および位相）を測定・プロットするツール (詳細は `audio_freq_response_analyzer/README.md` を参照)
 - `audio_crosstalk_analyzer`: チャンネル間のオーディオクロストーク（信号漏れ）を測定するツール。(詳細は `audio_crosstalk_analyzer/README.md` を参照)
+- `audio_transient_analyzer`: オーディオデバイスの過渡応答（立ち上がり時間、オーバーシュート、セトリング時間など）を測定するツール。(詳細は `audio_transient_analyzer/README.md` を参照)
 
 ---
 
