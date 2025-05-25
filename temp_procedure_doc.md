@@ -6,6 +6,7 @@
 
 -   **目的の明確化**: 新しい測定プログラムが解決する課題、測定する具体的なオーディオ特性（例: THD+N, 周波数特性, IMDなど）を定義します。
 -   **既存ツールの確認**: リポジトリ内に類似の機能を持つツールがないか確認します。既存ツールを拡張できる場合は、新規作成よりも優先します。
+    -   **未カバーの測定カテゴリ特定**: 基本的なオーディオ測定カテゴリ（例：高調波歪み、周波数特性、相互変調歪み、ノイズ、ステレオ特性、過渡応答など）をリストアップし、未カバーの領域を特定します。例えば `audio_crosstalk_analyzer` はステレオ特性の未カバー領域（信号漏れ）に焦点を当てています。(Identify uncovered basic audio measurement categories by listing them (e.g., harmonic distortion, frequency response, IMD, noise, stereo characteristics, transient response) and target an uncovered area. For example, `audio_crosstalk_analyzer` focuses on an uncovered area of stereo characteristics - signal leakage.)
 -   **必要な機能のリストアップ**:
     -   入力信号の種類（例: サイン波、矩形波、ホワイトノイズ、外部ファイル）
     -   ユーザーが設定可能なパラメータ（例: 周波数、振幅、テスト時間、FFTサイズ）
@@ -32,10 +33,15 @@
     -   `sounddevice` ライブラリを使用して、オーディオデバイスの選択、再生、録音機能を実装します。
     -   ユーザーが入力/出力チャンネル（L/R）を選択できるようにします。
     -   オーディオストリーミングの要求（連続的な長時間処理か、断続的な短時間処理の繰り返し等）に応じて、`sounddevice`ライブラリの適切な利用方法（コールバック方式の`sd.Stream`か、ブロッキング方式の`sd.playrec`等）を選択します。また、`sd.playrec` のチャンネルマッピングなど、API特有の仕様にも注意します。(Select the appropriate usage method of the `sounddevice` library (e.g., callback-based `sd.Stream` or blocking `sd.playrec`) according to the audio streaming requirements (continuous long-term processing, intermittent repetition of short-term processing, etc.). Also, pay attention to API-specific specifications such as channel mapping for `sd.playrec`.)
+    -   **複数チャンネル同時再生録音時の注意点 (Notes on simultaneous multi-channel playback and recording)**:
+        -   特定の出力チャンネルでモノラル信号を再生する場合、`sd.playrec()` に渡す出力バッファをデバイスの最大出力チャンネル数で初期化し、対象チャンネルに信号を配置します（例： `output_buffer = np.zeros((len(mono_signal), device_max_out_ch)); output_buffer[:, target_output_ch_idx] = mono_signal`）。(When playing a mono signal on a specific output channel, initialize the output buffer passed to `sd.playrec()` with the device's maximum number of output channels and place the signal in the target channel (e.g., `output_buffer = np.zeros((len(mono_signal), device_max_out_ch)); output_buffer[:, target_output_ch_idx] = mono_signal`).)
+        -   `sd.playrec()` の `input_mapping` 引数を使用して、録音する物理入力チャンネルを1ベースのインデックスで指定します（例： `sd.playrec(..., input_mapping=[1, 2])` で物理チャンネル1と2を録音）。(Use the `input_mapping` argument of `sd.playrec()` with 1-based indices to specify the physical input channels to record from (e.g., `sd.playrec(..., input_mapping=[1, 2])` to record from physical channels 1 and 2).)
 -   **解析処理**:
     -   FFT、ウィンドウ関数、フィルタリングなど、測定に必要な信号処理を実装します。
     -   `numpy` や `scipy.signal` を活用します。
     -   FFTを用いた解析では、正確な振幅スペクトルを得るための正規化（例：ウィンドウ関数の総和で除算）や、既知の周波数成分を正確に捉えるための周波数ビン選択/補間処理に注意を払います。(In analysis using FFT, pay attention to normalization for obtaining accurate amplitude spectra (e.g., dividing by the sum of the window function) and to frequency bin selection/interpolation processing for accurately capturing known frequency components.)
+    -   **相対測定におけるレベル比較 (Level comparison in relative measurements)**:
+        -   クロストーク測定のように、基準チャンネルの信号振幅 (A_ref) と測定対象チャンネルの信号振幅 (A_measured) を比較して相対的なdB値を算出する場合（例： `20 * np.log10(A_measured / A_ref)`）、両振幅が有効な値であることを確認し、ゼロ除算や非常に小さい値の対数処理を避けます。(When comparing signal amplitudes from a reference channel (A_ref) and a measured channel (A_measured) to calculate a relative dB value, as in crosstalk measurements (e.g., `20 * np.log10(A_measured / A_ref)`), ensure both amplitudes are valid and avoid division by zero or taking logarithms of very small values.)
 -   **結果表示**:
     -   `rich` ライブラリを使用して、結果を整形してコンソールに表示します。
     -   必要に応じて、`matplotlib` を用いたグラフ表示機能や、CSVファイルへの出力機能を実装します。
@@ -55,6 +61,8 @@
     -   主要な関数（信号生成、解析処理など）に対して単体テストを作成します。
     -   Pythonの `unittest` フレームワークを使用し、テストスクリプトは `new_tool_analyzer/test_new_tool_analyzer.py` のように命名します。
     -   テストケースでは、既知の入力に対する期待される出力を検証します。
+    -   **複数チャンネル処理のテストデータ生成 (Test data generation for multi-channel processing)**:
+        -   複数チャンネルのオーディオデータを扱う関数をテストする際は、各チャンネルで特性の異なる合成信号を含む2次元NumPy配列をテスト入力として作成します（例： `test_data = np.array([ch1_signal, ch2_signal]).T`）。(When testing functions that handle multi-channel audio data, create 2D NumPy arrays as test input, synthesizing signals with different characteristics for each channel (e.g., `test_data = np.array([ch1_signal, ch2_signal]).T`).)
 -   **統合テスト**:
     -   実際にオーディオデバイスを使用してループバックテストなどを行い、プログラム全体が意図した通りに動作することを確認します。
     -   様々なパラメータの組み合わせでテストします。
