@@ -161,7 +161,19 @@ class TestSNRAnalyzer(unittest.TestCase):
             noise_duration=duration
         )
         
-        # Assertions
+        # Assert that sd.playrec was called with data of the correct shape (N, 1)
+        self.assertTrue(mock_sd_module.playrec.called, "sd.playrec was not called.")
+        if mock_sd_module.playrec.called: # Ensure it was called before trying to access call_args
+            call_args_playrec, _ = mock_sd_module.playrec.call_args
+            played_signal_data = call_args_playrec[0] # First positional argument is 'data'
+            self.assertIsInstance(played_signal_data, np.ndarray, "Data passed to playrec should be a NumPy array.")
+            self.assertEqual(played_signal_data.ndim, 2, "Data passed to playrec should be 2D (N, 1).")
+            self.assertEqual(played_signal_data.shape[1], 1, "Data passed to playrec should have 1 column.")
+            # Check that the number of samples is as expected
+            expected_num_samples = int(duration * samplerate)
+            self.assertEqual(played_signal_data.shape[0], expected_num_samples, "Number of samples in data passed to playrec is incorrect.")
+
+        # Assertions for SNR results
         # Check for unexpected error prints from measure_snr
         unexpected_error_prints = [
             str(call_args.args[0]) for call_args in mock_console_instance.print.call_args_list
