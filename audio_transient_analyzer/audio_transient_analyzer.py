@@ -397,7 +397,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     console = Console()
-    error_console = Console(stderr=True, style="stderr") # Defined error_console
+    error_console = Console(stderr=True, style="bold red") # Updated style
 
     if args.amplitude > 0:
         error_console.print("Error: Amplitude must be less than or equal to 0 dBFS.")
@@ -517,7 +517,7 @@ if __name__ == '__main__':
             console.print(f"  Calculated Rise Time (10%-90%): {rise_time:.6f} s")
 
             overshoot = calculate_overshoot(recorded_audio, args.sample_rate, actual_start_index)
-            overshoot = calculate_overshoot(recorded_audio, args.sample_rate, actual_start_index)
+            # The duplicated line above was removed.
             # console.print(f"  Calculated Overshoot: {overshoot:.2f} %") # Will be printed in table
 
             settling_time = calculate_settling_time(recorded_audio, args.sample_rate, actual_start_index, settle_percentage=0.05)
