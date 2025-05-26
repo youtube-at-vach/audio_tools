@@ -5,7 +5,7 @@ This document lists potential ideas for future audio measurement programs. These
 ## Potential Future Tools:
 
 -   **SINAD (Signal-to-Noise and Distortion) Analyzer**:
-    Measures SINAD, a key performance metric for ADCs/DACs combining SNR and THD+N.
+    Measures SINAD, a key performance metric for ADCs/DACs combining SNR and THD+N. (Basic SINAD calculation now implemented in `audio_analyzer/` as of 2024-10-18 by Jules. This idea could be expanded for more dedicated analysis if needed.)
 
 -   **Dynamic Range (DR) Measurement Tool (Advanced)**:
     Measures dynamic range, potentially adhering to standards like AES17, using specific test signals and weighting.
@@ -48,4 +48,12 @@ This document lists potential ideas for future audio measurement programs. These
 
 -   **Batch Audio File Loudness Normalizer**:
     A utility to process multiple audio files (e.g., from a directory), measure their integrated loudness using the `lufs_meter` logic, and then optionally adjust their gain to meet a user-specified target LUFS level. This would be useful for normalizing a library of audio tracks or ensuring consistent loudness for a playlist. Output could be new files or modification in-place (with warnings).
-```
+
+-   **Advanced SINAD/Distortion Plotter**:
+    While `audio_analyzer` calculates SINAD, THD, THD+N, this tool would offer dedicated visualization. It could generate plots like SINAD vs. Frequency, SINAD vs. Amplitude, THD vs. Frequency/Amplitude, and individual harmonic levels vs. frequency/amplitude, potentially using data from `audio_analyzer`'s sweep modes but with enhanced graphing capabilities.
+
+-   **Noise Figure (NF) Analyzer**:
+    Measures the Noise Figure (NF) of an audio device. NF quantifies SNR degradation by components. This would likely require specific methodologies like the Y-factor method using a calibrated noise source or a two-stage measurement, providing deeper noise analysis than basic SNR.
+
+-   **Automated Audio Test Report Generator**:
+    Acts as a test executive. Users could define a sequence of existing analyzer tools (e.g., `audio_freq_response_analyzer`, `audio_analyzer`) to run on a DUT. The tool would execute tests, collect results/plots, and compile a comprehensive report (e.g., HTML, PDF, Markdown), building on the "Automated Test Sequencer" idea with a strong reporting focus.
