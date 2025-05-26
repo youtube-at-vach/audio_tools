@@ -116,6 +116,16 @@
 
 -   **新たな知見・アイデアの記録**: 作業完了後、開発プロセスを通じて得られた新たな知見、または将来的に有用と思われる新しい測定ツールのアイデアが生まれた場合は、`misc/future_tool_ideas.md` に追記して下さい。これは将来のツール開発のための貴重なリソースとなります。(Record New Insights/Ideas: After completing the work, if new insights were gained through the development process, or if new ideas for potentially useful measurement tools emerged, append them to `misc/future_tool_ideas.md`. This serves as a valuable resource for future tool development.)
 
+### 8.1. 具体的な開発事例からの学び (Learnings from Specific Development Cases)
+
+#### LUFS Meter 開発より (From LUFS Meter Development):
+
+-   **Pythonバージョンと型ヒントの互換性 (Python Versioning & Type Hint Compatibility)**: Python 3.8+ のような特定のバージョンをターゲットにする場合、型ヒントの構文に注意が必要です。Python 3.9+ では組み込みジェネリック型（例: `tuple[int]`）が導入されましたが、3.8のような古いバージョンでは `typing.Tuple[int]` のように `typing` モジュールからインポートする必要があります。これを怠ると `TypeError` が発生する可能性があります。開発初期段階でのバージョン互換性テストが推奨されます。
+-   **複雑な技術標準の実装 (Implementing Complex Technical Standards)**: LUFS測定のためのITU-R BS.1770のような詳細な技術標準に基づくツールを実装するには、フィルタリング、ウィンドウ処理、ゲーティング、特定の数学的変換など、アルゴリズムの各ステップに細心の注意を払う必要があります。可能であれば、公式のテストベクターや参照実装へのアクセスは、検証のために非常に価値があります。
+-   **オーディオI/Oと処理のためのライブラリ選定 (Library Selection for Audio I/O & Processing)**: オーディオファイルI/Oには `soundfile` が堅牢な選択肢です。フィルタリングやリサンプリングのようなDSP操作には `scipy.signal` が不可欠です。リサンプリングメソッド（例: `resample` 対 `resample_poly`）は、品質と計算コストを考慮してタスクに応じて適切に選択する必要があります。
+-   **`rich` を用いたCLI出力 (CLI Output with `rich`)**: `rich` のようなライブラリを使用すると、整形されたテーブル、パネル、スタイル付きテキストを提供することでCLIツールのユーザビリティを大幅に向上させ、複雑なデータを一目で理解しやすくすることができます。
+-   **テスト容易性 (Testability)**: 複雑なアルゴリズム（例：ゲーティングロジック）を持つ関数は、テスト容易性を考慮して設計することが望ましいです。可能であれば、主要なロジック部分を分離して個別にテストできるようにするか、明確に定義された入力に対して予測可能な出力を生成するテストケースを作成します。合成テストデータ（例：既知のLUFSレベルを持つように計算された信号セグメント）の生成は、エンドツーエンドの検証に役立ちます。
+
 ---
 
 この手順はあくまでガイドラインであり、開発するツールの特性や規模に応じて適宜調整してください。 (This procedure is merely a guideline; please adjust it as appropriate according to the characteristics and scale of the tool being developed.)
