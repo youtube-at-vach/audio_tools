@@ -3,13 +3,14 @@ import numpy as np
 from scipy import signal
 import argparse
 import csv
+from typing import Tuple, List, Dict, Optional, Union, Any
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
 
-def load_audio_file(filepath: str):
+def load_audio_file(filepath: str) -> Tuple[Optional[np.ndarray], Optional[int]]:
     """
     Loads an audio file, resamples to 48kHz, and converts to mono.
 
@@ -158,7 +159,7 @@ def calculate_short_term_loudness(k_weighted_audio: np.ndarray, sample_rate: int
     return np.array(short_term_lufs_values)
 
 
-def calculate_integrated_loudness(k_weighted_audio: np.ndarray, sample_rate: int) -> tuple[float, np.ndarray]:
+def calculate_integrated_loudness(k_weighted_audio: np.ndarray, sample_rate: int) -> Tuple[float, np.ndarray]:
     """
     Calculates integrated loudness with gating (ITU-R BS.1770-4).
     """
@@ -304,7 +305,7 @@ def calculate_true_peak(audio_data: np.ndarray, sample_rate: int) -> float:
     return dbtp
 
 
-def format_value(value: float, unit: str, target: float = None) -> Text:
+def format_value(value: float, unit: str, target: Optional[float] = None) -> Text:
     """Helper function to format LUFS or dBTP values for printing with Rich."""
     text = Text()
     if value == -np.inf:
@@ -323,14 +324,14 @@ def format_value(value: float, unit: str, target: float = None) -> Text:
     return text
 
 
-def save_results_to_csv(filepath: str, results: dict, headers: list):
+def save_results_to_csv(filepath: str, results: Dict[str, Any], headers: List[str]):
     """Saves the loudness measurement results to a CSV file."""
     try:
         with open(filepath, 'w', newline='') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=headers)
             writer.writeheader()
             # Prepare a row with formatted values, handling None for Target Loudness
-            row_to_write = {}
+            row_to_write: Dict[str, str] = {} # Ensure row_to_write keys are strings
             for header in headers:
                 val = results.get(header)
                 if isinstance(val, float) and val == -np.inf:
@@ -339,8 +340,8 @@ def save_results_to_csv(filepath: str, results: dict, headers: list):
                     row_to_write[header] = "N/A" # Or "Undefined"
                 elif isinstance(val, float):
                      row_to_write[header] = f"{val:.1f}"
-                else: # Should not happen if results dict is structured correctly
-                    row_to_write[header] = str(val)
+                else: # Should not happen if results dict is structured correctly, but good to handle
+                    row_to_write[header] = str(val) if val is not None else "N/A"
             writer.writerow(row_to_write)
         print(f"Info: Results saved to '{filepath}'")
     except IOError as e:
