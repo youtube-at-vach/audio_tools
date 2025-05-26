@@ -11,7 +11,7 @@ This document lists potential ideas for future audio measurement programs. These
     Measures dynamic range, potentially adhering to standards like AES17, using specific test signals and weighting.
 
 -   **Loudness Meter (LUFS/LKFS)**:
-    Measures perceived loudness according to standards like EBU R128 / ITU-R BS.1770, crucial for mastering and broadcast.
+    Measures perceived loudness according to standards like EBU R128 / ITU-R BS.1770, crucial for mastering and broadcast. (Implemented in `lufs_meter/`)
 
 -   **Stereo Width/Imaging Analyzer**:
     Analyzes characteristics of a stereo image beyond basic phase/crosstalk, such as perceived width or inter-channel coherence.
