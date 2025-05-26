@@ -11,7 +11,7 @@ This document lists potential ideas for future audio measurement programs. These
     Measures dynamic range, potentially adhering to standards like AES17, using specific test signals and weighting.
 
 -   **Loudness Meter (LUFS/LKFS)**:
-    Measures perceived loudness according to standards like EBU R128 / ITU-R BS.1770, crucial for mastering and broadcast.
+    Measures perceived loudness according to standards like EBU R128 / ITU-R BS.1770, crucial for mastering and broadcast. (Implemented in `lufs_meter/`)
 
 -   **Stereo Width/Imaging Analyzer**:
     Analyzes characteristics of a stereo image beyond basic phase/crosstalk, such as perceived width or inter-channel coherence.
@@ -39,4 +39,13 @@ This document lists potential ideas for future audio measurement programs. These
     - Detailed THD (Total Harmonic Distortion) analysis, including THD vs. frequency sweeps and THD vs. amplitude sweeps.
     - Broader coverage of IMD (Intermodulation Distortion) test standards (e.g., DIN, CCIF, SMPTE) with more detailed reporting of individual distortion products.
     - Potentially, analysis of specific harmonic components (H2, H3, etc.).
+
+-   **LUFS Test Signal Generator**:
+    A tool to generate standardized audio test signals specifically designed for calibrating and verifying LUFS meters (e.g., signals specified in EBU R128 s1 or ITU-R BS.1771, such as a -23 LUFS sine wave, or specific noise signals).
+
+-   **Real-time Multi-Loudness Monitor**:
+    An advanced real-time loudness monitor that displays Momentary, Short-term, and Integrated LUFS simultaneously, possibly with a graphical history, for continuous audio stream analysis (e.g., live broadcast feed, DAW output via virtual soundcard). Would require robust handling of audio device input and continuous processing.
+
+-   **Batch Audio File Loudness Normalizer**:
+    A utility to process multiple audio files (e.g., from a directory), measure their integrated loudness using the `lufs_meter` logic, and then optionally adjust their gain to meet a user-specified target LUFS level. This would be useful for normalizing a library of audio tracks or ensuring consistent loudness for a playlist. Output could be new files or modification in-place (with warnings).
 ```
