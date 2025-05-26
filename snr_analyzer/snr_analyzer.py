@@ -119,6 +119,7 @@ def measure_snr(
             blocking=True # Wait for playback and recording to complete
         )
         sd.wait() # Ensure all audio has been processed
+        sd.stop(ignore_errors=True)  # Stop any active streams before delay
         console.print("[green]Signal playback and recording complete.[/green]")
 
         time.sleep(0.2) # Delay for 200ms to allow device to be released
@@ -147,38 +148,36 @@ def measure_snr(
             console.print("Please check the device capabilities (e.g., using --list_devices) or try different settings.")
             raise # Re-raise to be caught by the main PortAudioError handler in measure_snr
         
-        recorded_noise = None # Initialize
-        num_noise_frames = int(noise_duration * samplerate)
-        stream_noise = None # Initialize stream variable
+        # Check input settings before attempting to record noise
+        try:
+            console.print(f"Verifying input settings for device {input_device_id} (channel {input_channel}) at {samplerate} Hz...")
+            sd.check_input_settings(
+                device=input_device_id,
+                channels=1, # Check if the device supports recording at least 1 channel
+                samplerate=samplerate
+                # The 'mapping' argument is not valid for check_input_settings.
+            )
+        except sd.PortAudioError as e:
+            console.print(f"[bold red]Error: Input device {input_device_id} does not support the required settings (samplerate: {samplerate}Hz, channels: 1) for noise recording.[/bold red]")
+            console.print(f"[bold red]PortAudio Error details: {e}[/bold red]")
+            console.print("Please check the device capabilities (e.g., using --list_devices) or try different settings.")
+            raise 
 
         try:
-            console.print(f"Recording noise from input device {input_device_id} (channel {input_channel}) using InputStream...")
-            
-            stream_noise = sd.InputStream(
-                device=input_device_id,
+            console.print(f"Recording noise from input device {input_device_id} (channel {input_channel}) using sd.rec()...")
+            recorded_noise = sd.rec(
+                frames=int(noise_duration * samplerate),
+                samplerate=samplerate,
                 mapping=[input_channel],  # Use the 1-based channel from args
                 channels=1,               # Number of channels defined by mapping
-                samplerate=samplerate,
-                dtype='float32' # Explicitly set dtype, common for processing
+                device=input_device_id,
+                blocking=True             # Use blocking mode
             )
-            # The try...finally ensures stream.close() is called.
-            try:
-                stream_noise.start()
-                console.print(f"Recording {noise_duration}s of noise...")
-                # Ensure recorded_noise is assigned the data from read()
-                recorded_noise_data, overflowed = stream_noise.read(num_noise_frames)
-                if overflowed:
-                    console.print("[yellow]Warning: Input overflow during noise recording.[/yellow]")
-                stream_noise.stop()
-                recorded_noise = recorded_noise_data # Assign data for later RMS calc
-            finally:
-                if stream_noise: # Check if stream_noise was successfully created
-                    stream_noise.close()
-            
+            # sd.wait() is not strictly needed with blocking=True for sd.rec(), 
+            # but can be kept for consistency if desired, or removed.
+            # For this revert, we'll stick to the minimal sd.rec() requirements.
             console.print("[green]Noise recording complete.[/green]")
-
         except sd.PortAudioError as e:
-            # This is the existing specific handler for PortAudioErrors during noise recording
             console.print(f"[bold red]Error during noise recording with device ID {input_device_id} (channel {input_channel}):[/bold red]")
             console.print(f"[bold red]PortAudio Error: {e}[/bold red]")
             console.print("\n[bold yellow]Suggestions:[/bold yellow]")
@@ -186,13 +185,11 @@ def measure_snr(
             console.print("- Ensure the input device is not currently in use by another application.")
             console.print("- Check your system's audio settings and confirm that other applications can record from this device.")
             console.print("- This could be a system-specific issue with ALSA/PortAudio or device permissions.")
-            raise # Re-raise to be caught by the main PortAudioError handler in measure_snr
-        
-        except Exception as e: # Catch other potential errors during stream ops
-            console.print(f"[bold red]An unexpected error occurred during noise recording stream operations: {e}[/bold red]")
-            # Ensure recorded_noise remains None or is handled appropriately if error occurs after data assignment
-            recorded_noise = None # Explicitly set to None to prevent processing partial/invalid data
-            raise # Re-raise to be caught by the main generic Exception handler in measure_snr
+            raise 
+        except Exception as e: # Catch other potential errors during sd.rec
+            console.print(f"[bold red]An unexpected error occurred during sd.rec() noise recording: {e}[/bold red]")
+            recorded_noise = None 
+            raise 
 
         # Calculate RMS
         rms_signal_plus_noise = calculate_rms(recorded_signal_plus_noise)
