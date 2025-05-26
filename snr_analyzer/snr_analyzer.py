@@ -1,5 +1,7 @@
 import argparse
+import argparse
 import math
+import time # Added import
 import numpy as np
 import sounddevice as sd
 from scipy.signal import butter, lfilter
@@ -118,6 +120,8 @@ def measure_snr(
         )
         sd.wait() # Ensure all audio has been processed
         console.print("[green]Signal playback and recording complete.[/green]")
+
+        time.sleep(0.2) # Delay for 200ms to allow device to be released
 
         # Record Noise Floor
         console.print(f"\n[bold yellow]Prepare for noise floor recording ({noise_duration}s). Ensure silence or typical noise conditions.[/bold yellow]")
