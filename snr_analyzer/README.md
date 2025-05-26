@@ -1,105 +1,89 @@
 # SNR Analyzer
 
 ## Overview
-
-The SNR Analyzer is a command-line tool designed to measure the Signal-to-Noise Ratio (SNR) of an audio signal path. It works by playing a test signal (a generated sine wave) through a specified output audio device and recording it through a specified input audio device. It then records the noise floor from the same input device. From these recordings, it calculates the RMS values of the signal (estimated) and the noise, and then computes the SNR in decibels (dB).
-
-## Features
-
--   Lists available audio input and output devices.
--   Generates a sine wave test signal of specified frequency and amplitude.
--   Plays the test signal and records it (signal + noise).
--   Records the ambient noise floor.
--   Calculates SNR using the formula: `SNR (dB) = 20 * log10(RMS_signal_only / RMS_noise)`, where `RMS_signal_only` is estimated from `sqrt(max(0, RMS_signal_plus_noise^2 - RMS_noise^2))`.
--   Displays results (SNR, RMS Signal, RMS Noise) in a formatted table on the console.
--   Allows user to specify audio devices, channels, signal parameters, and recording durations.
+The SNR Analyzer is a command-line tool designed to measure the Signal-to-Noise Ratio (SNR) of an audio system or component. It works by playing a known test signal and recording it, then recording the noise floor, and finally calculating the ratio of the signal power to the noise power.
 
 ## Dependencies
+- Python 3.8+
+- numpy
+- sounddevice
+- scipy
+- rich
+- argparse
 
--   Python 3.8+
--   **Libraries:**
-    -   `numpy`: For numerical operations and array manipulation.
-    -   `sounddevice`: For audio playback and recording.
-    -   `scipy`: (Used by sounddevice, potentially for signal processing features if extended).
-    -   `argparse`: For parsing command-line arguments.
-    -   `rich`: For rich text and formatted table display in the console.
-
-### Installation of Dependencies
-
-1.  **Python:** Ensure Python 3.8 or newer is installed.
-2.  **System-level audio libraries (for `sounddevice`):**
-    On Debian/Ubuntu Linux, `sounddevice` requires PortAudio. Install it using:
-    ```bash
-    sudo apt-get update
-    sudo apt-get install libportaudio2
-    ```
-    For other operating systems (Windows, macOS), PortAudio is often bundled or installed differently. Refer to the `sounddevice` documentation if you encounter issues.
-3.  **Python libraries:**
-    Install the required Python libraries using pip:
-    ```bash
-    pip install numpy sounddevice scipy argparse rich
-    ```
-    It's recommended to use a virtual environment.
+These Python libraries can be installed using pip:
+```bash
+pip install numpy sounddevice scipy rich argparse
+```
+The `sounddevice` library may also require system-level audio libraries such as PortAudio. On Debian/Ubuntu, this can be installed with:
+```bash
+sudo apt-get install libportaudio2
+```
 
 ## Usage
-
 The tool is run from the command line.
 
 **1. List Available Audio Devices:**
-   To see a list of available audio devices and their IDs:
-   ```bash
-   python snr_analyzer/snr_analyzer.py --list_devices
-   ```
+To see a list of available audio input and output devices with their IDs:
+```bash
+python -m snr_analyzer.snr_analyzer --list_devices
+```
 
-**2. Run SNR Measurement:**
-   Specify the output and input device IDs, and optionally other parameters.
-   ```bash
-   python snr_analyzer/snr_analyzer.py --output_device <OUT_ID> --input_device <IN_ID> [options]
-   ```
+**2. Measure SNR:**
+```bash
+python -m snr_analyzer.snr_analyzer --output_device <OUTPUT_DEVICE_ID> --input_device <INPUT_DEVICE_ID> [OPTIONS]
+```
 
 **Command-Line Options:**
+- `--list_devices`: (Optional) Action flag. Lists available audio devices and their IDs, then exits.
+- `--output_device <ID>`: (Required for measurement) Integer ID of the audio output device for playing the test signal.
+- `--input_device <ID>`: (Required for measurement) Integer ID of the audio input device for recording.
+- `--output_channel <NUM>`: (Optional) Output channel number (1-based). Default: 1.
+- `--input_channel <NUM>`: (Optional) Input channel number (1-based). Default: 1.
+- `--samplerate <RATE>`: (Optional) Samplerate in Hz (e.g., 44100, 48000). Default: 48000.
+- `--frequency <FREQ>`: (Optional) Frequency of the generated test sine wave in Hz. Default: 1000.0.
+- `--amplitude <AMP>`: (Optional) Amplitude of the test sine wave (0.0 to 1.0). Default: 0.8.
+- `--signal_duration <SEC>`: (Optional) Duration of signal playback/recording in seconds. Default: 5.0.
+- `--noise_duration <SEC>`: (Optional) Duration of noise floor recording in seconds. Default: 5.0.
 
-*   `--list_devices`: (Optional) List available audio devices and exit.
-*   `--output_device OUTPUT_DEVICE`: (Required unless listing devices) Integer ID of the output audio device.
-*   `--input_device INPUT_DEVICE`: (Required unless listing devices) Integer ID of the input audio device.
-*   `--output_channel OUTPUT_CHANNEL`: (Optional) Output channel number (1-based). Default: 1.
-*   `--input_channel INPUT_CHANNEL`: (Optional) Input channel number (1-based). Default: 1.
-*   `--samplerate SAMPLERATE`: (Optional) Samplerate in Hz (e.g., 44100, 48000). Default: 48000.
-*   `--frequency FREQUENCY`: (Optional) Frequency of the test sine wave in Hz. Default: 1000.0.
-*   `--amplitude AMPLITUDE`: (Optional) Amplitude of the test sine wave (0.0 to 1.0). Default: 0.8.
-*   `--signal_duration SIGNAL_DURATION`: (Optional) Duration of signal playback/recording in seconds. Default: 5.0.
-*   `--noise_duration NOISE_DURATION`: (Optional) Duration of noise floor recording in seconds. Default: 5.0.
-*   `--help`: Show this help message and exit.
-
-**Example Command:**
-
+**Example:**
 ```bash
-python snr_analyzer/snr_analyzer.py --output_device 1 --input_device 3 --frequency 1000 --amplitude 0.7 --signal_duration 3 --noise_duration 3
+python -m snr_analyzer.snr_analyzer --output_device 2 --input_device 4 --frequency 1000 --signal_duration 3 --noise_duration 3
 ```
 
-## Output Example
+## How it Works
+1.  A sine wave of the specified frequency and amplitude is generated.
+2.  This signal is played through the selected output device/channel and simultaneously recorded via the selected input device/channel. This recording captures the "Signal + Noise".
+3.  A second recording is made from the input device/channel with no signal being played. This captures the "Noise Floor".
+4.  The RMS (Root Mean Square) power of the "Signal + Noise" and "Noise Floor" recordings are calculated.
+5.  The power of the signal alone is estimated by subtracting the noise power from the "Signal + Noise" power.
+6.  The SNR is then calculated as `20 * log10(RMS_signal_only / RMS_noise)` and displayed in decibels (dB).
 
-The tool will print the results in a table:
+## Output
+The tool will print a table to the console with the following results:
+- RMS of Signal (estimated, from Signal+Noise - Noise)
+- RMS of Noise
+- SNR (dB)
 
+Example:
 ```
-┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
-┃ Metric          ┃ Value         ┃
-┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
-│ RMS Signal      │ 0.070 Vrms    │
-│ RMS Noise       │ 0.001 Vrms    │
-│ SNR             │ 36.88 dB      │
-└─────────────────┴───────────────┘
+ SNR Measurement Results
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃ Metric                       ┃ Value         ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ RMS Signal (Estimated)       │ 0.707 Vrms    │
+│ RMS Noise                    │ 0.001 Vrms    │
+│ SNR                          │ 56.9897 dB    │
+└──────────────────────────────┴───────────────┘
 ```
-*(Note: RMS values are illustrative and depend on calibration and actual signal levels. "Vrms" unit is indicative if the system were calibrated; otherwise, it's a relative unitless value based on digital signal levels.)*
+*(Note: Vrms units are nominal if system is not calibrated)*
 
 ## Important Notes
-
-*   **Audio Loopback:** For accurate self-testing of an audio interface, you'll typically need to physically connect the output of the interface to its input (a loopback connection). Ensure levels are appropriate to avoid clipping and damage.
-*   **Device Selection:** Use the `--list_devices` option to identify the correct device IDs for your system. Device IDs can change depending on the operating system and connected hardware.
-*   **Channel Selection:** Ensure the selected channels for output and input are correct for your setup. For mono signals on stereo devices, typically channel 1 (left) or 2 (right) is used.
-*   **Noise Floor:** For a good noise measurement, ensure the environment is quiet and the input chain is not introducing excessive noise. The measurement captures the noise of the entire chain (output device -> cable -> input device -> system noise).
-*   **Amplitude:** Start with a moderate amplitude (e.g., 0.5) and ensure it does not cause clipping on the output or input.
+- **Audio Loopback:** For testing an audio interface or system, you'll typically need to create a physical or virtual audio loopback from the output of the device to its input.
+- **Clean Noise Recording:** Ensure a quiet environment and no unexpected audio signals when the noise floor is being recorded for accurate results.
+- **Device Selection:** Use the `--list_devices` option to correctly identify the device IDs for your system.
+- **Input/Output Levels:** Adjust your system's input and output levels appropriately. Clipping the signal will invalidate results. The generated signal has an amplitude between 0.0 and 1.0 (peak).
 
 ## License
-
-This tool is released under the Unlicense. See the main repository for details. (The code is public domain).
+This tool is released under the Unlicense. See the main repository license for more details.
+```
