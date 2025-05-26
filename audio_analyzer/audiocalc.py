@@ -136,6 +136,7 @@ class AudioCalc:
         # THD+N計算
         thdn = AudioCalc.calculate_thdn(audio_data, sampling_rate, fundamental_freq, min_db=min_db)
         thdn_percent = 10 ** (thdn / 20) * 100 if thdn > min_db else 0.0
+        sinad_db = -thdn
     
         return {
             'basic_wave': result,
@@ -143,5 +144,6 @@ class AudioCalc:
             'thd_percent': thd,
             'thd_db': thd_db,
             'thdn_percent': thdn_percent,
-            'thdn_db': thdn
+            'thdn_db': thdn,
+            'sinad_db': sinad_db
         }

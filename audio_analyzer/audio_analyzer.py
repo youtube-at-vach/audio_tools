@@ -345,6 +345,7 @@ def display_measurements(measurements):
     table.add_column("入力(dBFS)", justify="right")
     table.add_column("THD(%)", justify="right")
     table.add_column("THD+N(%)", justify="right")
+    table.add_column("SINAD(dB)", justify="right")  # Add SINAD column
     table.add_column("SNR(dB)", justify="right")
     table.add_column("ゲイン(dB)", justify="right")
     for i, m in enumerate(measurements):
@@ -356,6 +357,7 @@ def display_measurements(measurements):
             f"{m['入力(dBFS)']:.2f}" if m['入力(dBFS)'] is not None else "N/A",
             f"{m['THD(%)']:.4f}" if m['THD(%)'] is not None else "N/A",
             f"{m['THD+N(%)']:.4f}" if m['THD+N(%)'] is not None else "N/A",
+            f"{m.get('SINAD(dB)', 'N/A'):.2f}" if m.get('SINAD(dB)') is not None else "N/A", # Add SINAD value
             f"{m['SNR(dB)']:.2f}" if m['SNR(dB)'] is not None else "N/A",
             f"{m['ゲイン(dB)']:+.2f}" if m['ゲイン(dB)'] is not None else "N/A"
         )
@@ -366,6 +368,7 @@ def display_statics(measurements):
     # 平均計算と表示
     thd_list = [m['THD(%)'] for m in measurements if m['THD(%)'] is not None]
     thdn_list = [m['THD+N(%)'] for m in measurements if m['THD+N(%)'] is not None]
+    sinad_list = [m['SINAD(dB)'] for m in measurements if m.get('SINAD(dB)') is not None] # Collect SINAD values
     snr_list = [m['SNR(dB)'] for m in measurements if m['SNR(dB)'] is not None]
     gain_list = [m['ゲイン(dB)'] for m in measurements if m['ゲイン(dB)'] is not None]
 
@@ -387,6 +390,13 @@ def display_statics(measurements):
         avg_table.add_row("全高調波歪およびノイズ (THD+N)", f"{avg_thdn:.4f}% ± {std_thdn:.4f}%")
     else:
         avg_table.add_row("全高調波歪およびノイズ (THD+N)", "N/A")
+
+    if sinad_list: # Calculate and display average SINAD
+        avg_sinad = np.mean(sinad_list)
+        std_sinad = np.std(sinad_list, ddof=1) if len(sinad_list) > 1 else 0.0
+        avg_table.add_row("SINAD(dB)", f"{avg_sinad:.2f} dB ± {std_sinad:.2f} dB")
+    else:
+        avg_table.add_row("SINAD(dB)", "N/A")
 
     if snr_list:
         avg_snr = np.mean(snr_list)
@@ -426,6 +436,7 @@ def results_to_measurement(result, noise_rms, output_dbfs, freq=None, amp_dbfs=N
         thd_db = result['thd_db']
         thdn = result['thdn_percent']
         thdn_db = result['thdn_db']
+        sinad_db = result.get('sinad_db')  # Retrieve SINAD
         signal_rms = result['basic_wave']['max_amplitude'] / np.sqrt(2)
         snr = 20 * np.log10(signal_rms / noise_rms) if noise_rms > 0 else -140.00
         gain_db = result['basic_wave']['amplitude_dbfs'] - output_dbfs
@@ -437,6 +448,7 @@ def results_to_measurement(result, noise_rms, output_dbfs, freq=None, amp_dbfs=N
             'THD(dBr)': thd_db,            
             'THD+N(%)': thdn,               # 数値型
             'THD+N(dBr)':thdn_db,
+            'SINAD(dB)': sinad_db,          # Add SINAD to measurement
             'SNR(dB)': snr,                 # 数値型
             'ゲイン(dB)': gain_db           # 数値型
         })
@@ -446,6 +458,7 @@ def results_to_measurement(result, noise_rms, output_dbfs, freq=None, amp_dbfs=N
         console.print(f"入力(dBFS): {result['basic_wave']['amplitude_dbfs']:.2f}")
         console.print(f"THD(%, dBr): {thd:.4f} / {thd_db:.2f}")
         console.print(f"THD+N(%, dBr): {thdn:.4f} / {thdn_db:.2f}")
+        console.print(f"SINAD(dB): {sinad_db:.2f}" if sinad_db is not None else "SINAD(dB): N/A") # Print SINAD
         console.print(f"SNR(dB): {snr:.2f}")
         console.print(f"ゲイン(dB): {gain_db:+.2f}\n")
 
@@ -458,6 +471,7 @@ def results_to_measurement(result, noise_rms, output_dbfs, freq=None, amp_dbfs=N
             'THD(dBr)': None,
             'THD+N(%)': None,
             'THD+N(dBr)': None,
+            'SINAD(dB)': None, # Add SINAD to measurement (None case)
             'SNR(dB)': None,
             'ゲイン(dB)': None
         })
@@ -466,6 +480,7 @@ def results_to_measurement(result, noise_rms, output_dbfs, freq=None, amp_dbfs=N
         console.print("入力(dBFS): N/A")
         console.print("THD(%, dBr): N/A")
         console.print("THD+N(%, dBr): N/A")
+        console.print("SINAD(dB): N/A") # Print SINAD (None case)
         console.print("SNR(dB): N/A")
         console.print("ゲイン(dB): N/A\n")
 
@@ -490,7 +505,7 @@ def perform_measurements(device_index, output_channel, sample_rate, apply_bandpa
     # CSVファイルが指定されている場合、書き込み準備
     if output_csv:
         csvfile = open(output_csv, mode='w', newline='', encoding='utf-8')
-        csv_writer = csv.DictWriter(csvfile, fieldnames=['Measurement_Number', 'Frequency(Hz)', 'Amplitude(dBFS)', 'Output(dBFS)', 'Input(dBFS)', 'THD(%)', 'THD(dBr)', 'THD+N(%)', 'THD+N(dBr)', 'SNR(dB)', 'Gain(dB)'])
+        csv_writer = csv.DictWriter(csvfile, fieldnames=['Measurement_Number', 'Frequency(Hz)', 'Amplitude(dBFS)', 'Output(dBFS)', 'Input(dBFS)', 'THD(%)', 'THD(dBr)', 'THD+N(%)', 'THD+N(dBr)', 'SINAD(dB)', 'SNR(dB)', 'Gain(dB)']) # Add SINAD to CSV fieldnames
         csv_writer.writeheader()
     else:
         csv_writer = None
@@ -527,6 +542,7 @@ def perform_measurements(device_index, output_channel, sample_rate, apply_bandpa
                     'THD(dBr)': f"{measurement['THD(dBr)']:.4f}" if measurement['THD(dBr)'] is not None else '',
                     'THD+N(%)': f"{measurement['THD+N(%)']:.4f}" if measurement['THD+N(%)'] is not None else '',
                     'THD+N(dBr)': f"{measurement['THD+N(dBr)']:.4f}" if measurement['THD+N(dBr)'] is not None else '',
+                    'SINAD(dB)': f"{measurement.get('SINAD(dB)', ''):.2f}" if measurement.get('SINAD(dB)') is not None else '', # Add SINAD to CSV row
                     'SNR(dB)': f"{measurement['SNR(dB)']:.2f}" if measurement['SNR(dB)'] is not None else '',
                     'Gain(dB)': f"{measurement['ゲイン(dB)']:+.2f}" if measurement['ゲイン(dB)'] is not None else ''
                 })
