@@ -142,28 +142,53 @@ def measure_snr(
             console.print(f"[bold red]PortAudio Error details: {e}[/bold red]")
             console.print("Please check the device capabilities (e.g., using --list_devices) or try different settings.")
             raise # Re-raise to be caught by the main PortAudioError handler in measure_snr
+        
+        recorded_noise = None # Initialize
+        num_noise_frames = int(noise_duration * samplerate)
+        stream_noise = None # Initialize stream variable
 
         try:
-            console.print(f"Recording noise from input device {input_device_id} (channel {input_channel})...")
-            recorded_noise = sd.rec(
-                int(noise_duration * samplerate),
+            console.print(f"Recording noise from input device {input_device_id} (channel {input_channel}) using InputStream...")
+            
+            stream_noise = sd.InputStream(
+                device=input_device_id,
+                mapping=[input_channel],  # Use the 1-based channel from args
+                channels=1,               # Number of channels defined by mapping
                 samplerate=samplerate,
-                mapping=[input_channel], # Corrected: 1-based physical channel for recording
-                channels=1, # Number of channels to record, must match len(mapping)
-                device=input_device_id, # Explicitly specify the input device
-                blocking=True
+                dtype='float32' # Explicitly set dtype, common for processing
             )
-            sd.wait() # Ensure all audio has been processed
+            # The try...finally ensures stream.close() is called.
+            try:
+                stream_noise.start()
+                console.print(f"Recording {noise_duration}s of noise...")
+                # Ensure recorded_noise is assigned the data from read()
+                recorded_noise_data, overflowed = stream_noise.read(num_noise_frames)
+                if overflowed:
+                    console.print("[yellow]Warning: Input overflow during noise recording.[/yellow]")
+                stream_noise.stop()
+                recorded_noise = recorded_noise_data # Assign data for later RMS calc
+            finally:
+                if stream_noise: # Check if stream_noise was successfully created
+                    stream_noise.close()
+            
             console.print("[green]Noise recording complete.[/green]")
+
         except sd.PortAudioError as e:
+            # This is the existing specific handler for PortAudioErrors during noise recording
             console.print(f"[bold red]Error during noise recording with device ID {input_device_id} (channel {input_channel}):[/bold red]")
             console.print(f"[bold red]PortAudio Error: {e}[/bold red]")
-            console.print("\n[bold yellow]Suggestions:[/bold yellow]") # Added newline for better formatting
+            console.print("\n[bold yellow]Suggestions:[/bold yellow]")
             console.print("- Verify the input device ID (`--input_device`) using `--list_devices`.")
             console.print("- Ensure the input device is not currently in use by another application.")
             console.print("- Check your system's audio settings and confirm that other applications can record from this device.")
             console.print("- This could be a system-specific issue with ALSA/PortAudio or device permissions.")
             raise # Re-raise to be caught by the main PortAudioError handler in measure_snr
+        
+        except Exception as e: # Catch other potential errors during stream ops
+            console.print(f"[bold red]An unexpected error occurred during noise recording stream operations: {e}[/bold red]")
+            # Ensure recorded_noise remains None or is handled appropriately if error occurs after data assignment
+            recorded_noise = None # Explicitly set to None to prevent processing partial/invalid data
+            raise # Re-raise to be caught by the main generic Exception handler in measure_snr
 
         # Calculate RMS
         rms_signal_plus_noise = calculate_rms(recorded_signal_plus_noise)
