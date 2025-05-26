@@ -10,6 +10,16 @@ import scipy.signal
 # Initialize Rich Console
 console = Console()
 
+def map_lr_to_channel_index(lr_string: str) -> int:
+    """Converts 'L' or 'R' string to 1-based channel index."""
+    if lr_string.upper() == 'L':
+        return 1
+    elif lr_string.upper() == 'R':
+        return 2
+    else:
+        # This case should ideally be prevented by argparse choices
+        raise ValueError(f"Invalid channel string: {lr_string}. Expected 'L' or 'R'.")
+
 def list_audio_devices():
     """Lists available audio input and output devices."""
     try:
@@ -69,17 +79,17 @@ def calculate_rms(audio_segment):
         return 1e-12
     return rms
 
-def measure_snr(output_device_id, input_device_id, output_channel, input_channel,
-                samplerate, signal_freq, signal_amp, signal_duration, noise_duration,
+def measure_snr(device_id: int, output_channel_idx: int, input_channel_idx: int,
+                samplerate: int, signal_freq: float, signal_amp: float,
+                signal_duration: float, noise_duration: float,
                 signal_file_path=None):
     """
     Measures the Signal-to-Noise Ratio (SNR).
 
     Args:
-        output_device_id (int): ID of the output audio device.
-        input_device_id (int): ID of the input audio device.
-        output_channel (int): Output channel (1-based).
-        input_channel (int): Input channel (1-based).
+        device_id (int): ID of the audio device for both input and output.
+        output_channel_idx (int): Output channel index (1-based).
+        input_channel_idx (int): Input channel index (1-based).
         samplerate (int): Samplerate in Hz.
         signal_freq (float): Frequency of the test sine wave in Hz.
         signal_amp (float): Amplitude of the test sine wave (0.0-1.0).
@@ -91,11 +101,10 @@ def measure_snr(output_device_id, input_device_id, output_channel, input_channel
         tuple: (snr_db, rms_signal_only, rms_noise) or (None, None, None) if error.
     """
     try:
-        # Validate device IDs
-        sd.query_devices(output_device_id)
-        sd.query_devices(input_device_id)
+        # Validate device ID
+        device_info = sd.query_devices(device_id)
     except (ValueError, sd.PortAudioError) as e:
-        console.print(f"[bold red]Error: Invalid device ID. {e}[/bold red]")
+        console.print(f"[bold red]Error: Invalid device ID {device_id}. {e}[/bold red]")
         return None, None, None
 
     # Prepare Signal
@@ -107,60 +116,59 @@ def measure_snr(output_device_id, input_device_id, output_channel, input_channel
         signal = generate_sine_wave(signal_freq, signal_duration, signal_amp, samplerate)
 
     try:
-        output_device_info = sd.query_devices(output_device_id)
-        input_device_info = sd.query_devices(input_device_id)
+        max_out_channels = device_info['max_output_channels']
+        max_in_channels = device_info['max_input_channels']
 
-        max_out_channels = output_device_info['max_output_channels']
-        # max_in_channels = input_device_info['max_input_channels'] # Not directly used by playrec's channels with input_mapping
-
-        if not (0 < output_channel <= max_out_channels):
-            console.print(f"[bold red]Error: Output channel {output_channel} is out of range for device {output_device_id} (1-{max_out_channels}).[/bold red]")
+        if not (0 < output_channel_idx <= max_out_channels):
+            console.print(f"[bold red]Error: Output channel {output_channel_idx} is out of range for device {device_id} (1-{max_out_channels}).[/bold red]")
             return None, None, None
-        if not (0 < input_channel <= input_device_info['max_input_channels']):
-            console.print(f"[bold red]Error: Input channel {input_channel} is out of range for device {input_device_id} (1-{input_device_info['max_input_channels']}).[/bold red]")
+        if not (0 < input_channel_idx <= max_in_channels):
+            console.print(f"[bold red]Error: Input channel {input_channel_idx} is out of range for device {device_id} (1-{max_in_channels}).[/bold red]")
             return None, None, None
 
-        output_channel_idx = output_channel - 1  # 0-based index
-        input_channel_idx = input_channel - 1    # 0-based index
+        # For sd.playrec, output_mapping and input_mapping use 1-based indexing.
+        # The actual buffer for playback needs 0-based indexing if we construct it manually.
+        output_buffer_channel_0_based = output_channel_idx - 1
 
         # Playback Signal and Record (Signal + Noise)
-        console.print(f"\n[cyan]Preparing to play signal on '{output_device_info['name']}' (Channel {output_channel}) and record from '{input_device_info['name']}' (Channel {input_channel})...[/cyan]")
+        console.print(f"\n[cyan]Preparing to play signal on '{device_info['name']}' (Output Channel {output_channel_idx}) and record from '{device_info['name']}' (Input Channel {input_channel_idx})...[/cyan]")
         console.print(f"[yellow]Ensure your audio loopback or measurement setup is ready.[/yellow]")
-        # User prompt before starting might be good here, e.g., input("Press Enter to start signal measurement...")
 
+        # Create an output buffer for all available output channels on the device
+        # then place the signal on the desired channel.
         output_buffer = np.zeros((len(signal), max_out_channels), dtype=signal.dtype)
-        output_buffer[:, output_channel_idx] = signal
+        output_buffer[:, output_buffer_channel_0_based] = signal
         
         console.print("Playing signal and recording (signal + noise)...")
         recorded_signal_plus_noise = sd.playrec(
             output_buffer,
             samplerate=samplerate,
-            channels=1, # Number of channels to record, corresponds to len(input_mapping)
-            input_mapping=[input_channel], # 1-based
-            output_mapping=[output_channel], # 1-based
+            device=device_id, # Specify the device
+            channels=1, # Record 1 channel specified by input_mapping
+            input_mapping=[input_channel_idx], # 1-based
+            output_mapping=[output_channel_idx], # 1-based
             blocking=True
         )
         sd.wait() # Ensure playback and recording are finished
         console.print("[green]Signal playback and recording complete.[/green]")
 
         # Record Noise Floor
-        console.print(f"\n[cyan]Preparing to record noise floor from '{input_device_info['name']}' (Channel {input_channel})...[/cyan]")
+        console.print(f"\n[cyan]Preparing to record noise floor from '{device_info['name']}' (Input Channel {input_channel_idx})...[/cyan]")
         console.print("[yellow]Ensure the environment is silent for noise measurement.[/yellow]")
-        # User prompt: input("Press Enter to start noise measurement...")
 
         console.print(f"Recording noise for {noise_duration} seconds...")
         recorded_noise = sd.rec(
             int(noise_duration * samplerate),
             samplerate=samplerate,
-            channels=1, # Number of channels to record
-            mapping=[input_channel], # 1-based
+            device=device_id, # Specify the device
+            channels=1, # Record 1 channel specified by mapping
+            mapping=[input_channel_idx], # 1-based
             blocking=True
         )
         sd.wait() # Ensure recording is finished
         console.print("[green]Noise recording complete.[/green]")
 
         # Calculate RMS
-        # Squeeze to make it 1D if it's 2D with one channel
         if recorded_signal_plus_noise.ndim > 1 and recorded_signal_plus_noise.shape[1] == 1:
             recorded_signal_plus_noise = recorded_signal_plus_noise.squeeze()
         if recorded_noise.ndim > 1 and recorded_noise.shape[1] == 1:
@@ -171,12 +179,7 @@ def measure_snr(output_device_id, input_device_id, output_channel, input_channel
 
         if rms_noise < 1e-12 : # Effectively zero noise
             console.print("[yellow]Warning: RMS of noise is extremely low. SNR might be very high or infinite.[/yellow]")
-            # Avoid division by zero; can return a very large number or handle as 'Infinity'
             return float('inf'), rms_signal_plus_noise, rms_noise
-
-        # Calculate SNR
-        # SNR = 20 * log10 (RMS_signal / RMS_noise)
-        # RMS_signal^2 = RMS_signal+noise^2 - RMS_noise^2
         
         power_signal_plus_noise = rms_signal_plus_noise**2
         power_noise = rms_noise**2
@@ -196,8 +199,8 @@ def measure_snr(output_device_id, input_device_id, output_channel, input_channel
         return snr_db, rms_signal_only_val, rms_noise
 
     except sd.PortAudioError as e:
-        console.print(f"[bold red]PortAudio Error: {e}[/bold red]")
-        console.print("[bold yellow]This might be due to incorrect device IDs, channel configurations, or system audio issues (like libportaudio2 missing).[/bold yellow]")
+        console.print(f"[bold red]PortAudio Error on device {device_id}: {e}[/bold red]")
+        console.print("[bold yellow]This might be due to incorrect device ID, channel configurations, or system audio issues.[/bold yellow]")
         return None, None, None
     except ValueError as e:
         console.print(f"[bold red]ValueError: {e}[/bold red]")
@@ -210,16 +213,21 @@ def measure_snr(output_device_id, input_device_id, output_channel, input_channel
 def main():
     parser = argparse.ArgumentParser(description="SNR (Signal-to-Noise Ratio) Analyzer Tool")
     parser.add_argument("--list_devices", action="store_true", help="List available audio devices and exit.")
-    parser.add_argument("--output_device", type=int, help="ID of the output audio device.")
-    parser.add_argument("--input_device", type=int, help="ID of the input audio device.")
-    parser.add_argument("--output_channel", type=int, default=1, help="Output channel (1-based, default: 1).")
-    parser.add_argument("--input_channel", type=int, default=1, help="Input channel (1-based, default: 1).")
+    
+    parser.add_argument("--device", type=int, required=False, # Will be made required if not list_devices
+                        help="ID of the audio device for both input and output.")
+    
+    parser.add_argument("--output_channel", type=str, default='R', choices=['L', 'R'],
+                        help="Output channel ('L' or 'R'). Default: 'R'.")
+    parser.add_argument("--input_channel", type=str, default='L', choices=['L', 'R'],
+                        help="Input channel ('L' or 'R'). Default: 'L'.")
+    
     parser.add_argument("--samplerate", type=int, default=48000, help="Samplerate in Hz (default: 48000).")
     parser.add_argument("--frequency", type=float, default=1000.0, help="Frequency of the test sine wave in Hz (default: 1000.0).")
     parser.add_argument("--amplitude", type=float, default=0.8, help="Amplitude of the test sine wave (0.0-1.0, default: 0.8).")
     parser.add_argument("--signal_duration", type=float, default=5.0, help="Duration of signal playback/recording in seconds (default: 5.0).")
     parser.add_argument("--noise_duration", type=float, default=5.0, help="Duration of noise floor recording in seconds (default: 5.0).")
-    # parser.add_argument("--signal_file", type=str, help="Path to an audio file to use as the signal (optional).") # Future enhancement
+    # parser.add_argument("--signal_file", type=str, help="Path to an audio file to use as the signal (optional).")
 
     args = parser.parse_args()
 
@@ -227,49 +235,51 @@ def main():
         list_audio_devices()
         return
 
-    if args.output_device is None or args.input_device is None:
-        console.print("[bold red]Error: Both --output_device and --input_device must be specified if not listing devices.[/bold red]")
+    # If not listing devices, --device becomes required.
+    if args.device is None:
+        parser.error("argument --device is required when not listing devices.")
+        
+    try:
+        output_channel_int = map_lr_to_channel_index(args.output_channel)
+        input_channel_int = map_lr_to_channel_index(args.input_channel)
+    except ValueError as e:
+        console.print(f"[bold red]Error: {e}[/bold red]")
         parser.print_help()
         return
-        
-    # Check if system has libportaudio2, if not, install it
+
+    # Check if system has libportaudio2, if not, instruct user.
+    # This check is basic and might not cover all PortAudio installation issues.
     try:
         sd.check_hostapi()
-    except Exception as e: # Broad exception to catch if sounddevice itself is not working due to system deps
+    except Exception as e: 
         if "PortAudio library not found" in str(e) or "portaudio" in str(e).lower():
-            console.print("[bold yellow]PortAudio library seems to be missing. Attempting to install libportaudio2...[/bold yellow]")
-            # This command might need sudo and user interaction, which is problematic here.
-            # For a CLI tool, it's better to instruct the user.
-            console.print("[bold red]Please install libportaudio2: `sudo apt-get install libportaudio2` (or equivalent for your system) and try again.[/bold red]")
-            # In a controlled environment (like a Dockerfile or CI), you could run:
-            # import subprocess
-            # subprocess.run(["sudo", "apt-get", "update"], check=True)
-            # subprocess.run(["sudo", "apt-get", "install", "-y", "libportaudio2"], check=True)
-            # console.print("[green]Attempted to install libportaudio2. Please try running the script again.[/green]")
-            return # Exit after instruction
+            console.print("[bold red]PortAudio library seems to be missing or not configured correctly.[/bold red]")
+            console.print("Please ensure libportaudio2 is installed (e.g., `sudo apt-get install libportaudio2`) and detectable by sounddevice.")
+            return
 
     snr_db, rms_signal, rms_noise = measure_snr(
-        output_device_id=args.output_device,
-        input_device_id=args.input_device,
-        output_channel=args.output_channel,
-        input_channel=args.input_channel,
+        device_id=args.device,
+        output_channel_idx=output_channel_int,
+        input_channel_idx=input_channel_int,
         samplerate=args.samplerate,
         signal_freq=args.frequency,
         signal_amp=args.amplitude,
         signal_duration=args.signal_duration,
         noise_duration=args.noise_duration
-        # signal_file_path=args.signal_file # Future
+        # signal_file_path=args.signal_file
     )
 
     if snr_db is not None:
         table = Table(title="SNR Measurement Results")
-        table.add_column("Parameter", style="cyan")
+        # Using the column headers from the updated README.md
+        table.add_column("Metric", style="cyan")
         table.add_column("Value", style="magenta")
-        table.add_column("Unit", style="green")
+        # table.add_column("Unit", style="green") # Removed as per new README format
 
-        table.add_row("SNR", f"{snr_db:.2f}" if snr_db != float('inf') else "Infinite", "dB")
-        table.add_row("RMS Signal (derived)", f"{rms_signal:.6f}", "Linear") # Assuming uncalibrated units
-        table.add_row("RMS Noise", f"{rms_noise:.6f}", "Linear")
+        table.add_row("SNR", f"{snr_db:.2f} dB" if snr_db != float('inf') else "Infinite dB")
+        # Example Vrms, actual unit depends on calibration. The README suggests this format.
+        table.add_row("RMS Signal (Estimated)", f"{rms_signal:.6f} Vrms") 
+        table.add_row("RMS Noise", f"{rms_noise:.6f} Vrms")
 
         console.print(table)
 
