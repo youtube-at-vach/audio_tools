@@ -167,8 +167,8 @@ class TestSNRAnalyzer(unittest.TestCase):
         if mock_sd_module.check_input_settings.side_effect is None: # Only assert if not configured to fail
             mock_sd_module.check_input_settings.assert_called_once_with(
                 device=device_id_in,
-                channels=1, 
-                mapping=[input_channel_to_test], 
+                channels=1,
+                # mapping argument removed as it's not used by the corrected check_input_settings call
                 samplerate=samplerate
             )
         
@@ -263,12 +263,15 @@ class TestSNRAnalyzer(unittest.TestCase):
         self.assertEqual(results, (None, None, None), "measure_snr should return (None, None, None) on check_input_settings failure.")
         
         mock_sd_module.check_input_settings.assert_called_once_with(
-            device=device_id_in_test, channels=1, mapping=[input_channel_test], samplerate=samplerate_test
+            device=device_id_in_test, channels=1, samplerate=samplerate_test
+            # mapping argument removed
         )
         
         # Check for specific console prints related to check_input_settings failure
         prints = [str(call.args[0]) for call in mock_console_instance.print.call_args_list if call.args]
-        self.assertIn(f"[bold red]Error: Input device {device_id_in_test} (channel {input_channel_test}) does not support the required settings (samplerate: {samplerate_test}Hz) for noise recording.[/bold red]", prints)
+        # This error message was updated in snr_analyzer.py to reflect that check_input_settings doesn't know about specific channels from mapping.
+        expected_error_msg_main = f"[bold red]Error: Input device {device_id_in_test} does not support the required settings (samplerate: {samplerate_test}Hz, channels: 1) for noise recording.[/bold red]"
+        self.assertIn(expected_error_msg_main, prints)
         self.assertIn(f"[bold red]PortAudio Error details: {simulated_error_msg}[/bold red]", prints)
         
         mock_sd_module.rec.assert_not_called() # sd.rec should not be called if check fails
@@ -308,7 +311,8 @@ class TestSNRAnalyzer(unittest.TestCase):
         self.assertEqual(results, (None, None, None), "measure_snr should return (None, None, None) on rec failure.")
         
         mock_sd_module.check_input_settings.assert_called_once_with(
-            device=device_id_in_test, channels=1, mapping=[input_channel_test], samplerate=samplerate_test
+            device=device_id_in_test, channels=1, samplerate=samplerate_test
+            # mapping argument removed
         )
         mock_sd_module.rec.assert_called_once() # Check it was called (even if it failed)
         

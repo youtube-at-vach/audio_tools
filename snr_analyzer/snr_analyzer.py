@@ -129,13 +129,16 @@ def measure_snr(
             console.print(f"Verifying input settings for device {input_device_id} (channel {input_channel}) at {samplerate} Hz...")
             sd.check_input_settings(
                 device=input_device_id,
-                channels=1, # We are recording a single channel via mapping
-                mapping=[input_channel], # The 1-based channel ID
+                channels=1, # Check if the device supports recording at least 1 channel
                 samplerate=samplerate
+                # The 'mapping' argument is not valid for check_input_settings.
+                # Channel-specific validation happens implicitly during sd.rec() if mapping is used there.
             )
             # console.print("[green]Input device settings appear valid for noise recording.[/green]") # Optional success message
         except sd.PortAudioError as e:
-            console.print(f"[bold red]Error: Input device {input_device_id} (channel {input_channel}) does not support the required settings (samplerate: {samplerate}Hz) for noise recording.[/bold red]")
+            # Note: The error message might be less specific now if channel mapping was the true cause of a previous error.
+            # However, the primary check is for device + samplerate + basic channel count.
+            console.print(f"[bold red]Error: Input device {input_device_id} does not support the required settings (samplerate: {samplerate}Hz, channels: 1) for noise recording.[/bold red]")
             console.print(f"[bold red]PortAudio Error details: {e}[/bold red]")
             console.print("Please check the device capabilities (e.g., using --list_devices) or try different settings.")
             raise # Re-raise to be caught by the main PortAudioError handler in measure_snr
