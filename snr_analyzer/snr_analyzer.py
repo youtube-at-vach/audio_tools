@@ -126,27 +126,21 @@ def measure_snr(device_id: int, output_channel_idx: int, input_channel_idx: int,
             console.print(f"[bold red]Error: Input channel {input_channel_idx} is out of range for device {device_id} (1-{max_in_channels}).[/bold red]")
             return None, None, None
 
-        # For sd.playrec, output_mapping and input_mapping use 1-based indexing.
-        # The actual buffer for playback needs 0-based indexing if we construct it manually.
-        output_buffer_channel_0_based = output_channel_idx - 1
-
         # Playback Signal and Record (Signal + Noise)
         console.print(f"\n[cyan]Preparing to play signal on '{device_info['name']}' (Output Channel {output_channel_idx}) and record from '{device_info['name']}' (Input Channel {input_channel_idx})...[/cyan]")
         console.print(f"[yellow]Ensure your audio loopback or measurement setup is ready.[/yellow]")
-
-        # Create an output buffer for all available output channels on the device
-        # then place the signal on the desired channel.
-        output_buffer = np.zeros((len(signal), max_out_channels), dtype=signal.dtype)
-        output_buffer[:, output_buffer_channel_0_based] = signal
         
+        # The 'signal' is a 1D NumPy array.
+        # For sd.playrec, if output_mapping specifies a single channel,
+        # the data should be a 2D array with shape (n_frames, 1).
         console.print("Playing signal and recording (signal + noise)...")
         recorded_signal_plus_noise = sd.playrec(
-            output_buffer,
+            signal.reshape(-1, 1), # Play the mono signal on the specified output_channel_idx
             samplerate=samplerate,
-            device=device_id, # Specify the device
+            device=device_id, 
             channels=1, # Record 1 channel specified by input_mapping
             input_mapping=[input_channel_idx], # 1-based
-            output_mapping=[output_channel_idx], # 1-based
+            output_mapping=[output_channel_idx], # 1-based, directs the single channel from data
             blocking=True
         )
         sd.wait() # Ensure playback and recording are finished
@@ -160,7 +154,7 @@ def measure_snr(device_id: int, output_channel_idx: int, input_channel_idx: int,
         recorded_noise = sd.rec(
             int(noise_duration * samplerate),
             samplerate=samplerate,
-            device=device_id, # Specify the device
+            device=device_id, 
             channels=1, # Record 1 channel specified by mapping
             mapping=[input_channel_idx], # 1-based
             blocking=True
@@ -204,7 +198,7 @@ def measure_snr(device_id: int, output_channel_idx: int, input_channel_idx: int,
         return None, None, None
     except ValueError as e:
         console.print(f"[bold red]ValueError: {e}[/bold red]")
-        console.print("[bold yellow]This could be due to invalid channel numbers for the selected device or other parameter issues.[/bold yellow]")
+        console.print("[bold yellow]This could be due to invalid channel numbers for the selected device, data shape issues, or other parameter problems.[/bold yellow]")
         return None, None, None
     except Exception as e:
         console.print(f"[bold red]An unexpected error occurred: {e}[/bold red]")
