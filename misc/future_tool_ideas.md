@@ -24,3 +24,19 @@ This document lists potential ideas for future audio measurement programs. These
 
 -   **Automated Test Sequencer**:
     A higher-level tool to run a predefined sequence of existing analyzer tools and compile a combined report for comprehensive device testing.
+
+-   **Automated Loopback Path Finder/Tester**:
+    A utility that attempts to automatically detect viable audio loopback paths between output and input channels on a selected audio device. This could simplify the setup process for other measurement tools by identifying which channel combinations form a closed loop, perhaps by sending a specific test signal and scanning inputs for its presence.
+
+-   **Audio Interface Calibration Utility**:
+    A guided tool to help users create basic calibration profiles for their audio interfaces. This could involve:
+    - Measuring a known external hardware calibrator.
+    - Performing a loopback test and assuming a nominally flat response to store relative gain differences between channels or frequency response deviations.
+    - Stored correction factors (e.g., gain offsets, basic EQ curves) could then be optionally applied by other analysis tools to improve measurement accuracy.
+
+-   **Enhanced Distortion Analyzer Suite**:
+    Building upon or complementing existing distortion tools, this suite could offer:
+    - Detailed THD (Total Harmonic Distortion) analysis, including THD vs. frequency sweeps and THD vs. amplitude sweeps.
+    - Broader coverage of IMD (Intermodulation Distortion) test standards (e.g., DIN, CCIF, SMPTE) with more detailed reporting of individual distortion products.
+    - Potentially, analysis of specific harmonic components (H2, H3, etc.).
+```

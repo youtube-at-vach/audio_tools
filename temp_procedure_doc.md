@@ -37,9 +37,18 @@
     -   オーディオストリーミングの要求（連続的な長時間処理か、断続的な短時間処理の繰り返し等）に応じて、`sounddevice`ライブラリの適切な利用方法（コールバック方式の`sd.Stream`か、ブロッキング方式の`sd.playrec`等）を選択します。また、`sd.playrec` のチャンネルマッピングなど、API特有の仕様にも注意します。(Select the appropriate usage method of the `sounddevice` library (e.g., callback-based `sd.Stream` or blocking `sd.playrec`) according to the audio streaming requirements (continuous long-term processing, intermittent repetition of short-term processing, etc.). Also, pay attention to API-specific specifications such as channel mapping for `sd.playrec`.)
     -   `sounddevice`でオーディオデバイスを指定する際、多くの環境でデバイスの整数IDだけでなく、デバイス名（部分的な文字列でも可）も使用できます。これにより、CLIでのユーザーエクスペリエンスが向上する場合があります。(When specifying audio devices with `sounddevice`, device names (even partial strings) can often be used in addition to integer IDs in many environments. This can improve user experience in CLIs.)
     -   **複数チャンネル同時再生録音時の注意点 (Notes on simultaneous multi-channel playback and recording)**:
-        -   特定の出力チャンネルでモノラル信号を再生する場合、`sd.playrec()` に渡す出力バッファをデバイスの最大出力チャンネル数で初期化し、対象チャンネルに信号を配置します（例： `output_buffer = np.zeros((len(mono_signal), device_max_out_ch)); output_buffer[:, target_output_ch_idx] = mono_signal`）。(When playing a mono signal on a specific output channel, initialize the output buffer passed to `sd.playrec()` with the device's maximum number of output channels and place the signal in the target channel (e.g., `output_buffer = np.zeros((len(mono_signal), device_max_out_ch)); output_buffer[:, target_output_ch_idx] = mono_signal`).)
+        -   ~~特定の出力チャンネルでモノラル信号を再生する場合、`sd.playrec()` に渡す出力バッファをデバイスの最大出力チャンネル数で初期化し、対象チャンネルに信号を配置します（例： `output_buffer = np.zeros((len(mono_signal), device_max_out_ch)); output_buffer[:, target_output_ch_idx] = mono_signal`）。(When playing a mono signal on a specific output channel, initialize the output buffer passed to `sd.playrec()` with the device's maximum number of output channels and place the signal in the target channel (e.g., `output_buffer = np.zeros((len(mono_signal), device_max_out_ch)); output_buffer[:, target_output_ch_idx] = mono_signal`).)~~ (この方法は依然として有効ですが、下記の `data` 引数と `output_mapping` に関する注意点がより直接的なアプローチを示す場合があります。)
         -   `sd.playrec()` の `input_mapping` 引数を使用して、録音する物理入力チャンネルを1ベースのインデックスで指定します（例： `sd.playrec(..., input_mapping=[1, 2])` で物理チャンネル1と2を録音）。(Use the `input_mapping` argument of `sd.playrec()` with 1-based indices to specify the physical input channels to record from (e.g., `sd.playrec(..., input_mapping=[1, 2])` to record from physical channels 1 and 2).)
         -   モノラル信号を特定の2チャンネル（例：ステレオ左右）から同一内容で出力する場合（デュアルモノ出力）、`np.tile(mono_signal.reshape(-1, 1), (1, 2))`のようにして2チャンネルのバッファを準備し、`sd.playrec`の`output_mapping`引数で物理出力チャンネルを指定します（例: `output_mapping=[1, 2]`）。(When outputting a mono signal with identical content from two specific channels (e.g., stereo left and right) for dual-mono output, prepare a 2-channel buffer, for example, using `np.tile(mono_signal.reshape(-1, 1), (1, 2))`, and specify the physical output channels using the `output_mapping` argument of `sd.playrec` (e.g., `output_mapping=[1, 2]`)).
+    -   **`sd.playrec()` の `data` 引数と `output_mapping` に関する注意 (Note regarding `sd.playrec()` `data` argument and `output_mapping`):**
+        -   `sd.playrec()` に渡す `data` (再生用Numpy配列) のチャンネル数 (すなわち `data.shape[1]`) は、`output_mapping` リストの要素数と厳密に一致させる必要があります。
+        -   例えば、モノラル信号 (`mono_signal`, 1D配列) を特定の1チャンネル (`target_idx`, 1ベース) のみに出力する場合、`sd.playrec()` の第一引数には `mono_signal.reshape(-1, 1)` のように1チャンネルの2D配列を渡し、`output_mapping=[target_idx]` と指定します。
+    -   **`input_mapping` 使用時の `channels` パラメータ (Regarding `channels` parameter when using `input_mapping`):**
+        -   `sd.rec()` や `sd.playrec()` で `input_mapping` を使用して録音チャンネルを明示的に指定する場合、`channels` パラメータは `len(input_mapping)` と設定します。例えば、`input_mapping=[input_ch_idx]` のように1チャンネルのみを録音対象とする場合、`channels=1` とします。
+    -   **チャンネルインデックスの事前検証 (Pre-validation of channel indices):**
+        -   ユーザーが指定した、またはプログラムが決定したチャンネルインデックス（1ベース）を使用する前に、必ず `sd.query_devices(device_id)['max_output_channels']` や `sd.query_devices(device_id)['max_input_channels']` と比較し、有効な範囲内にあることを確認することが推奨されます。これにより、範囲外のチャンネル指定による実行時エラーを未然に防ぎます。
+    -   **PortAudioライブラリの簡易チェック (Basic check for PortAudio library):**
+        -   `sounddevice` の初期化やデバイスクエリの前に `sd.check_hostapi()` を呼び出すことで、PortAudioシステムライブラリの基本的な存在確認が可能です。これが失敗する場合、ユーザーにPortAudioのインストールや設定を確認するよう促すことができます。（ただし、これは網羅的なチェックではありません。）
 -   **解析処理 (Analysis Processing)**:
     -   FFT、ウィンドウ関数、フィルタリングなど、測定に必要な信号処理を実装します。
     -   `numpy` や `scipy.signal` を活用します。
@@ -110,3 +119,4 @@
 ---
 
 この手順はあくまでガイドラインであり、開発するツールの特性や規模に応じて適宜調整してください。 (This procedure is merely a guideline; please adjust it as appropriate according to the characteristics and scale of the tool being developed.)
+```
