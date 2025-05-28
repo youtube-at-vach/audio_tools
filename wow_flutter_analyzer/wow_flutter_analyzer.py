@@ -265,7 +265,10 @@ def plot_frequency_deviation(time_array, deviation_signal, weighted_deviation_si
     color1 = 'tab:blue'
     ax1.set_xlabel('Time (s)')
     ax1.set_ylabel('Frequency Deviation (Hz)', color=color1)
-    ax1.plot(time_array, main_dev_sig_to_plot, color=color1, alpha=0.8, label=f'{weighting_type} Deviation')
+    if time_array.size > 0 and isinstance(main_dev_sig_to_plot, np.ndarray) and main_dev_sig_to_plot.size > 0:
+        ax1.plot(time_array, main_dev_sig_to_plot, color=color1, alpha=0.8, label=f'{weighting_type} Deviation')
+    elif time_array.size > 0:
+        console.print("[yellow]Warning: Skipping plot for main deviation signal as no valid data was available, though time array exists.[/yellow]")
     ax1.tick_params(axis='y', labelcolor=color1)
     ax1.set_title(f'Frequency Deviation over Time ({weighting_type})')
     ax1.grid(True, which='both', linestyle='--', alpha=0.7)
@@ -293,11 +296,17 @@ def plot_frequency_deviation(time_array, deviation_signal, weighted_deviation_si
         main_dev_sig_percent_to_plot = (main_dev_sig_to_plot / ref_freq) * 100
     elif abs(ref_freq) < 1e-9:
         console.print("[yellow]Warning: Reference frequency is near zero. Percentage deviation plot will be empty.[/yellow]")
+        main_dev_sig_percent_to_plot = [] # Ensure it's an empty list if not plottable
 
-    ax1b.plot(time_array, main_dev_sig_percent_to_plot, color=color2, linestyle='--', alpha=0.7, label=f'{weighting_type} Deviation (%)')
+    if time_array.size > 0 and isinstance(main_dev_sig_percent_to_plot, np.ndarray) and main_dev_sig_percent_to_plot.size > 0:
+        ax1b.plot(time_array, main_dev_sig_percent_to_plot, color=color2, linestyle='--', alpha=0.7, label=f'{weighting_type} Deviation (%)')
+    elif time_array.size > 0:
+        # This warning might be redundant if the one above (ref_freq near zero) already fired
+        if not (abs(ref_freq) < 1e-9 and len(main_dev_sig_to_plot) > 0) : # Avoid double warning
+             console.print("[yellow]Warning: Skipping plot for main deviation signal (percentage) as no valid data was available, though time array exists.[/yellow]")   
     ax1b.tick_params(axis='y', labelcolor=color2)
 
-    if len(main_dev_sig_percent_to_plot) > 0:
+    if isinstance(main_dev_sig_percent_to_plot, np.ndarray) and main_dev_sig_percent_to_plot.size > 0: # Check if it's a plottable array
         min_pct_main = np.nanmin(main_dev_sig_percent_to_plot)
         max_pct_main = np.nanmax(main_dev_sig_percent_to_plot)
         if np.isfinite(min_pct_main) and np.isfinite(max_pct_main):
@@ -311,8 +320,16 @@ def plot_frequency_deviation(time_array, deviation_signal, weighted_deviation_si
 
     # Bottom subplot: Wow and Flutter Components
     # ax2 = axs[1] # Already defined
-    ax2.plot(time_array, wow_sig_to_plot, label='Wow Component', color='orange')
-    ax2.plot(time_array, flutter_sig_to_plot, label='Flutter Component', color='green', alpha=0.7)
+    if time_array.size > 0 and isinstance(wow_sig_to_plot, np.ndarray) and wow_sig_to_plot.size > 0:
+        ax2.plot(time_array, wow_sig_to_plot, label='Wow Component', color='orange')
+    elif time_array.size > 0:
+        console.print("[yellow]Info: Wow component plot skipped as it contains no data.[/yellow]")
+        
+    if time_array.size > 0 and isinstance(flutter_sig_to_plot, np.ndarray) and flutter_sig_to_plot.size > 0:
+        ax2.plot(time_array, flutter_sig_to_plot, label='Flutter Component', color='green', alpha=0.7)
+    elif time_array.size > 0:
+        console.print("[yellow]Info: Flutter component plot skipped as it contains no data.[/yellow]")
+        
     ax2.set_xlabel('Time (s)')
     ax2.set_ylabel('Frequency Deviation (Hz)')
     ax2.set_title(f'Wow and Flutter Components ({weighting_type})')
@@ -355,6 +372,8 @@ def plot_frequency_deviation(time_array, deviation_signal, weighted_deviation_si
     elif abs(ref_freq) < 1e-9 and len(combined_wf_for_ylim) > 0:
          console.print("[yellow]Warning: Ref freq near zero, cannot plot % deviation for wow/flutter.[/yellow]")
     # If combined_wf_for_ylim is empty, this axis will be empty too.
+    elif len(combined_wf_for_ylim) == 0 and time_array.size > 0: # if no data for y axis but time axis exists
+        pass # Let it autoscale or be empty, no specific warning here as component specific ones are above
 
     ax2b.tick_params(axis='y', labelcolor=color2)
 

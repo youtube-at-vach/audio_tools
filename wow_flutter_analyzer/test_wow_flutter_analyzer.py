@@ -393,6 +393,107 @@ class TestWowFlutterAnalyzer(unittest.TestCase):
         except Exception as e:
             self.fail(f"plot_deviation_spectrum raised an exception with bad data: {e}")
 
+    @patch('matplotlib.pyplot.show')
+    @patch('matplotlib.pyplot.savefig')
+    @patch('matplotlib.pyplot.close')
+    def test_plot_frequency_deviation_empty_signal_component(self, mock_close, mock_savefig, mock_show):
+        """
+        Tests that plot_frequency_deviation handles cases where one or more
+        signal components are empty, while time_array is valid.
+        This specifically targets the ValueError for shape mismatch.
+        """
+        sample_rate = 48000
+        duration = 1.0 # seconds
+        num_samples = int(sample_rate * duration)
+        time_array = np.linspace(0, duration, num_samples, endpoint=False)
+        
+        # Valid signals for some components
+        valid_deviation_signal = generate_sine_wave(3150, duration, sample_rate, 0.8)
+        valid_flutter_signal = generate_sine_wave(10, duration, sample_rate, 0.1) # 10Hz flutter
+        valid_wow_signal = generate_sine_wave(1, duration, sample_rate, 0.2)      # 1Hz wow
+
+        # Empty signal for one component
+        empty_signal = np.array([])
+        
+        weighting_type = "Unweighted"
+        ref_freq = 3150.0
+        output_dir = None
+
+        try:
+            # Scenario 1: Wow signal is empty, Flutter is valid
+            print("Testing plot_frequency_deviation: Wow empty, Flutter valid")
+            wow_flutter_analyzer.plot_frequency_deviation(
+                time_array,
+                valid_deviation_signal, # deviation_signal
+                valid_deviation_signal, # weighted_deviation_signal (same for unweighted)
+                empty_signal,           # wow_signal
+                valid_flutter_signal,   # flutter_signal
+                weighting_type,
+                output_dir,
+                ref_freq
+            )
+            
+            # Scenario 2: Flutter signal is empty, Wow is valid
+            print("Testing plot_frequency_deviation: Wow valid, Flutter empty")
+            wow_flutter_analyzer.plot_frequency_deviation(
+                time_array,
+                valid_deviation_signal, # deviation_signal
+                valid_deviation_signal, # weighted_deviation_signal
+                valid_wow_signal,       # wow_signal
+                empty_signal,           # flutter_signal
+                weighting_type,
+                output_dir,
+                ref_freq
+            )
+
+            # Scenario 3: All optional components (wow, flutter) are empty
+            print("Testing plot_frequency_deviation: Wow empty, Flutter empty")
+            wow_flutter_analyzer.plot_frequency_deviation(
+                time_array,
+                valid_deviation_signal, # deviation_signal
+                valid_deviation_signal, # weighted_deviation_signal
+                empty_signal,           # wow_signal
+                empty_signal,           # flutter_signal
+                weighting_type,
+                output_dir,
+                ref_freq
+            )
+            
+            # Scenario 4: Main deviation signals are empty too
+            # The function is designed to handle this based on previous robust plotting changes.
+            # The specific ValueError was about non-empty time vs empty component.
+            print("Testing plot_frequency_deviation: All signals (main, wow, flutter) empty")
+            wow_flutter_analyzer.plot_frequency_deviation(
+                time_array,
+                empty_signal,           # deviation_signal
+                empty_signal,           # weighted_deviation_signal
+                empty_signal,           # wow_signal
+                empty_signal,           # flutter_signal
+                weighting_type,
+                output_dir,
+                ref_freq
+            )
+            
+            # Scenario 5: Time array is empty (should also not crash, plot should be skipped by guards)
+            print("Testing plot_frequency_deviation: Time array empty")
+            wow_flutter_analyzer.plot_frequency_deviation(
+                np.array([]),
+                valid_deviation_signal,
+                valid_deviation_signal,
+                valid_wow_signal,
+                valid_flutter_signal,
+                weighting_type,
+                output_dir,
+                ref_freq
+            )
+
+            self.assertTrue(True) # If all calls complete without ValueError or other exceptions
+
+        except ValueError as ve:
+            self.fail(f"plot_frequency_deviation raised ValueError with empty component: {ve}")
+        except Exception as e:
+            self.fail(f"plot_frequency_deviation raised an unexpected exception with empty component: {e}")
+
 
 if __name__ == '__main__':
     unittest.main()
