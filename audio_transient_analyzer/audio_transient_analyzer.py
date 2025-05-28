@@ -1,23 +1,28 @@
 import argparse
 import numpy as np
-import sounddevice as sd
-from rich.console import Console # Removed ErrorConsole
+# import sounddevice as sd # Replaced by common_audio_lib
+from rich.console import Console 
 from rich.table import Table
-from rich.prompt import Prompt
+from rich.prompt import Prompt # Kept for select_audio_device if not using common one directly
 import sys
 import math
-import numpy as np # Ensure numpy is imported, though it was already present
-from scipy.signal import windows # For tukey window, and hanning if not using np.hanning
-import csv # For CSV output
-from typing import Optional, Union # Added for 3.8+ compatibility
+# import numpy as np # Already imported
+from scipy.signal import windows # Kept for tukey window
+# import csv # Replaced by common_audio_lib
+from typing import Optional, Union
 
-def dbfs_to_linear(dbfs: float) -> float:
-    """Converts a dBFS value to a linear amplitude value (0 dBFS = 1.0 linear)."""
-    return 10**(dbfs / 20.0)
+# Common Audio Library Imports
+from common_audio_lib.audio_device_manager import select_audio_device, get_device_info
+from common_audio_lib.signal_processing_utils import dbfs_to_linear
+from common_audio_lib.audio_io_utils import resolve_channel_specifier, play_and_record
+from common_audio_lib.output_formatting_utils import save_results_to_csv
+
+
+# dbfs_to_linear is removed, using common_audio_lib.signal_processing_utils.dbfs_to_linear
 
 def generate_impulse(amplitude_dbfs: float, sample_rate: int) -> np.ndarray:
-    """Generates a simple impulse signal."""
-    amplitude_linear = dbfs_to_linear(amplitude_dbfs)
+    """Generates a simple impulse signal. Uses common dbfs_to_linear."""
+    amplitude_linear = dbfs_to_linear(amplitude_dbfs) # Use common lib
     # Create a short signal, e.g., 10 samples, with the impulse at the first sample.
     # impulse_signal = np.zeros(10)
     # A slightly longer impulse might be better for some sound cards, 1ms.
@@ -33,111 +38,30 @@ def generate_impulse(amplitude_dbfs: float, sample_rate: int) -> np.ndarray:
 
 
 def generate_tone_burst(frequency: float, amplitude_dbfs: float, cycles: int, envelope_type: str, sample_rate: int) -> np.ndarray:
-    """Generates a tone burst signal."""
-    amplitude_linear = dbfs_to_linear(amplitude_dbfs)
+    """Generates a tone burst signal. Uses common dbfs_to_linear."""
+    amplitude_linear = dbfs_to_linear(amplitude_dbfs) # Use common lib
     num_samples_burst = int(cycles * sample_rate / frequency)
     if num_samples_burst == 0:
-        # This can happen if cycles is too low or freq too high for the sample rate
-        # Return a single sample impulse as a fallback or handle error appropriately
-        return generate_impulse(amplitude_dbfs, sample_rate)
-
+        return generate_impulse(amplitude_dbfs, sample_rate) # Fallback to impulse
 
     t = np.linspace(0, cycles / frequency, num_samples_burst, endpoint=False)
     wave = amplitude_linear * np.sin(2 * np.pi * frequency * t)
 
     if envelope_type == 'hann':
-        if num_samples_burst > 0: # Hanning window requires non-zero length
+        if num_samples_burst > 0:
             envelope = np.hanning(num_samples_burst)
             wave *= envelope
-    elif envelope_type == 'tukey': # Assuming scipy.signal.windows is available
-        if num_samples_burst > 0: # Tukey window requires non-zero length
-            envelope = windows.tukey(num_samples_burst, alpha=0.5) # alpha=0.5 is a common choice
+    elif envelope_type == 'tukey': 
+        if num_samples_burst > 0:
+            envelope = windows.tukey(num_samples_burst, alpha=0.5)
             wave *= envelope
-    # Rectangular is default (no change or multiply by ones)
     
     return np.clip(wave, -1.0, 1.0)
 
-def play_and_record(
-    signal_to_play: np.ndarray, 
-    sample_rate: int, 
-    play_device_idx: int, 
-    output_channel_device_idx: int, 
-    input_channel_device_idx: int, 
-    record_duration_samples: int, 
-    device_info_obj,
-    console: Console,
-    error_console: Console # Changed ErrorConsole to Console
-) -> Optional[np.ndarray]: # Changed from "np.ndarray | None" to "Optional[np.ndarray]"
-    """Plays a signal on a specific output channel and records from a specific input channel."""
-    try:
-        device_max_output_ch = device_info_obj['max_output_channels']
-        
-        # Create an output buffer for all device channels, padded to record_duration_samples
-        output_buffer_padded = np.zeros((record_duration_samples, device_max_output_ch), dtype=signal_to_play.dtype)
-        
-        # Ensure signal_to_play is not longer than record_duration_samples
-        play_len = min(len(signal_to_play), record_duration_samples)
-        
-        # Place the signal_to_play into the correct output channel
-        output_buffer_padded[:play_len, output_channel_device_idx] = signal_to_play[:play_len]
+# play_and_record is removed, using common_audio_lib.audio_io_utils.play_and_record
 
-        console.print(f"Playing signal on device {play_device_idx}, output channel index {output_channel_device_idx}, "
-                      f"recording from input channel index {input_channel_device_idx} (all available input channels will be recorded).") # Updated message
-        console.print(f"Output buffer shape: {output_buffer_padded.shape}, Max output channels: {device_max_output_ch}")
-        # console.print(f"Input mapping: {[input_channel_device_idx + 1]}") # Removed as input_mapping is removed
-
-
-        recorded_audio = sd.playrec(
-            output_buffer_padded,
-            samplerate=sample_rate,
-            channels=output_buffer_padded.shape[1], # Number of output channels for the device
-            # input_mapping argument removed
-            device=play_device_idx,
-            blocking=True
-        )
-        
-        # New logic for handling recorded_audio
-        if recorded_audio is None: # Should ideally not be hit if playrec itself fails and raises error
-            error_console.print("Playrec returned None unexpectedly.")
-            return None
-
-        num_recorded_channels = 0
-        if recorded_audio.ndim == 1:
-            num_recorded_channels = 1
-        elif recorded_audio.ndim == 2:
-            num_recorded_channels = recorded_audio.shape[1]
-        else:
-            error_console.print(f"Unexpected shape for recorded audio: {recorded_audio.shape}")
-            return None
-        
-        if num_recorded_channels == 0:
-            error_console.print("No audio data recorded (0 channels).")
-            return None
-
-        if not (0 <= input_channel_device_idx < num_recorded_channels):
-            error_console.print(f"Error: Desired input channel index ({input_channel_device_idx}) is out of range "
-                                f"for the {num_recorded_channels} channel(s) actually recorded by the device.")
-            error_console.print(f"Please check your --input_channel argument and device capabilities.")
-            return None
-
-        if recorded_audio.ndim == 1:
-            single_channel_audio = recorded_audio # Assumes input_channel_device_idx must be 0 here
-        else: # recorded_audio.ndim == 2
-            single_channel_audio = recorded_audio[:, input_channel_device_idx]
-        
-        return single_channel_audio
-
-    except sd.PortAudioError as e:
-        error_console.print(f"[bold red]PortAudioError during playback/recording: {e}[/bold red]")
-        error_console.print("This could be due to incorrect device ID, channel selection, sample rate, or other device-specific issues.")
-        error_console.print(f"Device Info: {device_info_obj}")
-        error_console.print(f"Selected SR: {sample_rate}, Output Ch Idx: {output_channel_device_idx}, Input Ch Idx: {input_channel_device_idx}")
-        return None
-    except Exception as e:
-        error_console.print(f"[bold red]An unexpected error occurred in play_and_record: {e}[/bold red]")
-        return None
-
-# Analysis functions
+# Analysis functions (find_signal_start, calculate_rise_time, calculate_overshoot, calculate_settling_time)
+# remain local and unchanged as they are specific to this analyzer's logic.
 def find_signal_start(audio_data: np.ndarray, sample_rate: int, threshold_factor: float = 0.05, pre_trigger_samples: int = 10) -> int:
     """
     Finds the first point that robustly exceeds a threshold and returns an index 
@@ -325,90 +249,18 @@ def calculate_settling_time(audio_data: np.ndarray, sample_rate: int, start_inde
     else:
         return 0.0 # Did not settle within the analyzed part of the segment
 
-def select_device(console: Console, error_console: Console): # Changed ErrorConsole to Console
-    """Lists available audio devices and allows the user to select one."""
-    try:
-        devices = sd.query_devices()
-    except Exception as e:
-        error_console.print(f"Error querying audio devices: {e}")
-        sys.exit(1)
-
-    input_devices = [dev for dev in devices if dev['max_input_channels'] > 0]
-    output_devices = [dev for dev in devices if dev['max_output_channels'] > 0]
-
-    if not input_devices or not output_devices:
-        error_console.print("No suitable input/output devices found.")
-        sys.exit(1)
-
-    console.print("Available audio devices:")
-    table = Table(show_header=True, header_style="bold magenta")
-    table.add_column("ID", style="dim", width=4)
-    table.add_column("Name")
-    table.add_column("API")
-    table.add_column("In (Ch)", style="green")
-    table.add_column("Out (Ch)", style="blue")
-    table.add_column("Default SR (Hz)", style="yellow")
-
-    for i, device in enumerate(devices):
-        table.add_row(
-            str(i),
-            device['name'],
-            device.get('hostapi_name', 'N/A'), # Changed to use .get()
-            str(device['max_input_channels']),
-            str(device['max_output_channels']),
-            str(int(device['default_samplerate'])),
-        )
-    console.print(table)
-
-    while True:
-        try:
-            device_id_str = Prompt.ask("Select device ID")
-            device_id = int(device_id_str)
-            if not (0 <= device_id < len(devices)):
-                error_console.print(f"Invalid device ID. Please choose between 0 and {len(devices) - 1}.")
-                continue
-            selected_device = devices[device_id]
-            if selected_device['max_input_channels'] == 0 or selected_device['max_output_channels'] == 0:
-                error_console.print(f"Device ID {device_id} ('{selected_device['name']}') does not support both input and output.")
-                continue
-            return device_id, selected_device
-        except ValueError:
-            error_console.print("Invalid input. Please enter a numeric ID.")
-        except Exception as e:
-            error_console.print(f"An unexpected error occurred: {e}")
-            sys.exit(1)
-
-def channel_spec_to_index(channel_spec, device_channels, channel_type="output"):
-    """Converts channel specifier ('L', 'R', or numeric string) to a 0-based integer index."""
-    if isinstance(channel_spec, str):
-        if channel_spec.upper() == 'L':
-            return 0
-        elif channel_spec.upper() == 'R':
-            if device_channels < 2:
-                raise ValueError(f"Device does not have a Right {channel_type} channel.")
-            return 1
-        elif channel_spec.isdigit():
-            idx = int(channel_spec) - 1
-            if not (0 <= idx < device_channels):
-                raise ValueError(f"Invalid {channel_type} channel index '{channel_spec}'. Must be between 1 and {device_channels}.")
-            return idx
-        else:
-            raise ValueError(f"Invalid {channel_type} channel specifier '{channel_spec}'. Use 'L', 'R', or a numeric index.")
-    else: # Assuming it's already an int (e.g. from argparse default if not overridden)
-        idx = channel_spec -1
-        if not (0 <= idx < device_channels):
-                raise ValueError(f"Invalid {channel_type} channel index '{channel_spec}'. Must be between 1 and {device_channels}.")
-        return idx
+# select_device is removed, using common_audio_lib.audio_device_manager.select_audio_device
+# channel_spec_to_index is removed, using common_audio_lib.audio_io_utils.resolve_channel_specifier
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Audio Transient Analyzer")
     parser.add_argument('--signal_type', choices=['impulse', 'tone_burst'], default='impulse', help='Type of transient signal to generate')
     parser.add_argument('--amplitude', type=float, default=-6.0, help='Amplitude of the test signal in dBFS. Must be <= 0')
-    parser.add_argument('--device', type=int, help='Audio device ID. Prompts if not provided')
+    parser.add_argument('--device', type=str, help="Audio device ID or name. Prompts if not provided. Use common_audio_lib's listing to see options.") # Changed type to str
     parser.add_argument('--sample_rate', type=int, default=48000, help='Sampling rate in Hz')
-    parser.add_argument('--output_channel', type=str, default='L', help="Output channel for test signal (e.g., 'L', 'R', or a 1-based numeric index like '1', '2', ...)")
-    parser.add_argument('--input_channel', type=str, default='L', help="Input channel for recording (e.g., 'L', 'R', or a 1-based numeric index like '1', '2', ...)")
+    parser.add_argument('--output_channel', type=str, default='L', help="Output channel for test signal (e.g., 'L', 'R', or a 0-based numeric index like '0', '1', ...)")
+    parser.add_argument('--input_channel', type=str, default='L', help="Input channel for recording (e.g., 'L', 'R', or a 0-based numeric index like '0', '1', ...)")
     parser.add_argument('--duration', type=float, default=0.1, help='Duration of the recording in seconds. Must be positive')
     parser.add_argument('--burst_freq', type=float, default=1000.0, help="Frequency of the tone burst in Hz (for signal_type 'tone_burst'). Must be positive")
     parser.add_argument('--burst_cycles', type=int, default=10, help="Number of cycles in the tone burst (for signal_type 'tone_burst'). Must be positive")
@@ -435,32 +287,57 @@ if __name__ == '__main__':
             error_console.print("Error: Burst cycles must be positive for tone_burst signal type.")
             sys.exit(1)
 
-    selected_device_id = args.device
-    device_info = None
+    selected_device_id_arg = args.device # Can be None, int ID, or name string
+    device_info = None # Will be populated by common lib functions
 
-    if selected_device_id is None:
-        selected_device_id, device_info = select_device(console, error_console)
+    if selected_device_id_arg is None:
+        # Prompt user to select a device using common_audio_lib
+        selected_device_id = select_audio_device(console, require_input=True, require_output=True)
+        if selected_device_id is None: # User cancelled or error in selection
+            error_console.print("No device selected. Exiting.")
+            sys.exit(1)
+        device_info = get_device_info(selected_device_id) # Get info for the chosen ID
     else:
+        # User provided a device ID or name string
         try:
-            devices = sd.query_devices()
-            if not (0 <= selected_device_id < len(devices)):
-                error_console.print(f"Error: Device ID {selected_device_id} is invalid.")
-                sys.exit(1)
-            device_info = devices[selected_device_id]
+            # Try to parse as int first
+            parsed_id_candidate = int(selected_device_id_arg)
+            selected_device_id = parsed_id_candidate # It's an integer ID
+        except ValueError:
+            selected_device_id = selected_device_id_arg # It's a name string
+        
+        # Validate and get full info using common_audio_lib
+        try:
+            device_info = get_device_info(selected_device_id) # Resolves name or validates ID
+            if not device_info: # Should not happen if get_device_info raises error on failure
+                 error_console.print(f"Could not retrieve information for device specifier '{selected_device_id_arg}'.")
+                 sys.exit(1)
+            selected_device_id = device_info['index'] # Ensure we have the integer ID
             if device_info['max_input_channels'] == 0 or device_info['max_output_channels'] == 0:
                 error_console.print(f"Error: Device '{device_info['name']}' (ID: {selected_device_id}) must support both input and output.")
                 sys.exit(1)
-        except Exception as e:
-            error_console.print(f"Error accessing device ID {selected_device_id}: {e}")
+        except ValueError as e: # From get_device_info if device not found/invalid
+            error_console.print(f"Error with device specifier '{selected_device_id_arg}': {e}")
             sys.exit(1)
 
     console.print(f"Using device: ID {selected_device_id} - {device_info['name']}")
 
-    try:
-        output_channel_idx = channel_spec_to_index(args.output_channel, device_info['max_output_channels'], "output")
-        input_channel_idx = channel_spec_to_index(args.input_channel, device_info['max_input_channels'], "input")
-    except ValueError as e:
-        error_console.print(f"Error: {e}")
+    # Use common_audio_lib.audio_io_utils.resolve_channel_specifier
+    # Assumes resolve_channel_specifier handles 'L', 'R', or 0-based numeric strings.
+    # Argparse help text updated to guide user for 0-based or L/R.
+    output_channel_idx = resolve_channel_specifier(
+        args.output_channel, device_info['max_output_channels'], "output", error_console
+    )
+    if output_channel_idx is None: sys.exit(1)
+    
+    input_channel_idx = resolve_channel_specifier(
+        args.input_channel, device_info['max_input_channels'], "input", error_console
+    )
+    if input_channel_idx is None: sys.exit(1)
+
+
+    # Parameter display and signal generation logic remains largely the same,
+    # but play_and_record call will be different.
         sys.exit(1)
 
     console.print("\nSelected Parameters:")
@@ -501,27 +378,27 @@ if __name__ == '__main__':
 
     if test_signal is not None:
         console.print(f"Test signal peak amplitude: {np.max(np.abs(test_signal)):.4f} linear")
-
-        record_duration_samples = int(args.duration * args.sample_rate)
         
-        console.print(f"Preparing for playback and recording: Duration {args.duration}s ({record_duration_samples} samples)")
+        console.print(f"Preparing for playback and recording: Duration {args.duration}s")
 
-        recorded_audio = play_and_record(
-            signal_to_play=test_signal,
+        # Use common_audio_lib.audio_io_utils.play_and_record
+        # It expects a list for input_channel_device_indices_0based_list.
+        # It returns a 2D array [samples, channels] or None on failure.
+        recorded_audio_multi_ch = play_and_record(
+            device_id=selected_device_id,
+            signal_to_play_mono=test_signal,
             sample_rate=args.sample_rate,
-            play_device_idx=selected_device_id, # This is the actual device ID
-            output_channel_device_idx=output_channel_idx, # This is the 0-based index for the chosen channel on the device
-            input_channel_device_idx=input_channel_idx,   # This is the 0-based index for the chosen channel on the device
-            record_duration_samples=record_duration_samples,
-            device_info_obj=device_info, # Full device info object
-            console=console,
+            output_channel_device_idx_0based=output_channel_idx,
+            input_channel_device_indices_0based_list=[input_channel_idx], # Pass as a list
+            record_duration_secs=args.duration,
             error_console=error_console
         )
 
-        if recorded_audio is not None:
+        if recorded_audio_multi_ch is not None and recorded_audio_multi_ch.ndim == 2 and recorded_audio_multi_ch.shape[1] >= 1:
+            recorded_audio = recorded_audio_multi_ch[:, 0] # Select the first (and only specified) input channel
             console.print(f"Playback and recording complete. Length of recorded audio: {len(recorded_audio)} samples.")
             
-            # Analyze the recorded audio
+            # Analyze the recorded audio (analysis functions remain local)
             console.print("\nAnalyzing recorded audio...")
             
             # Use a pre-trigger of e.g. 50 samples, or make it configurable if needed
@@ -569,29 +446,26 @@ if __name__ == '__main__':
 
             # --- Save results to CSV if requested ---
             if args.output_csv:
-                csv_data = [
-                    ['Parameter', 'Value'],
-                    ['Signal Type', args.signal_type],
+                # Convert list of lists to list of dicts for save_results_to_csv
+                csv_data_rows = [
+                    {'Parameter': 'Signal Type', 'Value': args.signal_type}
                 ]
                 if args.signal_type == 'tone_burst':
-                    csv_data.append(['Test Frequency (Hz)', f"{args.burst_freq:.1f}"])
-                csv_data.extend([
-                    ['Peak Amplitude (Recorded)', f"{peak_amplitude_recorded:.4f}"],
-                    ['Rise Time (s)', f"{rise_time:.4f}"],
-                    ['Overshoot (%)', f"{overshoot:.2f}"],
-                    ['Settling Time (s)', f"{settling_time:.4f}"],
+                    csv_data_rows.append({'Parameter': 'Test Frequency (Hz)', 'Value': f"{args.burst_freq:.1f}"})
+                
+                csv_data_rows.extend([
+                    {'Parameter': 'Peak Amplitude (Recorded)', 'Value': f"{peak_amplitude_recorded:.4f}"},
+                    {'Parameter': 'Rise Time (s)', 'Value': f"{rise_time:.4f}"},
+                    {'Parameter': 'Overshoot (%)', 'Value': f"{overshoot:.2f}"},
+                    {'Parameter': 'Settling Time (s)', 'Value': f"{settling_time:.4f}"}
                 ])
                 
-                try:
-                    with open(args.output_csv, 'w', newline='') as csvfile:
-                        writer = csv.writer(csvfile)
-                        writer.writerows(csv_data)
-                    console.print(f"\n[green]Results saved to {args.output_csv}[/green]")
-                except IOError as e:
-                    error_console.print(f"\n[bold red]Error saving CSV file {args.output_csv}: {e}[/bold red]")
+                csv_fieldnames = ['Parameter', 'Value']
+                save_results_to_csv(args.output_csv, csv_data_rows, csv_fieldnames, console=console)
+                # save_results_to_csv prints its own success/error message.
 
         else:
-            error_console.print("Failed to record audio. Skipping analysis.")
+            error_console.print("Failed to record audio or recorded audio has unexpected format. Skipping analysis.")
     else:
         error_console.print("Test signal generation failed. Skipping playback and recording.")
 

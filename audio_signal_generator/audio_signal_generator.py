@@ -17,12 +17,25 @@ import numpy as np
 import soundfile as sf
 import argparse
 
-# 指定された周波数のサイン波を生成する関数
+# Common Audio Library Imports
+from common_audio_lib.audio_io_utils import generate_sine_wave as common_generate_sine_wave
+from common_audio_lib.signal_processing_utils import dbfs_to_linear
+
+
+# 指定された周波数のサイン波を生成する関数 (Refactored to use common_audio_lib)
 def generate_tone(frequency, duration, sample_rate):
-    # 時間軸の配列を作成
-    t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
-    # サイン波を生成 (振幅0.5)
-    tone = np.sin(2 * np.pi * frequency * t)
+    # Option B: Call common_generate_sine_wave with a high reference amplitude (e.g., -0.1 dBFS).
+    # save_tone_to_wav will then normalize this and scale to the user-specified args.dbfs.
+    # The phase argument for common_generate_sine_wave defaults to 0.0, which is fine.
+    # Amplitude is specified in dBFS.
+    # common_generate_sine_wave(frequency: float, amplitude_dbfs: float, duration: float, sample_rate: float, phase: float = 0.0)
+    reference_dbfs_for_generation = -0.1 # High amplitude, but with a tiny bit of headroom
+    tone = common_generate_sine_wave(
+        frequency=frequency,
+        amplitude_dbfs=reference_dbfs_for_generation,
+        duration=duration,
+        sample_rate=sample_rate
+    )
     return tone
 
 #  
@@ -187,18 +200,39 @@ def save_tone_to_wav(filename, tone, sample_rate, bit_depth, fade_duration=None,
         tone = apply_fade(tone, sample_rate, fade_duration)
 
     # dBFS値に基づいて振幅を調整
-    amplitude = 10**(dbfs / 20)
-    tone = tone / np.max(np.abs(tone)) * amplitude
+    # The input 'tone' from the refactored generate_tone is already scaled (e.g. to -0.1 dBFS).
+    # We still normalize it to ensure its peak is 1.0 before applying the final dbfs scaling.
+    # This makes the behavior consistent regardless of the exact peak of the input 'tone'.
+    max_abs_val = np.max(np.abs(tone))
+    if max_abs_val > 1e-9: # Avoid division by zero or by very small numbers if signal is silent
+        normalized_tone = tone / max_abs_val
+    else: # Signal is effectively silent
+        normalized_tone = tone # Keep it as is (all zeros or very small values)
+
+    # Convert target dbfs to linear scale using common_audio_lib function
+    target_linear_amplitude = dbfs_to_linear(dbfs)
+    
+    # Scale the normalized tone to the target linear amplitude
+    scaled_tone = normalized_tone * target_linear_amplitude
+    
+    # Ensure the final scaled tone does not exceed [-1.0, 1.0] due to any potential float precision issues
+    # or if dbfs > 0 was requested (though typically dbfs <= 0).
+    # common_generate_sine_wave already clips, but this is a final safety for this function's output.
+    final_tone_to_save = np.clip(scaled_tone, -1.0, 1.0)
+
 
     # ビット深度に応じてデータを変換
     if bit_depth == '16':
-        audio_data = np.int16(tone * 32767)
+        audio_data = np.int16(final_tone_to_save * 32767)
     elif bit_depth == '24':
-        audio_data = np.int32(tone * 2147483647) 
-    elif bit_depth == '32':
-        audio_data = np.int32(tone * 2147483647)
-    elif bit_depth == 'float':
-        audio_data = tone.astype(np.float32)
+        # For 24-bit, soundfile expects data to be scaled as if it were int32,
+        # but it will be written as 24-bit.
+        # Scaling to int32 range then letting soundfile handle PCM_24 subtype is correct.
+        audio_data = np.int32(final_tone_to_save * 2147483647) 
+    elif bit_depth == '32': # PCM_32 (integer)
+        audio_data = np.int32(final_tone_to_save * 2147483647)
+    elif bit_depth == 'float': # FLOAT (32-bit float)
+        audio_data = final_tone_to_save.astype(np.float32)
     else:
         raise ValueError("ビット深度は16, 24, 32, または'float'で指定してください。")
 

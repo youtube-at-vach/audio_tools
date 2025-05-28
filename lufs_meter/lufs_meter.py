@@ -2,10 +2,14 @@ import soundfile as sf
 import numpy as np
 from scipy import signal
 import argparse
-import csv
+# import csv # Removed
 from typing import Tuple, List, Dict, Optional, Union, Any
 from rich.console import Console
 from rich.table import Table
+# import sounddevice as sd # Unused import removed
+
+# Common Audio Library Imports
+from common_audio_lib.output_formatting_utils import save_results_to_csv as common_save_results_to_csv
 from rich.panel import Panel
 from rich.text import Text
 
@@ -310,42 +314,24 @@ def format_value(value: float, unit: str, target: Optional[float] = None) -> Tex
     text = Text()
     if value == -np.inf:
         text.append("-INF ", style="dim")
-    elif value == np.nan or value is None:
-        text.append("Undefined ", style="dim")
+    elif value == np.nan or value is None: # Check for np.nan specifically
+        text.append("N/A ", style="dim") # Changed "Undefined" to "N/A" for consistency
     else:
         text.append(f"{value:.1f} ", style="bold")
-        if unit == "LUFS" and target is not None:
+        if unit == "LUFS" and target is not None and not np.isnan(target): # Ensure target is also valid
             diff = value - target
-            if diff > 0:
+            # Add a small tolerance for "at target"
+            if abs(diff) <= 0.05: # e.g. within +/- 0.05 LU
+                 text.append(f"(at target)", style="green")
+            elif diff > 0:
                 text.append(f"({diff:+.1f} vs target)", style="red")
-            else:
+            else: # diff < 0
                 text.append(f"({diff:+.1f} vs target)", style="green")
     text.append(unit, style="dim")
     return text
 
 
-def save_results_to_csv(filepath: str, results: Dict[str, Any], headers: List[str]):
-    """Saves the loudness measurement results to a CSV file."""
-    try:
-        with open(filepath, 'w', newline='') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=headers)
-            writer.writeheader()
-            # Prepare a row with formatted values, handling None for Target Loudness
-            row_to_write: Dict[str, str] = {} # Ensure row_to_write keys are strings
-            for header in headers:
-                val = results.get(header)
-                if isinstance(val, float) and val == -np.inf:
-                    row_to_write[header] = "-INF"
-                elif val is None or (isinstance(val, float) and np.isnan(val)):
-                    row_to_write[header] = "N/A" # Or "Undefined"
-                elif isinstance(val, float):
-                     row_to_write[header] = f"{val:.1f}"
-                else: # Should not happen if results dict is structured correctly, but good to handle
-                    row_to_write[header] = str(val) if val is not None else "N/A"
-            writer.writerow(row_to_write)
-        print(f"Info: Results saved to '{filepath}'")
-    except IOError as e:
-        print(f"Error: Could not write to CSV file '{filepath}'. Reason: {e}")
+# Local save_results_to_csv function removed. Will use common_save_results_to_csv.
 
 
 def main():
@@ -451,8 +437,11 @@ def main():
             "Target Loudness LUFS": args.target_loudness if args.target_loudness is not None else np.nan
         }
         # Ensure headers match the keys in results_data, including Filepath and Target
-        csv_headers = ["Filepath", "Integrated LUFS", "Loudness Range LU", "Max Momentary LUFS", "Max Short-Term LUFS", "True Peak dBTP", "Target Loudness LUFS"]
-        save_results_to_csv(args.output_file, results_data, csv_headers)
+        csv_fieldnames = ["Filepath", "Integrated LUFS", "Loudness Range LU", "Max Momentary LUFS", "Max Short-Term LUFS", "True Peak dBTP", "Target Loudness LUFS"]
+        # common_save_results_to_csv expects a list of dictionaries.
+        # Here, results_data is a single dictionary representing one row.
+        common_save_results_to_csv(args.output_file, [results_data], csv_fieldnames, console=console)
+        # The common function prints its own success/error message.
 
 
 if __name__ == "__main__":
