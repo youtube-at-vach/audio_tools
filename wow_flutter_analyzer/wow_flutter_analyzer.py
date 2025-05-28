@@ -232,56 +232,133 @@ def plot_frequency_deviation(time_array, deviation_signal, weighted_deviation_si
     Plots frequency deviation, wow, and flutter components over time.
     """
     fig, axs = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+    ax1, ax2 = axs[0], axs[1] # Unpack axes
 
     # Determine which signal to plot for the main deviation plot
-    main_deviation_signal = weighted_deviation_signal if weighting_type != 'unweighted' else deviation_signal
+    main_dev_sig_to_plot = [] # Default to empty
+    main_dev_sig_for_calc = weighted_deviation_signal if weighting_type != 'unweighted' else deviation_signal
+
+    if main_dev_sig_for_calc is None or main_dev_sig_for_calc.size == 0 or np.all(np.isnan(main_dev_sig_for_calc)):
+        console.print("[yellow]Warning: Main deviation signal for plotting is empty or all NaN. Top plot will be empty.[/yellow]")
+    else:
+        main_dev_sig_to_plot = main_dev_sig_for_calc
+        # Ensure it's a numpy array for calculations
+        if not isinstance(main_dev_sig_to_plot, np.ndarray): main_dev_sig_to_plot = np.array(main_dev_sig_to_plot)
+
+
+    wow_sig_to_plot = []
+    if wow_signal is None or wow_signal.size == 0 or np.all(np.isnan(wow_signal)):
+        console.print("[yellow]Warning: Wow signal for plotting is empty or all NaN. Wow component will be empty in bottom plot.[/yellow]")
+    else:
+        wow_sig_to_plot = wow_signal
+        if not isinstance(wow_sig_to_plot, np.ndarray): wow_sig_to_plot = np.array(wow_sig_to_plot)
+
+    flutter_sig_to_plot = []
+    if flutter_signal is None or flutter_signal.size == 0 or np.all(np.isnan(flutter_signal)):
+        console.print("[yellow]Warning: Flutter signal for plotting is empty or all NaN. Flutter component will be empty in bottom plot.[/yellow]")
+    else:
+        flutter_sig_to_plot = flutter_signal
+        if not isinstance(flutter_sig_to_plot, np.ndarray): flutter_sig_to_plot = np.array(flutter_sig_to_plot)
     
     # Top subplot: Frequency Deviation
-    ax1 = axs[0]
+    # ax1 = axs[0] # Already defined
     color1 = 'tab:blue'
     ax1.set_xlabel('Time (s)')
     ax1.set_ylabel('Frequency Deviation (Hz)', color=color1)
-    ax1.plot(time_array, main_deviation_signal, color=color1, alpha=0.8, label=f'{weighting_type} Deviation')
+    ax1.plot(time_array, main_dev_sig_to_plot, color=color1, alpha=0.8, label=f'{weighting_type} Deviation')
     ax1.tick_params(axis='y', labelcolor=color1)
     ax1.set_title(f'Frequency Deviation over Time ({weighting_type})')
     ax1.grid(True, which='both', linestyle='--', alpha=0.7)
 
-    # Secondary y-axis for percentage deviation
+    # Y-limits for ax1 (Hz)
+    if len(main_dev_sig_to_plot) > 0: # Check if there's data to calculate limits from
+        min_hz_main = np.nanmin(main_dev_sig_to_plot)
+        max_hz_main = np.nanmax(main_dev_sig_to_plot)
+        if np.isfinite(min_hz_main) and np.isfinite(max_hz_main):
+            if min_hz_main < max_hz_main:
+                ax1.set_ylim(min_hz_main - 0.1 * abs(min_hz_main), max_hz_main + 0.1 * abs(max_hz_main))
+            elif min_hz_main == max_hz_main: # If flat line
+                 ax1.set_ylim(min_hz_main - 1, max_hz_main + 1) # Default +-1 Hz range
+            # else: let autoscale handle if min_hz_main > max_hz_main (should not happen with nanmin/nanmax)
+        else:
+            console.print("[yellow]Warning: Could not determine valid Y-axis limits (Hz) for main deviation plot. Autoscale will be used.[/yellow]")
+
+    # Secondary y-axis for percentage deviation (ax1b)
     ax1b = ax1.twinx()
     color2 = 'tab:red'
     ax1b.set_ylabel('Deviation (%)', color=color2)
-    ax1b.plot(time_array, (main_deviation_signal / ref_freq) * 100, color=color2, linestyle='--', alpha=0.7, label=f'{weighting_type} Deviation (%)')
+    
+    main_dev_sig_percent_to_plot = []
+    if len(main_dev_sig_to_plot) > 0 and abs(ref_freq) >= 1e-9:
+        main_dev_sig_percent_to_plot = (main_dev_sig_to_plot / ref_freq) * 100
+    elif abs(ref_freq) < 1e-9:
+        console.print("[yellow]Warning: Reference frequency is near zero. Percentage deviation plot will be empty.[/yellow]")
+
+    ax1b.plot(time_array, main_dev_sig_percent_to_plot, color=color2, linestyle='--', alpha=0.7, label=f'{weighting_type} Deviation (%)')
     ax1b.tick_params(axis='y', labelcolor=color2)
-    
-    # Add a combined legend for top plot if lines are distinct enough
-    lines, labels = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax1b.get_legend_handles_labels()
-    # ax1b.legend(lines + lines2, labels + labels2, loc='upper right') # Can get crowded
-    
+
+    if len(main_dev_sig_percent_to_plot) > 0:
+        min_pct_main = np.nanmin(main_dev_sig_percent_to_plot)
+        max_pct_main = np.nanmax(main_dev_sig_percent_to_plot)
+        if np.isfinite(min_pct_main) and np.isfinite(max_pct_main):
+            if min_pct_main < max_pct_main:
+                 ax1b.set_ylim(min_pct_main - 0.1 * abs(min_pct_main), max_pct_main + 0.1 * abs(max_pct_main))
+            elif min_pct_main == max_pct_main:
+                 ax1b.set_ylim(min_pct_main - 0.1, max_pct_main + 0.1) # Default +-0.1% range
+            # else: let autoscale
+        else:
+            console.print("[yellow]Warning: Could not determine valid Y-axis limits (%) for main deviation plot. Autoscale will be used.[/yellow]")
+
     # Bottom subplot: Wow and Flutter Components
-    ax2 = axs[1]
-    ax2.plot(time_array, wow_signal, label='Wow Component', color='orange')
-    ax2.plot(time_array, flutter_signal, label='Flutter Component', color='green', alpha=0.7)
+    # ax2 = axs[1] # Already defined
+    ax2.plot(time_array, wow_sig_to_plot, label='Wow Component', color='orange')
+    ax2.plot(time_array, flutter_sig_to_plot, label='Flutter Component', color='green', alpha=0.7)
     ax2.set_xlabel('Time (s)')
     ax2.set_ylabel('Frequency Deviation (Hz)')
     ax2.set_title(f'Wow and Flutter Components ({weighting_type})')
     ax2.legend(loc='upper right')
     ax2.grid(True, which='both', linestyle='--', alpha=0.7)
 
-    # Secondary y-axis for percentage deviation on bottom plot
+    # Y-limits for ax2 (Hz)
+    combined_wf_for_ylim = []
+    if len(wow_sig_to_plot) > 0: combined_wf_for_ylim.extend(wow_sig_to_plot)
+    if len(flutter_sig_to_plot) > 0: combined_wf_for_ylim.extend(flutter_sig_to_plot)
+    
+    if len(combined_wf_for_ylim) > 0:
+        min_hz_wf = np.nanmin(combined_wf_for_ylim)
+        max_hz_wf = np.nanmax(combined_wf_for_ylim)
+        if np.isfinite(min_hz_wf) and np.isfinite(max_hz_wf):
+            if min_hz_wf < max_hz_wf:
+                ax2.set_ylim(min_hz_wf - 0.1 * abs(min_hz_wf), max_hz_wf + 0.1 * abs(max_hz_wf))
+            elif min_hz_wf == max_hz_wf:
+                ax2.set_ylim(min_hz_wf - 1, max_hz_wf + 1)
+        else:
+            console.print("[yellow]Warning: Could not determine valid Y-axis limits (Hz) for wow/flutter plot. Autoscale will be used.[/yellow]")
+
+
+    # Secondary y-axis for percentage deviation on bottom plot (ax2b)
     ax2b = ax2.twinx()
-    ax2b.set_ylabel('Deviation (%)', color=color2) # Re-use color2 for consistency
-    # Calculate % for wow and flutter separately if needed, or use a general scale based on max deviation
-    max_dev_wow_flutter = np.max(np.abs(np.concatenate((wow_signal, flutter_signal))))
-    if max_dev_wow_flutter == 0: # Avoid division by zero if signals are flat zero
-        ylim_percent_bottom = (-1, 1)
-    else:
-        ylim_percent_bottom = np.array([-max_dev_wow_flutter, max_dev_wow_flutter]) / ref_freq * 100
-    ax2b.set_ylim(ylim_percent_bottom)
+    ax2b.set_ylabel('Deviation (%)', color=color2) # Re-use color2
+
+    if len(combined_wf_for_ylim) > 0 and abs(ref_freq) >= 1e-9:
+        wf_sig_percent_to_plot = (np.array(combined_wf_for_ylim) / ref_freq) * 100
+        min_pct_wf = np.nanmin(wf_sig_percent_to_plot)
+        max_pct_wf = np.nanmax(wf_sig_percent_to_plot)
+        if np.isfinite(min_pct_wf) and np.isfinite(max_pct_wf):
+            if min_pct_wf < max_pct_wf:
+                ax2b.set_ylim(min_pct_wf - 0.1 * abs(min_pct_wf), max_pct_wf + 0.1 * abs(max_pct_wf))
+            elif min_pct_wf == max_pct_wf:
+                ax2b.set_ylim(min_pct_wf - 0.1, max_pct_wf + 0.1)
+            # else autoscale
+        else:
+            console.print("[yellow]Warning: Could not determine valid Y-axis limits (%) for wow/flutter plot. Autoscale will be used.[/yellow]")
+    elif abs(ref_freq) < 1e-9 and len(combined_wf_for_ylim) > 0:
+         console.print("[yellow]Warning: Ref freq near zero, cannot plot % deviation for wow/flutter.[/yellow]")
+    # If combined_wf_for_ylim is empty, this axis will be empty too.
+
     ax2b.tick_params(axis='y', labelcolor=color2)
 
-
-    fig.tight_layout() # Adjust layout to prevent overlapping titles/labels
+    fig.tight_layout()
 
     if output_dir:
         filepath = os.path.join(output_dir, "frequency_deviation_plot.png")
@@ -299,47 +376,86 @@ def plot_deviation_spectrum(signal_to_analyze, sample_rate, weighting_type, outp
     """
     Calculates and plots the Power Spectral Density (PSD) of the frequency deviation signal.
     """
-    if signal_to_analyze is None or len(signal_to_analyze) == 0:
-        console.print("[yellow]Warning: No signal data to plot spectrum. Skipping spectrum plot.[/yellow]")
+    if signal_to_analyze is None or signal_to_analyze.size == 0 or np.all(np.isnan(signal_to_analyze)):
+        console.print("[yellow]Warning: No valid signal data (None, empty, or all NaN) to plot spectrum. Skipping spectrum plot.[/yellow]")
         return
 
-    nperseg = min(len(signal_to_analyze), 2048) # Use a segment length, e.g., 2048, or less if signal is shorter
-    if nperseg == 0:
-         console.print("[yellow]Warning: Signal too short for spectrum analysis. Skipping spectrum plot.[/yellow]")
+    # Ensure signal_to_analyze is a numpy array for np.isnan checks if it passed initial checks
+    if not isinstance(signal_to_analyze, np.ndarray):
+        signal_to_analyze = np.array(signal_to_analyze)
+
+    # Remove NaNs before Welch, as it might not handle them well or might return all NaNs.
+    valid_signal = signal_to_analyze[~np.isnan(signal_to_analyze)]
+    if valid_signal.size == 0:
+        console.print("[yellow]Warning: Signal contains only NaNs after cleaning. Skipping spectrum plot.[/yellow]")
+        return
+
+    nperseg = min(valid_signal.size, 2048)
+    if nperseg == 0: # Should be caught by valid_signal.size == 0, but as a safeguard.
+         console.print("[yellow]Warning: Signal too short for spectrum analysis after NaN removal. Skipping spectrum plot.[/yellow]")
          return
 
-    frequencies, psd = signal.welch(signal_to_analyze, fs=sample_rate, window='hann', nperseg=nperseg, scaling='density')
+    try:
+        frequencies, psd = signal.welch(valid_signal, fs=sample_rate, window='hann', nperseg=nperseg, scaling='density')
+    except ValueError as e:
+        console.print(f"[bold red]Error during Welch calculation for spectrum: {e}. Skipping spectrum plot.[/bold red]")
+        return
     
-    # Convert PSD to dB (optional, but common for spectra)
-    # Adding a small epsilon to avoid log(0)
-    psd_db = 10 * np.log10(psd + 1e-12) 
+    if frequencies.size == 0 or psd.size == 0 or np.all(np.isnan(psd)):
+        console.print("[yellow]Warning: PSD calculation resulted in empty or all NaN data. Skipping spectrum plot.[/yellow]")
+        return
+
+    # Convert PSD to dB, adding a small epsilon to avoid log(0) or log(negative)
+    psd_db = 10 * np.log10(np.maximum(psd, 1e-12)) # Ensure psd is not negative before log
+    
+    # Check if psd_db itself became all NaN (e.g., if psd was all zero or negative)
+    if np.all(np.isnan(psd_db)):
+        console.print("[yellow]Warning: PSD_dB is all NaN. Skipping spectrum plot.[/yellow]")
+        return
 
     plt.figure(figsize=(12, 7))
-    plt.semilogx(frequencies, psd_db) # Plot frequency on a log scale
+    plt.semilogx(frequencies, psd_db)
 
     plt.title(f'Spectrum of Frequency Deviation - {title_suffix} ({weighting_type})')
     plt.xlabel('Frequency (Hz)')
-    plt.ylabel('Power Spectral Density (dB/Hz)') # Or 'Amplitude' if not using dB
+    plt.ylabel('Power Spectral Density (dB/Hz)')
     plt.grid(True, which="both", ls="-", alpha=0.7)
 
-    # Highlight Wow and Flutter regions
-    # Ensure regions are within plot limits and min_freq < max_freq
-    plot_min_freq = max(0.1, frequencies[1] if len(frequencies) > 1 else 0.1) # Smallest freq to plot, avoid 0 for log
-    plot_max_freq = frequencies[-1] if len(frequencies) > 1 else sample_rate / 2
+    plot_min_freq = 0.1 # Default plot start frequency
+    if frequencies.size > 1 and frequencies[1] > 0: # Frequencies from Welch should be positive
+        plot_min_freq = max(0.1, frequencies[1]) # Smallest freq to plot, avoid 0 for log
+    
+    plot_max_freq = sample_rate / 2 # Default plot end frequency
+    if frequencies.size > 0:
+        plot_max_freq = frequencies[-1]
 
-    # Wow region
-    if min_wow_freq < max_wow_freq:
+    # Highlight Wow and Flutter regions
+    # Ensure region frequencies are finite numbers
+    if np.isfinite(min_wow_freq) and np.isfinite(max_wow_freq) and min_wow_freq < max_wow_freq:
         plt.axvspan(max(min_wow_freq, plot_min_freq), min(max_wow_freq, plot_max_freq), 
-                    color='skyblue', alpha=0.3, label=f'Wow ({min_wow_freq}-{max_wow_freq} Hz)')
-    # Flutter region
-    if min_flutter_freq < max_flutter_freq:
+                    color='skyblue', alpha=0.3, label=f'Wow ({min_wow_freq:.1f}-{max_wow_freq:.1f} Hz)')
+    
+    if np.isfinite(min_flutter_freq) and np.isfinite(max_flutter_freq) and min_flutter_freq < max_flutter_freq:
         plt.axvspan(max(min_flutter_freq, plot_min_freq), min(max_flutter_freq, plot_max_freq), 
-                    color='lightgreen', alpha=0.3, label=f'Flutter ({min_flutter_freq}-{max_flutter_freq} Hz)')
+                    color='lightgreen', alpha=0.3, label=f'Flutter ({min_flutter_freq:.1f}-{max_flutter_freq:.1f} Hz)')
     
-    plt.xlim(plot_min_freq, plot_max_freq)
-    if len(psd_db)>0:
-        plt.ylim(np.percentile(psd_db,1)-10, np.percentile(psd_db,99)+10) # Adjust Y limits for better visualization
-    
+    if plot_min_freq < plot_max_freq :
+        plt.xlim(plot_min_freq, plot_max_freq)
+    else: # Fallback if frequencies are somehow problematic
+        plt.xlim(0.1, sample_rate / 2)
+
+    # Y-axis limits for spectrum
+    valid_psd_db = psd_db[np.isfinite(psd_db)] # Use only finite values for percentile calculation
+    if valid_psd_db.size > 0:
+        y_min_plot = np.percentile(valid_psd_db, 1) - 10
+        y_max_plot = np.percentile(valid_psd_db, 99) + 10
+        if np.isfinite(y_min_plot) and np.isfinite(y_max_plot) and y_min_plot < y_max_plot:
+            plt.ylim(y_min_plot, y_max_plot)
+        else:
+            console.print("[yellow]Warning: Could not determine valid Y-axis limits for spectrum. Autoscale will be used.[/yellow]")
+    else:
+        console.print("[yellow]Warning: No finite PSD dB values to determine Y-axis limits for spectrum. Autoscale will be used.[/yellow]")
+
     plt.legend(loc='upper right')
     plt.tight_layout()
 
@@ -367,8 +483,9 @@ def calculate_metrics(signal_hz: np.ndarray, ref_freq: float, label: str):
     Returns:
         A dictionary containing peak and RMS metrics in Hz and %.
     """
-    if signal_hz is None or len(signal_hz) == 0:
-        console.print(f"[yellow]Warning: Empty or None signal provided for {label} metrics calculation. Returning zero values.[/yellow]")
+    # 1. Input Validation
+    if signal_hz is None or signal_hz.size == 0 or np.all(np.isnan(signal_hz)):
+        console.print(f"[yellow]Warning: Invalid input signal (None, empty, or all NaN) for '{label}'. Metrics will be zero.[/yellow]")
         return {
             f"{label} Peak (Hz)": 0.0,
             f"{label} Peak (%)": 0.0,
@@ -376,11 +493,43 @@ def calculate_metrics(signal_hz: np.ndarray, ref_freq: float, label: str):
             f"{label} RMS (%)": 0.0,
         }
 
-    peak_deviation_hz = np.max(np.abs(signal_hz))
-    peak_deviation_percent = (peak_deviation_hz / ref_freq) * 100
-    rms_deviation_hz = np.sqrt(np.mean(np.square(signal_hz)))
-    rms_deviation_percent = (rms_deviation_hz / ref_freq) * 100
+    # 2. Safe Calculations
+    # Use np.nanmax and np.nanmean to handle potential NaNs if not all elements are NaN
+    # np.abs can introduce NaNs if the input contains them.
+    abs_signal_hz = np.abs(signal_hz)
+    peak_deviation_hz = np.nanmax(abs_signal_hz)
+    
+    # For RMS, square first, then nanmean, then sqrt. Squaring NaNs results in NaNs.
+    squared_signal_hz = np.square(signal_hz)
+    mean_square_hz = np.nanmean(squared_signal_hz)
+    rms_deviation_hz = np.sqrt(mean_square_hz) if not np.isnan(mean_square_hz) else 0.0
 
+    # Check for NaN/Inf results from calculations (e.g., if input was all Inf, or other edge cases)
+    if not np.isfinite(peak_deviation_hz):
+        console.print(f"[yellow]Warning: Peak deviation for '{label}' is not finite ({peak_deviation_hz}). Setting to 0.0.[/yellow]")
+        peak_deviation_hz = 0.0
+    
+    if not np.isfinite(rms_deviation_hz):
+        console.print(f"[yellow]Warning: RMS deviation for '{label}' is not finite ({rms_deviation_hz}). Setting to 0.0.[/yellow]")
+        rms_deviation_hz = 0.0
+
+    # Percentage calculations
+    peak_deviation_percent = 0.0
+    rms_deviation_percent = 0.0
+
+    if abs(ref_freq) < 1e-9: # Check for near-zero ref_freq
+        console.print(f"[yellow]Warning: Reference frequency for '{label}' is near zero. Percentage metrics will be zero.[/yellow]")
+    else:
+        peak_deviation_percent = (peak_deviation_hz / ref_freq) * 100
+        rms_deviation_percent = (rms_deviation_hz / ref_freq) * 100
+        
+        if not np.isfinite(peak_deviation_percent):
+            console.print(f"[yellow]Warning: Peak deviation (%) for '{label}' is not finite. Setting to 0.0.[/yellow]")
+            peak_deviation_percent = 0.0
+        if not np.isfinite(rms_deviation_percent):
+            console.print(f"[yellow]Warning: RMS deviation (%) for '{label}' is not finite. Setting to 0.0.[/yellow]")
+            rms_deviation_percent = 0.0
+            
     return {
         f"{label} Peak (Hz)": peak_deviation_hz,
         f"{label} Peak (%)": peak_deviation_percent,
@@ -401,8 +550,9 @@ def calculate_drift(instantaneous_frequency: np.ndarray, ref_freq: float, sample
     Returns:
         A dictionary containing drift metrics.
     """
-    if instantaneous_frequency is None or len(instantaneous_frequency) == 0:
-        console.print("[yellow]Warning: Empty or None instantaneous_frequency for drift calculation. Returning zero values.[/yellow]")
+    # 1. Input Validation
+    if instantaneous_frequency is None or instantaneous_frequency.size == 0 or np.all(np.isnan(instantaneous_frequency)):
+        console.print("[yellow]Warning: Invalid input (None, empty, or all NaN) for drift calculation. Drift metrics will be zero.[/yellow]")
         return {
             "Average Frequency (Hz)": 0.0,
             "Overall Drift (Hz)": 0.0,
@@ -413,26 +563,69 @@ def calculate_drift(instantaneous_frequency: np.ndarray, ref_freq: float, sample
             "Drift over Measurement (%)": 0.0,
         }
 
-    average_frequency_hz = np.mean(instantaneous_frequency)
+    # 2. Safe Calculations
+    average_frequency_hz = np.nanmean(instantaneous_frequency)
+    if not np.isfinite(average_frequency_hz):
+        console.print(f"[yellow]Warning: Average frequency is not finite ({average_frequency_hz}). Setting to 0.0 for drift calculations.[/yellow]")
+        average_frequency_hz = 0.0
+        # If average is non-finite, instantaneous_frequency likely contains non-finite values everywhere,
+        # so other means will also be non-finite.
+    
     overall_drift_hz = average_frequency_hz - ref_freq
-    overall_drift_percent = (overall_drift_hz / ref_freq) * 100
+    if not np.isfinite(overall_drift_hz):
+        overall_drift_hz = 0.0 # Should only happen if average_frequency_hz was Inf/NaN and not caught, or ref_freq is opposite Inf
+
+    overall_drift_percent = 0.0
+    drift_over_measurement_percent = 0.0
+
+    if abs(ref_freq) < 1e-9:
+        console.print("[yellow]Warning: Reference frequency for drift is near zero. Percentage drift metrics will be zero.[/yellow]")
+    else:
+        overall_drift_percent = (overall_drift_hz / ref_freq) * 100
+        if not np.isfinite(overall_drift_percent): overall_drift_percent = 0.0
+
 
     # Calculate initial and final frequencies (average over ~0.5s)
+    initial_frequency_hz = 0.0
+    final_frequency_hz = 0.0
+    
     half_sec_samples = int(0.5 * sample_rate)
-    if len(instantaneous_frequency) < half_sec_samples: # Handles case where audio is shorter than 0.5s
-        console.print("[yellow]Warning: Audio duration is less than 0.5s, using full signal for initial/final frequency.[/yellow]")
+    
+    if half_sec_samples <= 0: # sample_rate might be very low or zero from bad input
+        console.print("[yellow]Warning: half_sec_samples is zero or negative (invalid sample_rate?). Initial/Final frequency set to average.[/yellow]")
         initial_frequency_hz = average_frequency_hz
         final_frequency_hz = average_frequency_hz
-    elif len(instantaneous_frequency) < 2 * half_sec_samples: # Handles case where audio is between 0.5s and 1s
-        console.print("[yellow]Warning: Audio duration is less than 1s (but >= 0.5s), initial/final frequency periods might overlap or be based on partial data if duration < 0.5s for one segment.[/yellow]")
-        initial_frequency_hz = np.mean(instantaneous_frequency[:half_sec_samples])
-        final_frequency_hz = np.mean(instantaneous_frequency[-half_sec_samples:]) # This will take from -0.5s to end
+    elif instantaneous_frequency.size < half_sec_samples:
+        console.print("[yellow]Warning: Audio duration is less than 0.5s. Using full signal average for initial/final frequency.[/yellow]")
+        initial_frequency_hz = average_frequency_hz
+        final_frequency_hz = average_frequency_hz
+    elif instantaneous_frequency.size < 2 * half_sec_samples:
+        console.print("[yellow]Warning: Audio duration is less than 1s. Initial/final frequency periods might overlap.[/yellow]")
+        # Still proceed with calculation for initial and final based on available data
+        initial_slice = instantaneous_frequency[:half_sec_samples]
+        final_slice = instantaneous_frequency[-half_sec_samples:]
+        if initial_slice.size > 0:
+            initial_frequency_hz = np.nanmean(initial_slice)
+            if not np.isfinite(initial_frequency_hz): initial_frequency_hz = 0.0
+        if final_slice.size > 0:
+            final_frequency_hz = np.nanmean(final_slice)
+            if not np.isfinite(final_frequency_hz): final_frequency_hz = 0.0
     else: # Audio is >= 1s
-        initial_frequency_hz = np.mean(instantaneous_frequency[:half_sec_samples])
-        final_frequency_hz = np.mean(instantaneous_frequency[-half_sec_samples:])
+        initial_slice = instantaneous_frequency[:half_sec_samples]
+        final_slice = instantaneous_frequency[-half_sec_samples:]
+        if initial_slice.size > 0 : # Should always be true here given outer checks
+            initial_frequency_hz = np.nanmean(initial_slice)
+            if not np.isfinite(initial_frequency_hz): initial_frequency_hz = 0.0
+        if final_slice.size > 0: # Should always be true here
+            final_frequency_hz = np.nanmean(final_slice)
+            if not np.isfinite(final_frequency_hz): final_frequency_hz = 0.0
 
     drift_over_measurement_hz = final_frequency_hz - initial_frequency_hz
-    drift_over_measurement_percent = (drift_over_measurement_hz / ref_freq) * 100
+    if not np.isfinite(drift_over_measurement_hz): drift_over_measurement_hz = 0.0
+
+    if abs(ref_freq) >= 1e-9: # Avoid division by zero for the percentage
+        drift_over_measurement_percent = (drift_over_measurement_hz / ref_freq) * 100
+        if not np.isfinite(drift_over_measurement_percent): drift_over_measurement_percent = 0.0
     
     return {
         "Average Frequency (Hz)": average_frequency_hz,
@@ -516,8 +709,31 @@ def demodulate_frequency(audio_data: np.ndarray, sample_rate: int, ref_freq: flo
 
     Returns:
         A NumPy array containing the instantaneous frequency values, 
-        or None if demodulation fails.
+        or an empty np.array([]) if demodulation fails or input is invalid.
     """
+    # 0. Input Validation
+    MIN_CYCLES_FOR_DEMOD = 5  # Minimum number of cycles of ref_freq needed
+    MIN_SAMPLES_FILTER_PAD = 15 # Arbitrary padding for filter, filtfilt needs len(x) > 3 * order
+    
+    if audio_data is None or audio_data.size == 0:
+        console.print("[yellow]Warning (demodulate_frequency): Input audio_data is None or empty. Returning empty array.[/yellow]")
+        return np.array([])
+
+    min_length_cycles = int(MIN_CYCLES_FOR_DEMOD * sample_rate / ref_freq) if ref_freq > 0 else MIN_SAMPLES_FILTER_PAD * 2
+    min_length_filter = (4 * 3) + MIN_SAMPLES_FILTER_PAD # Assuming 4th order Butterworth for initial filter
+    
+    required_length = max(min_length_cycles, min_length_filter, 30) # Min 30 samples as a hard floor
+
+    if audio_data.size < required_length:
+        console.print(f"[yellow]Warning (demodulate_frequency): audio_data is too short ({audio_data.size} samples) for reliable processing (need ~{required_length}). Returning empty array.[/yellow]")
+        return np.array([])
+    
+    if np.all(np.isnan(audio_data)):
+        console.print("[yellow]Warning (demodulate_frequency): Input audio_data is all NaN. Returning empty array.[/yellow]")
+        return np.array([])
+    
+    # If audio_data is all zero, it will likely result in zero instantaneous frequency, which is acceptable.
+
     # 1. Initial Bandpass Filter (Optional but Recommended)
     # Design a bandpass filter to isolate the test tone.
     # Bandwidth is +/- 5% of ref_freq.
@@ -546,31 +762,65 @@ def demodulate_frequency(audio_data: np.ndarray, sample_rate: int, ref_freq: flo
         # Get filter coefficients
         b, a = signal.butter(order, [lowcut, highcut], btype='band', fs=sample_rate)
         # Apply the filter (zero-phase)
-        filtered_audio = signal.filtfilt(b, a, audio_data)
-        console.print(f"  Applied bandpass filter: {lowcut:.2f} Hz - {highcut:.2f} Hz")
+        filtered_audio_candidate = signal.filtfilt(b, a, audio_data)
+        
+        if filtered_audio_candidate.size == 0 or np.all(np.isnan(filtered_audio_candidate)) or np.all(filtered_audio_candidate == 0):
+            console.print(f"[yellow]Warning (demodulate_frequency): Initial bandpass filter resulted in empty, all-NaN, or all-zero signal. Using unfiltered audio if possible, or failing.[/yellow]")
+            # Check original audio again, if it was already problematic, then fail.
+            if np.all(audio_data == 0) or np.all(np.isnan(audio_data)):
+                 console.print(f"[bold red]Error (demodulate_frequency): Original audio also problematic. Cannot proceed.[/bold red]")
+                 return np.array([])
+            filtered_audio = audio_data # Fallback to original if it was not all zero/NaN
+        else:
+            filtered_audio = filtered_audio_candidate
+            console.print(f"  Applied bandpass filter: {lowcut:.2f} Hz - {highcut:.2f} Hz")
+
     except ValueError as e:
         console.print(f"[bold red]Error designing or applying bandpass filter: {e}[/bold red]")
-        console.print("[yellow]Proceeding with unfiltered audio for demodulation.[/yellow]")
-        filtered_audio = audio_data
+        # Check if error is due to data being too short for filtfilt
+        if "len(x) must be >= 3 * order" in str(e) or filtered_audio.size < (3*order):
+            console.print("[bold red]Error (demodulate_frequency): Data too short for initial bandpass filter. Cannot proceed.[/bold red]")
+            return np.array([])
+        console.print("[yellow]Proceeding with unfiltered audio for demodulation (if possible).[/yellow]")
+        filtered_audio = audio_data # Fallback to original if not a length error.
+        # If original audio itself is problematic (e.g. all zeros/NaNs), this will be handled below.
 
+    if filtered_audio.size == 0 or np.all(np.isnan(filtered_audio)): # Double check after potential fallback
+        console.print("[bold red]Error (demodulate_frequency): Filtered audio (or fallback) is empty or all NaN. Cannot proceed.[/bold red]")
+        return np.array([])
+
+    # If filtered_audio is all zeros, Hilbert will be all zeros, phase all zeros, diff all zeros. This is fine.
 
     # 2. Hilbert Transform
-    # Compute the analytic signal.
     analytic_signal = signal.hilbert(filtered_audio)
+    if analytic_signal.size == 0 or np.all(np.isnan(analytic_signal)): # Should not happen if filtered_audio is okay
+        console.print("[bold red]Error (demodulate_frequency): Analytic signal is empty or all NaN. Cannot proceed.[/bold red]")
+        return np.array([])
     console.print("  Computed analytic signal using Hilbert transform.")
-
+    
     # 3. Instantaneous Phase
-    # Calculate the instantaneous phase from the analytic signal.
-    # np.unwrap is crucial to correct phase jumps.
     instantaneous_phase = np.unwrap(np.angle(analytic_signal))
-    console.print("  Calculated instantaneous phase.")
+    # np.angle and np.unwrap should handle all-zero analytic_signal correctly (phase becomes all zero).
+    # If analytic_signal has NaNs, phase will have NaNs.
 
     # 4. Instantaneous Frequency
-    # The instantaneous frequency is the derivative of the phase.
-    # Approximated by (np.diff(instantaneous_phase) / (2 * np.pi)) * sample_rate.
-    # np.diff reduces the array length by one. Pad to match original length.
+    if instantaneous_phase.size < 2: # np.diff needs at least 2 elements
+        console.print("[yellow]Warning (demodulate_frequency): Phase array too short for frequency calculation. Returning empty array.[/yellow]")
+        return np.array([])
+        
     instantaneous_freq_diff = (np.diff(instantaneous_phase) / (2 * np.pi)) * sample_rate
-    instantaneous_frequency = np.pad(instantaneous_freq_diff, (1, 0), 'edge')
+    
+    # Pad to match original length. 'edge' padding will replicate the single value if instantaneous_freq_diff has 1 element.
+    # If instantaneous_freq_diff is empty (because instantaneous_phase had < 2 elements), this should ideally not be reached.
+    # However, np.pad on empty array returns empty array.
+    instantaneous_frequency = np.pad(instantaneous_freq_diff, (1, 0), 'edge') if instantaneous_freq_diff.size > 0 else np.array([])
+
+    if instantaneous_frequency.size == 0:
+         console.print("[yellow]Warning (demodulate_frequency): Resulting instantaneous frequency array is empty. Check input signal validity and length.[/yellow]")
+         return np.array([]) # Explicitly return empty if it became empty
+
+    # If instantaneous_frequency contains NaNs (propagated from analytic_signal), they are preserved.
+    # This is acceptable as downstream functions (metrics, plots) are designed to handle NaNs.
     console.print("  Calculated instantaneous frequency.")
     
     return instantaneous_frequency

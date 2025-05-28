@@ -2,6 +2,7 @@ import unittest
 import numpy as np
 import sys
 import os
+from unittest.mock import patch
 
 # Adjust path to import module from parent directory
 # This assumes the test script is run from the 'wow_flutter_analyzer' directory
@@ -212,6 +213,185 @@ class TestWowFlutterAnalyzer(unittest.TestCase):
         
         expected_rms_percent = ( (deviation_amplitude / np.sqrt(2)) / ref_freq_for_calc) * 100
         self.assertAlmostEqual(metrics["TestLabel RMS (%)"], expected_rms_percent, delta=0.01)
+
+    # --- Tests for NaN/Inf and empty data handling ---
+
+    # demodulate_frequency
+    def test_demodulate_empty_input(self):
+        output = wow_flutter_analyzer.demodulate_frequency(np.array([]), 48000, 3150)
+        self.assertEqual(output.size, 0, "Output should be an empty array for empty input.")
+
+    def test_demodulate_nan_input(self):
+        # Function should return empty or all-NaN, and not raise error.
+        # Current implementation returns empty for all-NaN input.
+        output = wow_flutter_analyzer.demodulate_frequency(np.array([np.nan, np.nan, np.nan]), 48000, 3150)
+        self.assertEqual(output.size, 0, "Output should be empty for all-NaN input.")
+
+    def test_demodulate_silent_input(self):
+        # Demodulating zeros should result in zeros (or very close to zero)
+        output = wow_flutter_analyzer.demodulate_frequency(np.zeros(20000), 48000, 3150) # Min length is ~1500 for 3150Hz
+        self.assertIsNotNone(output)
+        self.assertTrue(output.size > 0, "Output should not be empty for silent input.")
+        # Check if most of the signal is near zero. Edges might have artifacts.
+        stable_output = output[100:-100] if output.size > 200 else output
+        if stable_output.size > 0:
+            np.testing.assert_allclose(stable_output, 0, atol=1e-5, rtol=1e-5, err_msg="Demodulated silent input should be near zero.")
+        else:
+            # if output is too short to get a stable region, check the whole thing
+            np.testing.assert_allclose(output, 0, atol=1e-5, rtol=1e-5, err_msg="Demodulated silent input (short) should be near zero.")
+
+
+    def test_demodulate_very_short_input(self):
+        # Test with input shorter than filter requirements (e.g. 3*order + some padding)
+        output = wow_flutter_analyzer.demodulate_frequency(np.random.rand(10), 48000, 3150)
+        self.assertEqual(output.size, 0, "Output should be an empty array for very short input.")
+
+    # apply_bandpass_filter
+    def test_bandpass_empty_input(self):
+        output = wow_flutter_analyzer.apply_bandpass_filter(np.array([]), 0.5, 6.0, 1000)
+        self.assertEqual(output.size, 0)
+
+    def test_bandpass_nan_input(self):
+        # Current implementation returns empty for all-NaN input to bandpass
+        output = wow_flutter_analyzer.apply_bandpass_filter(np.array([np.nan, np.nan]), 0.5, 6.0, 1000)
+        self.assertEqual(output.size, 0, "Output should be empty for all-NaN input to bandpass_filter.")
+        
+    def test_bandpass_too_short_for_filter(self):
+        # Default order is 4. filtfilt needs len(x) > 3 * order. So, > 12 samples.
+        output = wow_flutter_analyzer.apply_bandpass_filter(np.random.rand(5), 0.5, 6.0, 1000, order=4)
+        self.assertEqual(output.size, 0)
+
+    # calculate_metrics
+    def test_metrics_empty_signal(self):
+        metrics = wow_flutter_analyzer.calculate_metrics(np.array([]), 3150.0, "TestEmpty")
+        self.assertEqual(metrics["TestEmpty Peak (Hz)"], 0.0)
+        self.assertEqual(metrics["TestEmpty RMS (Hz)"], 0.0)
+        self.assertEqual(metrics["TestEmpty Peak (%)"], 0.0)
+        self.assertEqual(metrics["TestEmpty RMS (%)"], 0.0)
+
+    def test_metrics_nan_signal(self):
+        metrics = wow_flutter_analyzer.calculate_metrics(np.array([np.nan, np.nan]), 3150.0, "TestNaN")
+        self.assertEqual(metrics["TestNaN Peak (Hz)"], 0.0)
+        self.assertEqual(metrics["TestNaN RMS (Hz)"], 0.0)
+        self.assertEqual(metrics["TestNaN Peak (%)"], 0.0)
+        self.assertEqual(metrics["TestNaN RMS (%)"], 0.0)
+
+    def test_metrics_zero_ref_freq(self):
+        signal = np.array([1.0, -1.0, 1.0, -1.0]) # Peak Hz = 1.0, RMS Hz = 1.0
+        metrics = wow_flutter_analyzer.calculate_metrics(signal, 0.0, "TestZeroRef")
+        self.assertAlmostEqual(metrics["TestZeroRef Peak (Hz)"], 1.0, delta=1e-6)
+        self.assertAlmostEqual(metrics["TestZeroRef RMS (Hz)"], 1.0, delta=1e-6)
+        self.assertEqual(metrics["TestZeroRef Peak (%)"], 0.0) # % should be 0 due to zero ref_freq
+        self.assertEqual(metrics["TestZeroRef RMS (%)"], 0.0)
+
+    def test_metrics_inf_signal(self):
+        metrics = wow_flutter_analyzer.calculate_metrics(np.array([np.inf, -np.inf, 0, 1]), 3150.0, "TestInf")
+        self.assertEqual(metrics["TestInf Peak (Hz)"], 0.0) # Peak is Inf, should be reset to 0
+        self.assertEqual(metrics["TestInf RMS (Hz)"], 0.0) # RMS is Inf, should be reset to 0
+        self.assertEqual(metrics["TestInf Peak (%)"], 0.0)
+        self.assertEqual(metrics["TestInf RMS (%)"], 0.0)
+
+    # calculate_drift
+    def test_drift_empty_signal(self):
+        drift_metrics = wow_flutter_analyzer.calculate_drift(np.array([]), 3150.0, 48000, 0.0)
+        for key in drift_metrics:
+            self.assertEqual(drift_metrics[key], 0.0, f"Metric {key} should be 0.0 for empty signal.")
+
+    def test_drift_nan_signal(self):
+        drift_metrics = wow_flutter_analyzer.calculate_drift(np.array([np.nan, np.nan]), 3150.0, 48000, 2.0/48000)
+        for key in drift_metrics:
+            self.assertEqual(drift_metrics[key], 0.0, f"Metric {key} should be 0.0 for NaN signal.")
+    
+    # Plotting function tests (conceptual - check for no crashes)
+    @patch('matplotlib.pyplot.show')
+    @patch('matplotlib.pyplot.savefig')
+    @patch('matplotlib.pyplot.close')
+    def test_plot_frequency_deviation_with_bad_data(self, mock_close, mock_savefig, mock_show):
+        try:
+            # Call with empty arrays for signals
+            wow_flutter_analyzer.plot_frequency_deviation(
+                time_array=np.array([]), 
+                deviation_signal=np.array([]), 
+                weighted_deviation_signal=np.array([]), 
+                wow_signal=np.array([]), 
+                flutter_signal=np.array([]), 
+                weighting_type="Unweighted", 
+                output_dir=None, 
+                ref_freq=3150.0
+            )
+            
+            # Call with NaN arrays
+            all_nan = np.array([np.nan, np.nan])
+            time_ok = np.array([0.0, 0.1])
+            wow_flutter_analyzer.plot_frequency_deviation(
+                time_array=time_ok, 
+                deviation_signal=all_nan, 
+                weighted_deviation_signal=all_nan, 
+                wow_signal=all_nan, 
+                flutter_signal=all_nan, 
+                weighting_type="Unweighted", 
+                output_dir=None, 
+                ref_freq=3150.0
+            )
+
+            # Call with zero ref_freq (should not crash, % plots might be empty)
+            some_data = np.array([0.1, 0.2, 0.1])
+            wow_flutter_analyzer.plot_frequency_deviation(
+                time_array=time_ok, 
+                deviation_signal=some_data, 
+                weighted_deviation_signal=some_data, 
+                wow_signal=some_data, 
+                flutter_signal=some_data, 
+                weighting_type="Unweighted", 
+                output_dir=None, 
+                ref_freq=0.0
+            )
+            self.assertTrue(True) # If it reaches here without crashing, it's a pass for this conceptual test
+        except Exception as e:
+            self.fail(f"plot_frequency_deviation raised an exception with bad data: {e}")
+
+    @patch('matplotlib.pyplot.show')
+    @patch('matplotlib.pyplot.savefig')
+    @patch('matplotlib.pyplot.close')
+    def test_plot_deviation_spectrum_with_bad_data(self, mock_close, mock_savefig, mock_show):
+        try:
+            # Call with empty array
+            wow_flutter_analyzer.plot_deviation_spectrum(
+                signal_to_analyze=np.array([]), 
+                sample_rate=48000, 
+                weighting_type="Unweighted", 
+                output_dir=None, 
+                title_suffix="Test",
+                min_wow_freq=0.5, max_wow_freq=6.0, 
+                min_flutter_freq=6.0, max_flutter_freq=200.0
+            )
+            
+            # Call with NaN array
+            all_nan = np.array([np.nan, np.nan])
+            wow_flutter_analyzer.plot_deviation_spectrum(
+                signal_to_analyze=all_nan, 
+                sample_rate=48000, 
+                weighting_type="Unweighted", 
+                output_dir=None, 
+                title_suffix="TestNaN",
+                min_wow_freq=0.5, max_wow_freq=6.0, 
+                min_flutter_freq=6.0, max_flutter_freq=200.0
+            )
+
+            # Call with all zero signal (Welch might produce very small or zero PSD)
+            all_zero = np.zeros(10000) # Ensure long enough for Welch
+            wow_flutter_analyzer.plot_deviation_spectrum(
+                signal_to_analyze=all_zero, 
+                sample_rate=48000, 
+                weighting_type="Unweighted", 
+                output_dir=None, 
+                title_suffix="TestZero",
+                min_wow_freq=0.5, max_wow_freq=6.0, 
+                min_flutter_freq=6.0, max_flutter_freq=200.0
+            )
+            self.assertTrue(True) # If it reaches here without crashing
+        except Exception as e:
+            self.fail(f"plot_deviation_spectrum raised an exception with bad data: {e}")
 
 
 if __name__ == '__main__':
