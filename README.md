@@ -11,6 +11,7 @@
 - 位相アナライザー ([`audio_phase_analyzer`](./audio_phase_analyzer/README.md)): ステレオオーディオチャンネル間の位相差を測定し、リサージュ図形などで視覚化するツールです。スピーカーの極性チェック、ステレオ機器の位相整合性の確認、サラウンドシステムの位相管理、マイクロフォンの位相アライメント、位相効果（フェイザー、フランジャーなど）の分析に役立ちます。(詳細は [`audio_phase_analyzer/README.md`](./audio_phase_analyzer/README.md) を参照)
 - SNRアナライザー ([`snr_analyzer`](./snr_analyzer/README.md)): テスト信号の再生と録音を通じて、オーディオシステムのS/N比（シグナル対ノイズ比）を測定するツールです。オーディオインターフェースやプリアンプなどのノイズ性能評価に利用できます。
 - LUFSメーター ([`lufs_meter`](./lufs_meter/README.md)): ITU-R BS.1770 および EBU R128規格に準拠したラウドネス測定を行うツールです。統合ラウドネス（Integrated）、モーメンタリラウドネス（Momentary）、ショートタームラウドネス（Short-term）、ラウドネスレンジ（LRA）、トゥルーピークレベルを測定し、放送コンテンツや音楽制作におけるラウドネス管理に不可欠です。
+- ワウフラッターアナライザー ([`wow_flutter_analyzer`](./wow_flutter_analyzer/README.md)): アナログ再生機器（ターンテーブル、テープデッキ等）の回転ムラ（ワウフラッター）を、録音されたテストトーンの周波数変動を解析することで測定します。
 
 ---
 
