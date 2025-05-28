@@ -57,3 +57,32 @@ This document lists potential ideas for future audio measurement programs. These
 
 -   **Automated Audio Test Report Generator**:
     Acts as a test executive. Users could define a sequence of existing analyzer tools (e.g., `audio_freq_response_analyzer`, `audio_analyzer`) to run on a DUT. The tool would execute tests, collect results/plots, and compile a comprehensive report (e.g., HTML, PDF, Markdown), building on the "Automated Test Sequencer" idea with a strong reporting focus.
+
+-   **Advanced Wow and Flutter Standards Analyzer**:
+    Building upon the existing Wow and Flutter Analyzer, this tool would offer:
+    *   Implementation of more specific international measurement standards (e.g., AES6-2008, IEC-60386, JIS C5551), including precise definitions for weighting filters and measurement techniques if they differ significantly from the current DIN-like implementation.
+    *   Detailed spectral analysis of the demodulated frequency variations to identify discrete wow or flutter frequencies and their amplitudes.
+    *   Measurement of flutter sidebands around the test tone.
+    *   Long-term speed drift and stability analysis with more sophisticated trend removal.
+
+-   **Playback Speed Calibration Assistant**:
+    An interactive tool to help users calibrate the playback speed of analog systems like turntables or tape decks.
+    *   Requires a known reference frequency test tone recording.
+    *   Provides real-time feedback on the measured average frequency deviation from the reference (e.g., as a percentage or cents).
+    *   Could offer a graphical display showing the frequency drift over a short window to help fine-tune speed adjustments.
+    *   Could log calibration history or changes.
+
+-   **Test Tone Quality Analyzer**:
+    A utility to analyze the quality of a recorded test tone *before* it's used for device-under-test measurements. This helps differentiate issues in the test signal from issues in the playback device.
+    *   Measures frequency stability and purity of the tone itself.
+    *   Calculates THD and SNR of the recorded tone.
+    *   Verifies amplitude stability.
+    *   Could identify if a test tone recording has pre-existing wow/flutter artifacts from the recording equipment or cutting lathe.
+
+-   **Measurement Input Pre-flight Check Utility**:
+    A general-purpose utility that could be run before other analyzers to check basic signal validity for measurement tasks.
+    *   Detects silence or very low signal levels.
+    *   Checks for clipping or excessive DC offset.
+    *   Provides a basic spectral overview to confirm the primary tone/signal is present and not overwhelmed by noise.
+    *   Estimates primary frequency to suggest if it's suitable for the intended `ref_freq` of another tool.
+    *   This could help users diagnose why a measurement tool might be producing unexpected results or warnings by first validating the input signal itself.
