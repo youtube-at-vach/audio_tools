@@ -55,7 +55,7 @@ python -m snr_analyzer.snr_analyzer --device 3 --output_channel R --input_channe
 2.  This signal is played through the selected channel ('L' or 'R') of the specified output device and simultaneously recorded via the selected channel ('L' or 'R') of the same input device. This recording captures the "Signal + Noise".
 3.  A second recording is made from the selected input channel of the device with no signal being played. This captures the "Noise Floor".
 4.  The RMS (Root Mean Square) power of the "Signal + Noise" and "Noise Floor" recordings are calculated.
-5.  The power of the signal alone is estimated by subtracting the noise power from the "Signal + Noise" power.
+5.  The power of the signal alone is estimated by subtracting the measured noise power from the measured "Signal + Noise" power (i.e., Signal Power = Total Power - Noise Power). This common estimation method assumes that the signal and noise components are uncorrelated and that the statistical characteristics of the noise are consistent (stationary) during both measurement phases.
 6.  The SNR is then calculated as `20 * log10(RMS_signal_only / RMS_noise)` and displayed in decibels (dB).
 
 ## Output
@@ -82,6 +82,8 @@ Example:
 - **Clean Noise Recording:** Ensure a quiet environment and no unexpected audio signals when the noise floor is being recorded for accurate results.
 - **Device Selection:** Use the `--list_devices` option to correctly identify the device ID for your system. Ensure the chosen device supports both input and output, and has at least two channels if using 'L' and 'R' distinctly.
 - **Input/Output Levels:** Adjust your system's input and output levels appropriately. Clipping the signal will invalidate results. The generated signal has an amplitude between 0.0 and 1.0 (peak).
+- **Low Recorded Signal:** If the tool warns about a very low recorded signal level (i.e., the "signal + noise" measurement is unexpectedly quiet compared to the generated signal amplitude), double-check your audio interface's input/output gains, physical connections, and selected loopback configuration. The test signal may not be reaching the input correctly or could be heavily attenuated.
+- **Estimation Accuracy:** The accuracy of the SNR, especially at very low values, depends on the validity of the assumptions mentioned in "How it Works" (uncorrelated signal/noise, stationary noise). Significant changes in background noise between the 'signal+noise' and 'noise' measurements can affect the result.
 
 ## License
 This tool is released under the Unlicense. See the main repository license for more details.

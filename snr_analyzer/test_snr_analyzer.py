@@ -112,7 +112,11 @@ class TestSNRCalculationLogic(unittest.TestCase):
     # Using the helper calculate_snr_db_from_rms which mimics the logic in measure_snr
 
     def test_snr_ideal_case(self):
-        # Signal RMS = 1, Noise RMS = 1. Signal+Noise RMS = sqrt(1^2 + 1^2) = sqrt(2)
+        # Tests a scenario where the estimated signal power equals the noise power.
+        # This is achieved by setting RMS_signal_plus_noise = sqrt(2) and RMS_noise = 1.
+        # This implies an original RMS_signal_only of 1 (since sqrt(1^2 + 1^2) = sqrt(2)).
+        # The expected SNR is 0 dB because RMS_signal_only / RMS_noise = 1 / 1 = 1.
+        # This case is important for verifying the baseline calculation when signal and noise contribute equally.
         rms_signal_plus_noise = np.sqrt(2.0)
         rms_noise = 1.0
         
@@ -122,9 +126,11 @@ class TestSNRCalculationLogic(unittest.TestCase):
         self.assertAlmostEqual(calculate_snr_db_from_rms(rms_signal_plus_noise, rms_noise), expected_snr, places=5)
 
     def test_snr_high_snr(self):
-        # Example: Signal RMS = approx 10, Noise RMS = 0.1
-        # RMS_signal_only = np.sqrt(10.0**2 - 0.1**2) is not how rms_signal_plus_noise is constructed.
-        # Let's define rms_signal_only and rms_noise, then calculate rms_signal_plus_noise
+        # Tests a scenario with a strong signal relative to noise.
+        # Here, RMS_signal_target = 10.0 and RMS_noise = 0.1.
+        # RMS_signal_plus_noise is calculated assuming uncorrelated signal and noise.
+        # Expected SNR is 40 dB (20 * log10(10 / 0.1)).
+        # This verifies the calculation for typical, good signal conditions.
         rms_signal_target = 10.0 
         rms_noise = 0.1
         rms_signal_plus_noise = np.sqrt(rms_signal_target**2 + rms_noise**2) # Assuming uncorrelated
@@ -135,59 +141,57 @@ class TestSNRCalculationLogic(unittest.TestCase):
         self.assertAlmostEqual(calculate_snr_db_from_rms(rms_signal_plus_noise, rms_noise), expected_snr, places=5)
 
     def test_snr_low_snr_signal_weaker_than_noise(self):
-        # Signal power is less than noise power implies (RMS_signal+noise)^2 < RMS_noise^2 if signal was negative,
-        # or more realistically, RMS_signal+noise is very close to RMS_noise.
-        # Example: True Signal RMS = 0.1, Noise RMS = 1.0
-        # Then RMS_signal+noise = sqrt(0.1^2 + 1.0^2) = sqrt(0.01 + 1.0) = sqrt(1.01)
+        # Tests a scenario where the true signal is weaker than the noise.
+        # Example: True Signal RMS = 0.1, Noise RMS = 1.0.
+        # RMS_signal_plus_noise = sqrt(0.1^2 + 1.0^2) = sqrt(1.01).
+        # The calculation should correctly estimate the original signal RMS as 0.1.
+        # Expected SNR = 20 * log10(0.1 / 1.0) = -20 dB.
+        # This verifies behavior when signal is below noise, but still extractable.
         rms_signal_plus_noise = np.sqrt(1.01) 
         rms_noise = 1.0
-
-        # The logic in calculate_snr_db_from_rms should find:
-        # power_signal_plus_noise = 1.01
-        # power_noise = 1.0
-        # rms_signal_only_val = np.sqrt(1.01 - 1.0) = np.sqrt(0.01) = 0.1
-        # expected_snr = 20 * math.log10(0.1 / 1.0) = 20 * math.log10(0.1) = 20 * (-1) = -20 dB
         expected_snr = -20.0
         self.assertAlmostEqual(calculate_snr_db_from_rms(rms_signal_plus_noise, rms_noise), expected_snr, places=5)
 
     def test_snr_signal_much_weaker_than_noise_effective_zero_signal(self):
-        # Case where (RMS_signal+noise)^2 is less than RMS_noise^2 (due to measurement variance or actual low signal)
-        # The calculation should result in rms_signal_only being effectively 0 (1e-12).
+        # Tests the case where measured (Signal+Noise) power is less than measured Noise power.
+        # This could happen due to measurement variance or if the signal is truly negligible.
+        # Example: RMS_signal_plus_noise = 0.5, RMS_noise = 1.0.
+        # The logic should cap estimated signal power at zero (represented by RMS 1e-12).
+        # Expected SNR = 20 * log10(1e-12 / 1.0) = -240 dB.
+        # This ensures graceful handling of scenarios where signal is swamped or measurement is problematic.
         rms_signal_plus_noise = 0.5 
         rms_noise = 1.0
-        
-        # power_signal_plus_noise = 0.25
-        # power_noise = 1.0
-        # power_signal_plus_noise < power_noise, so rms_signal_only_val becomes 1e-12
-        # expected_snr = 20 * math.log10(1e-12 / 1.0) = 20 * (-12) = -240 dB
         expected_snr = 20 * math.log10(1e-12 / rms_noise)
         self.assertAlmostEqual(calculate_snr_db_from_rms(rms_signal_plus_noise, rms_noise), expected_snr, places=5)
 
     def test_snr_zero_noise(self):
+        # Tests the scenario where noise is effectively zero (below 1e-12 threshold).
+        # Example: RMS_signal_plus_noise = 1.0, RMS_noise = 1e-13.
+        # An SNR of infinity is expected, as per the implemented logic.
+        # This verifies the handling of extremely low or zero noise conditions.
         rms_signal_plus_noise = 1.0
         rms_noise_val = 1e-13 # Value that is < 1e-12, considered zero by the function
-
-        # According to calculate_snr_db_from_rms, this should return float('inf')
         expected_snr = float('inf')
         self.assertEqual(calculate_snr_db_from_rms(rms_signal_plus_noise, rms_noise_val), expected_snr)
 
     def test_snr_zero_noise_and_zero_signal_plus_noise(self):
+        # Tests the edge case where both (Signal+Noise) and Noise are effectively zero.
+        # Example: RMS_signal_plus_noise = 1e-13, RMS_noise = 1e-13.
+        # The implemented logic should return 0.0 dB for this 0/0-like condition.
+        # This verifies a specific boundary condition.
         rms_signal_plus_noise = 1e-13
         rms_noise_val = 1e-13
-
-        # According to calculate_snr_db_from_rms, 0/0 case should return 0.0 dB
         expected_snr = 0.0
         self.assertEqual(calculate_snr_db_from_rms(rms_signal_plus_noise, rms_noise_val), expected_snr)
         
     def test_snr_zero_signal_only(self):
-        # This happens if rms_signal_plus_noise is equal to rms_noise
+        # Tests the case where the estimated signal power is zero because RMS_signal_plus_noise equals RMS_noise.
+        # Example: RMS_signal_plus_noise = 1.0, RMS_noise = 1.0.
+        # This implies estimated signal RMS is 0, which is treated as 1e-12.
+        # Expected SNR = 20 * log10(1e-12 / 1.0) = -240 dB.
+        # This verifies the handling when the subtraction (Power_total - Power_noise) results in zero.
         rms_signal_plus_noise = 1.0
         rms_noise = 1.0
-        
-        # power_signal_plus_noise = 1.0
-        # power_noise = 1.0
-        # rms_signal_only_val becomes sqrt(0) = 0, which is then treated as 1e-12
-        # expected_snr = 20 * math.log10(1e-12 / 1.0) = -240 dB
         expected_snr = 20 * math.log10(1e-12 / rms_noise)
         self.assertAlmostEqual(calculate_snr_db_from_rms(rms_signal_plus_noise, rms_noise), expected_snr, places=5)
 
