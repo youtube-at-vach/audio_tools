@@ -134,8 +134,14 @@ def generate_noise(duration, sample_rate, color='white'):
         scaling_factors = 1 / np.sqrt(frequencies + 1e-10) # ピンクノイズ
         noise = apply_filter(noise, frequencies, scaling_factors)
     elif color == 'grey': # グレーノイズ (A-weightingの逆特性)
-        scaling_factors = 1 / a_weight(frequencies)
-        scaling_factors[scaling_factors > 1e5] = 1  # 無限大を避けるクリッピング
+        aw = a_weight(frequencies)
+        scaling_factors = np.zeros_like(aw)
+
+        non_zero_aw_indices = aw != 0
+        scaling_factors[non_zero_aw_indices] = 1 / aw[non_zero_aw_indices]
+
+        scaling_factors[aw == 0] = 0.0 # Handle DC component or where a_weight is zero
+
         noise = apply_filter(noise, frequencies, scaling_factors)
     elif color == 'brown' or color == 'red': # ブラウンノイズ/レッドノイズ
         scaling_factors = 1 / (frequencies + 1e-10)  # ゼロ除算防止
@@ -146,6 +152,10 @@ def generate_noise(duration, sample_rate, color='white'):
     elif color == 'purple' or color == 'violet': # パープルノイズ/バイオレットノイズ
         scaling_factors = frequencies
         noise = apply_filter(noise, frequencies, scaling_factors)
+    elif color == 'white': # Explicitly handle white noise to avoid falling into 'else'
+        pass # No specific filter needed, noise is already white
+    else:
+        raise ValueError(f"Unknown noise color: {color}. Supported colors are white, pink, grey, brown, red, blue, purple, violet.")
 
     return noise / np.max(np.abs(noise))  # 正規化
 
