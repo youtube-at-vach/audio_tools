@@ -34,3 +34,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ---
 
 どうぞご自由にお使いください。
+
+---
+
+## Evaluation Summary
+
+| Application                      | Overall Average Rating | Link to Detailed Evaluation |
+|----------------------------------|------------------------|-----------------------------|
+| Audio Analyzer                   | 3.29 ⭐                | [Details](./EVALUATION.md#audio-analyzer-audio_analyzer) |
+| Audio Crosstalk Analyzer         | 3.71 ⭐                | [Details](./EVALUATION.md#audio-crosstalk-analyzer-audio_crosstalk_analyzer) |
+| Audio Frequency Response Analyzer| 3.71 ⭐                | [Details](./EVALUATION.md#audio-frequency-response-analyzer-audio_freq_response_analyzer) |
+| Audio IMD Analyzer               | 3.71 ⭐                | [Details](./EVALUATION.md#audio-imd-analyzer-audio_imd_analyzer) |
+| Audio Phase Analyzer             | 3.57 ⭐                | [Details](./EVALUATION.md#audio-phase-analyzer-audio_phase_analyzer) |
+| Audio Signal Generator           | 3.00 ⭐                | [Details](./EVALUATION.md#audio-signal-generator-audio_signal_generator) |
+| Audio Transient Analyzer         | 3.29 ⭐                | [Details](./EVALUATION.md#audio-transient-analyzer-audio_transient_analyzer) |
+| LUFS Meter                       | 3.57 ⭐                | [Details](./EVALUATION.md#lufs-meter-lufs_meter) |
+| Noise Calculator                 | 3.29 ⭐                | [Details](./EVALUATION.md#noise-calculator-miscnoise_calcpy) |
+| SNR Analyzer                     | 3.29 ⭐                | [Details](./EVALUATION.md#snr-analyzer-snr_analyzer) |
