@@ -17,7 +17,7 @@ Audio Analyzer v1.4.5
 - テストトーンの出力機能
 - **新機能: --mapによる周波数・振幅のマッピング測定**
 
-作成者: ChatGPT および vach
+作成者: ChatGPT, vach, Jules, Gemini
 日付: 2024-10-16
 """
 import configparser

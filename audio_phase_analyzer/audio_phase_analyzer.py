@@ -326,7 +326,7 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter # Shows defaults in help
     )
     parser.add_argument(
-        '--list_devices', 
+        '-l', '--list_devices', 
         action='store_true', 
         help='List available audio devices and their details, then exit.'
     )

@@ -51,11 +51,7 @@ python audio_freq_response_analyzer/audio_freq_response_analyzer.py [OPTIONS]
 
 Measure frequency response from 20 Hz to 20 kHz, 3 points per octave, -20 dBFS amplitude, using default device (will prompt), output channel R, input channel L, and save results to CSV and plots:
 ```bash
-python audio_freq_response_analyzer/audio_freq_response_analyzer.py \
-    --points_per_octave 3 \
-    --output_csv freq_response.csv \
-    --output_plot_amp amp_plot.png \
-    --output_plot_phase phase_plot.png
+python audio_freq_response_analyzer/audio_freq_response_analyzer.py     --points-per-octave 3     --output-csv freq_response.csv     --output-plot-amplitude amp_plot.png     --output-plot-phase phase_plot.png
 ```
 
 ## Output Description

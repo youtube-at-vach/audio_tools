@@ -37,7 +37,7 @@ python3 wow_flutter_analyzer.py [options] <audio_file>
 ## Example Output
 
 ```
-Weighted Peak Wow & Flutter: 0.9987%
+Unweighted Peak Wow & Flutter: 0.9987%
 ```
 
 *(A plot window will also appear if `--plot` is used.)*

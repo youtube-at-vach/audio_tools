@@ -67,7 +67,7 @@ python audio_imd_analyzer/audio_imd_analyzer.py [OPTIONS]
 | `--window`            |       | `blackmanharris`   | FFT window type for analysis (e.g., `hann`, `hamming`, `blackmanharris`).                                  |
 | `--num_sidebands`     |       | `3`                | Number of sideband pairs (e.g., f2 ± n*f1) to analyze for SMPTE IMD calculation.                           |
 | `--standard`          | `-std`| `smpte`            | IMD standard to use: `smpte` or `ccif`. If `ccif` is chosen and `--f1`, `--f2`, `--ratio` are not specified, they default to 19kHz, 20kHz, and 1.0 respectively. |
-| `--output_csv`        |       | `None`             | **(Placeholder for future implementation)** Path to save IMD product details as a CSV file.                |
+| `--output_csv`        |       | `None`             | Path to save IMD product details as a CSV file.                |
 | `--help`              | `-h`  |                    | Show this help message and exit.                                                                           |
 
 ### Example Command
