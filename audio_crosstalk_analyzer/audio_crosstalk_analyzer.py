@@ -336,9 +336,10 @@ def main():
                           frequencies_to_test.append(args.end_freq) 
                 break 
             if len(frequencies_to_test) >= 500 : 
-                error_console.print(f"Warning: More than 500 frequency points generated for sweep, stopping. Adjust PPO or range.")
+                error_console.print("Warning: More than 500 frequency points generated for sweep, stopping. Adjust PPO or range.")
                 if args.end_freq not in frequencies_to_test and args.end_freq > frequencies_to_test[-1]: 
-                     if len(frequencies_to_test) < 501: frequencies_to_test.append(args.end_freq) 
+                     if len(frequencies_to_test) < 501:
+                         frequencies_to_test.append(args.end_freq) 
                 break
             current_freq = next_freq
         
@@ -351,23 +352,23 @@ def main():
             sys.exit(1)
         frequencies_to_test.append(args.frequency)
 
-    console.print(f"\n[cyan]Device Configuration:[/cyan]")
+    console.print("\n[cyan]Device Configuration:[/cyan]")
     console.print(f"  Playback/Record Device: {device_info['name']} (ID: {selected_device_idx}, Device SR: {device_info['default_samplerate']} Hz)")
     console.print(f"  Script Using Sample Rate: {args.sample_rate} Hz")
     console.print(f"  Test Signal Output Channel: '{args.output_channel}' (Device Index: {output_channel_idx})")
     console.print(f"  Input Channels (Recorded): {args.input_channels} (Device Indices: {input_channel_indices})")
     console.print(f"    Reference Input Channel (for driven signal level): '{args.input_channels[0]}' (Device Index: {input_channel_indices[0]})")
     
-    console.print(f"\n[cyan]Test Parameters:[/cyan]")
+    console.print("\n[cyan]Test Parameters:[/cyan]")
     console.print(f"  Mode: {'Sweep' if args.sweep else 'Single Frequency'}")
-    console.print(f"  Frequencies: " + ", ".join([f"{f:.2f}" for f in frequencies_to_test]) + " Hz")
+    console.print("  Frequencies: " + ", ".join([f"{f:.2f}" for f in frequencies_to_test]) + " Hz")
     console.print(f"  Signal Amplitude: {args.amplitude} dBFS")
     console.print(f"  Duration per Step: {args.duration_per_step} s")
     console.print(f"  FFT Window: {args.window}")
 
     all_results_data = [] 
 
-    console.print(f"\n[green]Starting crosstalk analysis...[/green]")
+    console.print("\n[green]Starting crosstalk analysis...[/green]")
     for freq_hz in frequencies_to_test:
         console.print(f"  Testing frequency: {freq_hz:.2f} Hz...")
         
@@ -429,7 +430,7 @@ def main():
         console.print("\n[yellow]No results to display (e.g., all frequencies failed or no frequencies tested).[/yellow]")
         sys.exit(0)
         
-    console.print(f"\n[bold underline cyan]Crosstalk Analysis Results[/bold underline cyan]")
+    console.print("\n[bold underline cyan]Crosstalk Analysis Results[/bold underline cyan]")
     results_table = Table(title=f"Crosstalk Measurement Summary (Output Ch: '{args.output_channel}')")
     results_table.add_column("Freq (Hz)", style="magenta", justify="right", min_width=10)
     results_table.add_column(f"Ref Ch ('{args.input_channels[0]}') Lvl (dBFS)", style="green", justify="right", min_width=22)
@@ -482,7 +483,7 @@ def main():
     can_plot = args.sweep and all_results_data and (args.output_plot or not args.no_plot_display)
     
     if can_plot:
-        console.print(f"\n[green]Generating plot...[/green]")
+        console.print("\n[green]Generating plot...[/green]")
         try:
             frequencies = [r['freq_hz'] for r in all_results_data]
             
@@ -544,9 +545,9 @@ def main():
         except Exception as e:
             error_console.print(f"\nAn error occurred during plotting: {e}")
     elif args.output_plot and not args.sweep:
-        console.print(f"\n[yellow]Plotting is enabled via --output_plot but only supported for sweep mode. No plot generated.[/yellow]")
+        console.print("\n[yellow]Plotting is enabled via --output_plot but only supported for sweep mode. No plot generated.[/yellow]")
     elif args.output_plot and not all_results_data:
-         console.print(f"\n[yellow]Plotting is enabled via --output_plot but there are no results to plot. No plot generated.[/yellow]")
+         console.print("\n[yellow]Plotting is enabled via --output_plot but there are no results to plot. No plot generated.[/yellow]")
 
 
 if __name__ == '__main__':

@@ -8,8 +8,7 @@ from lufs_meter.lufs_meter import (
     apply_k_weighting,
     calculate_true_peak,
     calculate_loudness_range,
-    calculate_integrated_loudness,
-    calculate_mean_square # Needed for the gating logic test if we create audio blocks
+    calculate_integrated_loudness # Needed for the gating logic test if we create audio blocks
 )
 
 # Helper function for test_gating_logic_of_integrated_loudness
@@ -84,11 +83,6 @@ class TestLufsMeter(unittest.TestCase):
         # A half-cycle of a sine wave at a highish frequency relative to original SR
         # For 48kHz, Nyquist is 24kHz. Let's try a 12kHz sine wave.
         # Its samples might not hit the true peak.
-        duration = 1/12000 # one cycle of 12kHz
-        num_samples_one_cycle = int(self.sample_rate * duration)
-        t = np.linspace(0, duration, num_samples_one_cycle, endpoint=False)
-        # Create a signal whose true peak is 0.8 but samples might miss it
-        signal3_base = 0.8 * np.sin(2 * np.pi * 12000 * t) 
         # For this test, let's make a very short, simple signal known to cause ISP with resample_poly
         signal3 = np.array([0.6, 0.6, 0.6]) # This simple signal often shows ISP
         upsampled_signal3_manual = signal.resample_poly(signal3, 4, 1)

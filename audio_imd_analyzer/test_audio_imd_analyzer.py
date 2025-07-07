@@ -1,6 +1,5 @@
 import unittest # Using unittest for structure and some assertions like assertRaises
 import numpy as np
-import scipy.signal
 import sys
 
 from .audio_imd_analyzer import generate_dual_tone, analyze_imd_smpte, analyze_imd_ccif, dbfs_to_linear
@@ -298,63 +297,9 @@ class TestAudioImdAnalyzer(unittest.TestCase):
 
 
 def run_tests():
-    suite = unittest.TestSuite()
     # Manually add tests if not using unittest.main() discovery
     # The custom runner below will pick them up via dir() and startswith('test_')
-    # suite.addTest(TestAudioImdAnalyzer('test_gdt_amplitudes_and_clipping'))
-    # suite.addTest(TestAudioImdAnalyzer('test_gdt_frequencies'))
-    # suite.addTest(TestAudioImdAnalyzer('test_analyze_smpte_clean_signal'))
-    # suite.addTest(TestAudioImdAnalyzer('test_analyze_smpte_with_known_sidebands'))
-    # suite.addTest(TestAudioImdAnalyzer('test_analyze_smpte_low_f2_signal'))
-    # suite.addTest(TestAudioImdAnalyzer('test_analyze_ccif_clean_signal'))
-    # suite.addTest(TestAudioImdAnalyzer('test_analyze_ccif_with_known_products'))
-    # suite.addTest(TestAudioImdAnalyzer('test_analyze_ccif_low_signal'))
-    
-    # Can use TextTestRunner for more detailed unittest output
-    # runner = unittest.TextTestRunner()
-    # runner.run(suite)
-
-    # Custom simple runner as per prompt
-    test_instance = TestAudioImdAnalyzer()
-    test_methods = [method_name for method_name in dir(test_instance) if method_name.startswith('test_')]
-    
-    all_passed = True
-    for method_name in test_methods:
-        try:
-            # For each test method, create a new instance to ensure test isolation
-            # if tests had complex state, though these are mostly functional.
-            current_test_instance = TestAudioImdAnalyzer(methodName=method_name)
-            current_test_instance.setUp() # In case setUp is defined later
-            getattr(current_test_instance, method_name)()
-            # If using the global test_results dict, it's already updated inside the test.
-            # Otherwise, could set it here.
-            # test_results[method_name] = "PASS" # This is now done inside each test
-        except AssertionError as e:
-            test_results[method_name] = f"FAIL: {e}"
-            all_passed = False
-        except Exception as e:
-            test_results[method_name] = f"ERROR: {e}" # For unexpected errors
-            all_passed = False
-        finally:
-            current_test_instance.tearDown() # In case tearDown is defined later
-
-
-    print("\n--- Test Summary ---")
-    for test_name, result in test_results.items():
-        status_indicator = "[PASS]" if "PASS" in result else "[FAIL]" if "FAIL" in result else "[ERROR]"
-        print(f"{status_indicator} {test_name}")
-        if "FAIL" in result or "ERROR" in result:
-             # The result string already contains the error message from the custom runner.
-             # For unittest runner, this would be different.
-             print(f"    {result.split(':', 1)[1].strip()}")
-
-
-    if all_passed:
-        print("\nAll tests passed successfully!")
-        return True
-    else:
-        print("\nSome tests FAILED or ERRORED.")
-        return False
+    pass
 
 if __name__ == '__main__':
     if not run_tests():

@@ -1,6 +1,5 @@
 import unittest
 import numpy as np
-import scipy.signal
 import sys
 import io # For capturing stderr
 

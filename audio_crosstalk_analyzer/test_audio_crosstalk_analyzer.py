@@ -12,7 +12,6 @@ try:
         analyze_recorded_channels,
         channel_spec_to_index,
         dbfs_to_linear, # For test_generate_sine_wave
-        linear_to_dbfs # For test_crosstalk_calculation_logic
     )
 except ImportError:
     # Fallback for running directly from the directory, assuming audio_crosstalk_analyzer.py is in the same dir or PYTHONPATH is set
@@ -183,10 +182,9 @@ class TestAudioCrosstalkAnalyzer(unittest.TestCase):
             calculated_crosstalk_db_zero_driven = np.inf
         self.assertEqual(calculated_crosstalk_db_zero_driven, expected_crosstalk_db_zero_driven)
 
-        # Case 4: Both driven and undriven are zero (or very low)
+        # Case: Both channels are silent
         amp_driven_both_zero = 1e-15
         amp_undriven_both_zero = 1e-14
-        expected_crosstalk_db_both_zero = np.nan # Remains NaN as per logic: driven <= 1e-12, and undriven <= 1e-12
         
         calculated_crosstalk_db_both_zero = np.nan
         if amp_driven_both_zero > 1e-12:

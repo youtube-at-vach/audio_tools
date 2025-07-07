@@ -233,7 +233,8 @@ def plot_lissajous(recorded_audio, sample_rate, frequency, input_ch_labels, targ
     
     # Add a small margin to prevent points from being exactly on the edge
     max_val = np.max(np.abs(np.concatenate((ch1_plot, ch2_plot)))) * 1.1 
-    if max_val == 0: max_val = 1 # Avoid zero limits if signal is silent
+    if max_val == 0:
+        max_val = 1 # Avoid zero limits if signal is silent
     plt.xlim([-max_val, max_val])
     plt.ylim([-max_val, max_val])
 
@@ -485,9 +486,12 @@ def main():
          if phase is not None:
              phase_text_val = f"{phase:.2f}°"
              style = "cyan"
-             if abs(phase) >= 170: style = "bold red" # Very out of phase
-             elif abs(phase) >= 90: style = "yellow" # Significantly out of phase
-             elif abs(phase) < 10: style = "bold green" # In phase
+             if abs(phase) >= 170:
+                 style = "bold red" # Very out of phase
+             elif abs(phase) >= 90:
+                 style = "yellow" # Significantly out of phase
+             elif abs(phase) < 10:
+                 style = "bold green" # In phase
 
              phase_text_display = Text()
              phase_text_display.append("Calculated Phase Difference: ", style="default")

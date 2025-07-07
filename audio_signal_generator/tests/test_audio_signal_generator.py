@@ -436,7 +436,7 @@ class TestAudioSignalGenerator(unittest.TestCase):
             # dB for octave: 10 * log10(2^m) = 10 * m * log10(2)
             slope_db_octave = m * 10 * np.log10(2.0)
             return slope_db_octave
-        except Exception as e:
+        except Exception:
             # print(f"Curve fit failed: {e}") # Optional: for debugging
             return np.nan
 

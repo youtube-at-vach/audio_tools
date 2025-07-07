@@ -5,7 +5,6 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
 from scipy.interpolate import griddata
 from matplotlib.animation import FuncAnimation
 
@@ -230,7 +229,7 @@ class DistortionVisualizer:
         plt.tight_layout()
 
         if animate:
-            ani = FuncAnimation(fig, update_view, frames=np.arange(-180, 180, 2), interval=300)  # 360度を2度刻みで回転
+            FuncAnimation(fig, update_view, frames=np.arange(-180, 180, 2), interval=300)  # 360度を2度刻みで回転
             plt.show()
         else:
             plt.show()
