@@ -575,11 +575,15 @@ def main():
     group.add_argument('--calib', action='store_true', help='キャリブレーションモード')
     # 追加オプション
     parser.add_argument('--output_csv', type=str, help='測定結果を保存するCSVファイル名')
+    parser.add_argument('-d', '--device', type=int, help='音声デバイスの番号')
 
     args = parser.parse_args()
 
     # デバイス選択
-    device_index = select_device()
+    if args.device is not None:
+        device_index = args.device
+    else:
+        device_index = select_device()
 
     # サンプリングレート設定
     sample_rate = args.sample_rate
