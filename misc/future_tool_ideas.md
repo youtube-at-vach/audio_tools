@@ -17,10 +17,10 @@ This document lists potential ideas for future audio measurement programs. These
     Analyzes characteristics of a stereo image beyond basic phase/crosstalk, such as perceived width or inter-channel coherence.
 
 -   **Wow and Flutter Analyzer**:
-    Measures speed variations in analog playback systems like turntables or tape decks, using a stable test tone recording.
+    Measures speed variations in analog playback systems like turntables or tape decks, using a stable test tone recording. (Implemented in `wow_flutter_analyzer/`)
 
 -   **Reverberation Time (RT60) Analyzer**:
-    Measures reverberation time (e.g., RT60) in an acoustic space, typically using an impulse response or interrupted noise.
+    Measures reverberation time (e.g., RT60) in an acoustic space, typically using an impulse response or interrupted noise. (Implemented in `rt60_analyzer/`)
 
 -   **Automated Test Sequencer**:
     A higher-level tool to run a predefined sequence of existing analyzer tools and compile a combined report for comprehensive device testing.
