@@ -260,8 +260,8 @@ def calculate_loudness_range(short_term_lufs_values: np.ndarray, integrated_lufs
 
     # 4. Calculate percentile boundaries
     # 5. Determine LUFS values at these percentiles
-    val_10th = np.percentile(sorted_lufs, 10)
-    val_95th = np.percentile(sorted_lufs, 95)
+    val_10th = np.percentile(sorted_lufs, 10, interpolation='lower')
+    val_95th = np.percentile(sorted_lufs, 95, interpolation='lower')
 
     # 6. LRA is the difference
     lra = val_95th - val_10th

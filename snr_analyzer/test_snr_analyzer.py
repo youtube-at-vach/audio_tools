@@ -12,7 +12,8 @@ import os
 # parent_dir = os.path.dirname(current_dir)
 # sys.path.insert(0, parent_dir)
 
-from snr_analyzer.snr_analyzer import calculate_rms, generate_sine_wave
+from snr_analyzer.snr_analyzer import calculate_rms, generate_sine_wave, measure_snr
+from unittest.mock import patch, MagicMock
 
 # For testing the SNR calculation logic, we'll replicate the core math here
 # as the measure_snr function itself is more of an integration test due to audio I/O.
@@ -194,6 +195,65 @@ class TestSNRCalculationLogic(unittest.TestCase):
         rms_noise = 1.0
         expected_snr = 20 * math.log10(1e-12 / rms_noise)
         self.assertAlmostEqual(calculate_snr_db_from_rms(rms_signal_plus_noise, rms_noise), expected_snr, places=5)
+
+
+class TestMeasureSNR(unittest.TestCase):
+    @patch('snr_analyzer.snr_analyzer.sd.rec')
+    @patch('snr_analyzer.snr_analyzer.sd.playrec')
+    @patch('snr_analyzer.snr_analyzer.sd.query_devices')
+    def test_measure_snr_logic(self, mock_query_devices, mock_playrec, mock_rec):
+        # Setup mock device info
+        mock_device_info = {
+            'name': 'mock_device',
+            'max_output_channels': 2,
+            'max_input_channels': 2,
+            'default_samplerate': 48000
+        }
+        mock_query_devices.return_value = mock_device_info
+
+        # --- Test Data ---
+        samplerate = 48000
+        signal_amp = 0.7
+        noise_amp = 0.07 
+        duration = 1.0
+        
+        # Create a known signal and noise
+        t = np.linspace(0, duration, int(samplerate * duration), False)
+        signal_wave = signal_amp * np.sin(2 * np.pi * 1000 * t)
+        noise_wave = np.random.normal(0, noise_amp, len(t))
+
+        # Mock the return values of sounddevice functions
+        mock_playrec.return_value = (signal_wave + noise_wave).astype(np.float32)
+        mock_rec.return_value = noise_wave.astype(np.float32)
+
+        # --- Expected Values ---
+        rms_signal_only_theoretical = signal_amp / np.sqrt(2)
+        rms_noise_theoretical = np.sqrt(np.mean(noise_wave**2))
+        expected_snr_db = 20 * np.log10(rms_signal_only_theoretical / rms_noise_theoretical)
+
+        # --- Run the function ---
+        snr_db, rms_signal, rms_noise = measure_snr(
+            device_id=0,
+            output_channel_idx=1,
+            input_channel_idx=1,
+            samplerate=samplerate,
+            signal_freq=1000,
+            signal_amp=signal_amp,
+            signal_duration=duration,
+            noise_duration=duration
+        )
+
+        # --- Assertions ---
+        # Check if the calculated SNR is close to the theoretical value.
+        # We use a larger delta because the random noise adds variability.
+        self.assertAlmostEqual(snr_db, expected_snr_db, delta=1.0)
+        
+        # Check if the calculated RMS values are reasonable
+        self.assertAlmostEqual(rms_noise, rms_noise_theoretical, delta=rms_noise_theoretical*0.1)
+        
+        # The calculated signal RMS is derived from (S+N) - N, so it will also have variance.
+        # Let's check it against the theoretical value.
+        self.assertAlmostEqual(rms_signal, rms_signal_only_theoretical, delta=rms_signal_only_theoretical*0.1)
 
 
 if __name__ == '__main__':
