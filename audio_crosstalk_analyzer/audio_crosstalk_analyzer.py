@@ -223,27 +223,27 @@ def main():
     mode_group = parser.add_argument_group('Mode Selection')
     mode_group.add_argument("--frequency", type=float, default=1000.0, help="Frequency for single mode test (Hz). Default: 1000.0. Must be positive.")
     mode_group.add_argument("--sweep", action='store_true', help="Enable sweep mode. Overrides --frequency.")
-    mode_group.add_argument("--start_freq", type=float, default=20.0, help="Start frequency for sweep mode (Hz). Default: 20.0. Must be positive.")
-    mode_group.add_argument("--end_freq", type=float, default=20000.0, help="End frequency for sweep mode (Hz). Default: 20000.0. Must be positive.")
-    mode_group.add_argument("--points_per_octave", "-ppo", type=int, default=3, help="Number of test points per octave in sweep mode. Default: 3. Must be positive.")
+    mode_group.add_argument("--start-frequency", type=float, default=20.0, help="Start frequency for sweep mode (Hz). Default: 20.0. Must be positive.")
+    mode_group.add_argument("--end-frequency", type=float, default=20000.0, help="End frequency for sweep mode (Hz). Default: 20000.0. Must be positive.")
+    mode_group.add_argument("--points-per-octave", "-ppo", type=int, default=3, help="Number of test points per octave in sweep mode. Default: 3. Must be positive.")
 
     signal_group = parser.add_argument_group('Signal Parameters')
     signal_group.add_argument("--amplitude", type=float, default=-12.0, help="Amplitude of the test signal (dBFS). Default: -12.0. Must be <= 0.")
     
     device_group = parser.add_argument_group('Audio Device and Channel Parameters')
     device_group.add_argument("--device", type=int, help="Audio device ID for playback and recording. Prompts if not provided.")
-    device_group.add_argument("--sample_rate", type=int, default=48000, help="Sampling rate (Hz). Default: 48000")
-    device_group.add_argument("--output_channel", "-oc", type=str, default='L', help="Output channel for test signal (e.g., 'L', 'R', or numeric 0-based index '0', '1', ...). Default: 'L'")
-    device_group.add_argument("--input_channels", "-ic", type=str, nargs='+', required=True, help="List of input channels to record (e.g., 'L' 'R' or '0' '1' ...). First channel is the reference for crosstalk calculation (i.e., the channel receiving the direct signal or loopback of output_channel). All specified input channels must be unique.")
+    device_group.add_argument("--sample-rate", type=int, default=48000, help="Sampling rate (Hz). Default: 48000")
+    device_group.add_argument("--output-channel", "-oc", type=str, default='L', help="Output channel for test signal (e.g., 'L', 'R', or numeric 0-based index '0', '1', ...). Default: 'L'")
+    device_group.add_argument("--input-channels", "-ic", type=str, nargs='+', required=True, help="List of input channels to record (e.g., 'L' 'R', or numeric 0-based index '0', '1', ...). First channel is the reference for crosstalk calculation (i.e., the channel receiving the direct signal or loopback of output_channel). All specified input channels must be unique.")
 
     analysis_group = parser.add_argument_group('Analysis Parameters')
     analysis_group.add_argument("--window", type=str, default='hann', help="FFT window type (e.g., hann, blackmanharris). Default: 'hann'")
-    analysis_group.add_argument("--duration_per_step", type=float, default=0.5, help="Duration of tone and recording for each frequency step (seconds). Default: 0.5. Must be positive.")
+    analysis_group.add_argument("--duration-per-step", type=float, default=0.5, help="Duration of tone and recording for each frequency step (seconds). Default: 0.5. Must be positive.")
 
     output_group = parser.add_argument_group('Output Options')
-    output_group.add_argument("--output_csv", type=str, default=None, help="Path to save results in CSV format (e.g., results.csv).")
-    output_group.add_argument("--output_plot", type=str, default=None, help="Path to save crosstalk plot as an image (e.g., plot.png). Plot is generated for sweep mode only.")
-    output_group.add_argument("--no_plot_display", action='store_true', help="Suppress interactive display of the plot. Plot will still be saved if --output_plot is specified.")
+    output_group.add_argument("--output-csv", type=str, default=None, help="Path to save results in CSV format (e.g., results.csv).")
+    output_group.add_argument("--output-plot", type=str, default=None, help="Path to save crosstalk plot as an image (e.g., plot.png). Plot is generated for sweep mode only.")
+    output_group.add_argument("--no-plot-display", action='store_true', help="Suppress interactive display of the plot. Plot will still be saved if --output_plot is specified.")
 
 
     args = parser.parse_args()
@@ -252,7 +252,7 @@ def main():
         error_console.print("Error: Signal amplitude (--amplitude) must be 0 dBFS or less.")
         sys.exit(1)
     if args.duration_per_step <= 0:
-        error_console.print("Error: Duration per step (--duration_per_step) must be positive.")
+        error_console.print("Error: Duration per step (--duration-per-step) must be positive.")
         sys.exit(1)
 
 
@@ -261,25 +261,22 @@ def main():
         selected_device_idx = select_device()
     else:
         selected_device_idx = args.device
-        try:
-            devices = sd.query_devices() 
-            if not (0 <= selected_device_idx < len(devices)):
-                error_console.print(f"Error: Device ID {selected_device_idx} is invalid. Max ID is {len(devices)-1}.")
-                sys.exit(1)
-            device_info_check = sd.query_devices(selected_device_idx) 
-            if device_info_check['max_output_channels'] == 0:
-                error_console.print(f"Error: Device ID {selected_device_idx} ({device_info_check['name']}) has no output channels.")
-                sys.exit(1)
-            if device_info_check['max_input_channels'] == 0:
-                error_console.print(f"Error: Device ID {selected_device_idx} ({device_info_check['name']}) has no input channels.")
-                sys.exit(1)
-            console.print(f"Using specified device ID: {selected_device_idx} - {device_info_check['name']}")
-        except sd.PortAudioError as e:
-            error_console.print(f"Error querying audio devices: {e}")
+    
+    try:
+        device_info = sd.query_devices(selected_device_idx)
+        if device_info['max_output_channels'] == 0:
+            error_console.print(f"Error: Device ID {selected_device_idx} ({device_info['name']}) has no output channels.")
             sys.exit(1)
-        except Exception as e: 
-            error_console.print(f"An unexpected error occurred validating device ID {args.device}: {e}")
+        if device_info['max_input_channels'] == 0:
+            error_console.print(f"Error: Device ID {selected_device_idx} ({device_info['name']}) has no input channels.")
             sys.exit(1)
+        console.print(f"Using specified device ID: {selected_device_idx} - {device_info['name']}")
+    except sd.PortAudioError as e:
+        error_console.print(f"Error querying audio devices: {e}")
+        sys.exit(1)
+    except Exception as e: 
+        error_console.print(f"An unexpected error occurred validating device ID {selected_device_idx}: {e}")
+        sys.exit(1)
             
     try:
         device_info = sd.query_devices(selected_device_idx)
@@ -314,37 +311,37 @@ def main():
     # --- Frequency List Generation ---
     frequencies_to_test = []
     if args.sweep:
-        if args.start_freq <= 0 or args.end_freq <= 0:
+        if args.start_frequency <= 0 or args.end_frequency <= 0:
             error_console.print("Error: Sweep frequencies (--start_freq, --end_freq) must be positive.")
             sys.exit(1)
-        if args.start_freq >= args.end_freq:
+        if args.start_frequency >= args.end_frequency:
             error_console.print("Error: Start frequency must be less than end frequency for sweep mode.")
             sys.exit(1)
         if args.points_per_octave <= 0:
             error_console.print("Error: Points per octave (--points_per_octave) must be positive.")
             sys.exit(1)
         
-        current_freq = args.start_freq
-        while current_freq <= args.end_freq * (1 + 1e-9): 
+        current_freq = args.start_frequency
+        while current_freq <= args.end_frequency * (1 + 1e-9): 
             frequencies_to_test.append(current_freq)
             octave_multiplier = 2**(1/args.points_per_octave)
             next_freq = current_freq * octave_multiplier
             
             if next_freq <= current_freq : 
-                if len(frequencies_to_test) == 1 or frequencies_to_test[-1] < args.end_freq : 
-                     if args.end_freq not in frequencies_to_test and args.end_freq > frequencies_to_test[-1]:
+                if len(frequencies_to_test) == 1 or frequencies_to_test[-1] < args.end_frequency : 
+                     if args.end_frequency not in frequencies_to_test and args.end_frequency > frequencies_to_test[-1]:
                           frequencies_to_test.append(args.end_freq) 
                 break 
             if len(frequencies_to_test) >= 500 : 
                 error_console.print("Warning: More than 500 frequency points generated for sweep, stopping. Adjust PPO or range.")
-                if args.end_freq not in frequencies_to_test and args.end_freq > frequencies_to_test[-1]: 
+                if args.end_frequency not in frequencies_to_test and args.end_frequency > frequencies_to_test[-1]: 
                      if len(frequencies_to_test) < 501:
                          frequencies_to_test.append(args.end_freq) 
                 break
             current_freq = next_freq
         
         if not frequencies_to_test: 
-             error_console.print(f"Error: No frequencies generated for sweep from {args.start_freq} to {args.end_freq} with PPO {args.points_per_octave}.")
+             error_console.print(f"Error: No frequencies generated for sweep from {args.start_frequency} to {args.end_frequency} with PPO {args.points_per_octave}.")
              sys.exit(1)
     else: 
         if args.frequency <=0:
@@ -472,11 +469,14 @@ def main():
                         row_data.append(f"{res_row.get(f'undriven_ch_{i}_amp_dbfs', np.nan):.2f}")
                         row_data.append(f"{res_row.get(f'crosstalk_ch_{i}_db', np.nan):.2f}")
                     writer.writerow(row_data)
-            console.print(f"\n[green]Results saved to CSV: {args.output_csv}[/green]")
+            console.print("\n") # まず改行を出力
+            console.print(f"[green]Results saved to CSV: {args.output_csv}[/green]")
         except IOError as e:
-            error_console.print(f"\nError writing CSV file {args.output_csv}: {e}")
+            error_console.print("\nError writing CSV file ")
+            error_console.print(f"{args.output_csv}: {e}")
         except Exception as e:
-            error_console.print(f"\nAn unexpected error occurred while writing CSV: {e}")
+            error_console.print("\nAn unexpected error occurred while writing CSV: ")
+            error_console.print(f"{e}")
 
     # --- Plotting ---
     # Plot only if in sweep mode and there are results, and either output_plot is specified or interactive display is not suppressed.

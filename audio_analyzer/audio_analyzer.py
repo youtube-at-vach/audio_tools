@@ -561,7 +561,7 @@ def main():
     parser.add_argument('--duration', type=float, default=5.0, help='測定時間 (秒) (デフォルト: 5.0秒)')
     parser.add_argument('--bandpass', action='store_true', help='バンドパスフィルター適用オプション')
     parser.add_argument('-sr', '--sample_rate', type=int, default=48000, help='サンプリングレート (デフォルト: 48000 Hz)')
-    parser.add_argument('-oc', '--output_channel', type=str, choices=['L', 'R'], default='R', help='出力チャンネル (LまたはR, デフォルト: R)')
+    parser.add_argument('-oc', '--output-channel', type=str, choices=['L', 'R'], default='R', help='出力チャンネル (LまたはR, デフォルト: R)')
 
     # 測定回数オプション（通常モード用）
     parser.add_argument('-n', '--num_measurements', type=int, default=2, help='測定回数 (デフォルト: 2)')
@@ -574,7 +574,7 @@ def main():
     group.add_argument('--test', action='store_true', help='テストトーンを出力')
     group.add_argument('--calib', action='store_true', help='キャリブレーションモード')
     # 追加オプション
-    parser.add_argument('--output_csv', type=str, help='測定結果を保存するCSVファイル名')
+    parser.add_argument('--output-csv', type=str, help='測定結果を保存するCSVファイル名')
     parser.add_argument('-d', '--device', type=int, help='音声デバイスの番号')
 
     args = parser.parse_args()

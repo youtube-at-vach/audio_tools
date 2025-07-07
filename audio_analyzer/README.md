@@ -71,8 +71,9 @@ python audio_analyzer.py --frequency 1000 --amplitude -6 --duration 5.0
 | `-w, --window` | 窓関数の種類（デフォルト: blackmanharris） |
 | `--duration` | 測定時間（デフォルト: 5秒） |
 | `--bandpass` | バンドパスフィルターの適用 |
-| `-sr, --sample_rate` | サンプリングレート（デフォルト: 48000 Hz） |
-| `-oc, --output_channel` | 出力チャンネル（LまたはR、デフォルト: R） |
+| `-sr, --sample-rate` | サンプリングレート（デフォルト: 48000 Hz） |
+| `-oc, --output-channel` | 出力チャンネル（LまたはR、デフォルト: R） |
+| `-d, --device` | 音声デバイスの番号 |
 | `-n, --num_measurements` | 測定回数（デフォルト: 2回） |
 
 ### モードオプション（いずれか一つを選択）
@@ -85,7 +86,7 @@ python audio_analyzer.py --frequency 1000 --amplitude -6 --duration 5.0
 
 ### 追加オプション
 
-- `--output_csv`: 測定結果をCSVファイルに保存するファイル名  
+- `--output-csv`: 測定結果をCSVファイルに保存するファイル名  
 
 ---
 
