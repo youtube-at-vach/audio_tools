@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 # Assuming audio_phase_analyzer.py is in the same directory and __init__.py makes the package importable.
 # If audio_phase_analyzer/ is a package, this import style is correct.
-from audio_phase_analyzer.audio_phase_analyzer import calculate_phase_difference, generate_sine_wave
+from audio_phase_analyzer.audio_phase_analyzer import calculate_phase_difference
 
 class TestAudioPhaseAnalyzer(unittest.TestCase):
     SAMPLE_RATE = 48000

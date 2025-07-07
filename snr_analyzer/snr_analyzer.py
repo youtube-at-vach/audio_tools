@@ -5,7 +5,6 @@ import numpy as np
 import sounddevice as sd
 from rich.console import Console
 from rich.table import Table
-import scipy.signal
 
 # Initialize Rich Console
 console = Console()
@@ -125,7 +124,7 @@ def measure_snr(device_id: int, output_channel_idx: int, input_channel_idx: int,
 
         # Playback Signal and Record (Signal + Noise)
         console.print(f"\n[cyan]Preparing to play signal on '{device_info['name']}' (Output Channel {output_channel_idx}) and record from '{device_info['name']}' (Input Channel {input_channel_idx})...[/cyan]")
-        console.print(f"[yellow]Ensure your audio loopback or measurement setup is ready.[/yellow]")
+        console.print("[yellow]Ensure your audio loopback or measurement setup is ready.[/yellow]")
         
         # The 'signal' is a 1D NumPy array.
         # For sd.playrec, if output_mapping specifies a single channel,

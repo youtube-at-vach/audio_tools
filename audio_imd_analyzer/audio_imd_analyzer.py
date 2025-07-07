@@ -159,7 +159,8 @@ def _find_peak_amplitude_in_band(fft_magnitudes, fft_frequencies, target_freq, s
     min_freq = target_freq - search_half_width_hz
     max_freq = target_freq + search_half_width_hz
     band_indices = np.where((fft_frequencies >= min_freq) & (fft_frequencies <= max_freq))[0]
-    if not band_indices.size: return 0.0, 0.0
+    if not band_indices.size:
+        return 0.0, 0.0
     peak_index_in_band = np.argmax(fft_magnitudes[band_indices])
     peak_abs_index = band_indices[peak_index_in_band]
     return fft_frequencies[peak_abs_index], fft_magnitudes[peak_abs_index]
@@ -198,7 +199,8 @@ def analyze_imd_smpte(recorded_audio, sample_rate, f1, f2, window_name='blackman
     for n in range(1, num_sideband_pairs + 1):
         for sign, type_str in [(1, '+'), (-1, '-')]:
             sb_freq_nominal = f2 + sign * n * f1
-            if sb_freq_nominal <= 0: continue
+            if sb_freq_nominal <= 0:
+                continue
             actual_freq, amp_sb_linear = _find_peak_amplitude_in_band(scaled_fft_magnitude, fft_frequencies, sb_freq_nominal)
             if amp_sb_linear > 1e-12:
                 dbr_f2 = 20 * np.log10(amp_sb_linear / amp_f2_linear) if amp_f2_linear > 0 else -np.inf
@@ -425,7 +427,7 @@ def main():
         sys.exit(1)
 
     # --- Signal Generation ---
-    console.print(f"\n[green]Generating dual-tone signal...[/green]")
+    console.print("\n[green]Generating dual-tone signal...[/green]")
     console.print(f"  Parameters: f1={args.f1}Hz, f2={args.f2}Hz, Amp(f1)={args.amplitude}dBFS, Ratio={args.ratio}, SR={args.sample_rate}Hz, Dur={args.duration}s")
     try:
         dual_tone_signal = generate_dual_tone(args.f1, args.amplitude, args.f2, args.ratio, args.duration, args.sample_rate)
@@ -438,7 +440,7 @@ def main():
         sys.exit(1)
 
     # --- Playback and Recording ---
-    console.print(f"\n[green]Starting audio playback and recording...[/green]")
+    console.print("\n[green]Starting audio playback and recording...[/green]")
     console.print(f"  Device: {device_info['name']} (ID {selected_device_idx})")
     console.print(f"  Output Ch: {args.output_channel} ({output_channel_numeric_idx}), Input Ch: {args.input_channel} ({input_channel_numeric_idx})")
     

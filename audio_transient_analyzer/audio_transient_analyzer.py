@@ -5,11 +5,9 @@ from rich.console import Console # Removed ErrorConsole
 from rich.table import Table
 from rich.prompt import Prompt
 import sys
-import math
-import numpy as np # Ensure numpy is imported, though it was already present
 from scipy.signal import windows # For tukey window, and hanning if not using np.hanning
 import csv # For CSV output
-from typing import Optional, Union # Added for 3.8+ compatibility
+from typing import Optional # Added for 3.8+ compatibility
 
 def dbfs_to_linear(dbfs: float) -> float:
     """Converts a dBFS value to a linear amplitude value (0 dBFS = 1.0 linear)."""
@@ -117,7 +115,7 @@ def play_and_record(
         if not (0 <= input_channel_device_idx < num_recorded_channels):
             error_console.print(f"Error: Desired input channel index ({input_channel_device_idx}) is out of range "
                                 f"for the {num_recorded_channels} channel(s) actually recorded by the device.")
-            error_console.print(f"Please check your --input_channel argument and device capabilities.")
+            error_console.print("Please check your --input_channel argument and device capabilities.")
             return None
 
         if recorded_audio.ndim == 1:
@@ -496,7 +494,7 @@ if __name__ == '__main__':
         )
         console.print(f"\nGenerated tone burst signal of length {len(test_signal)} samples.")
         if len(test_signal) == int(0.001 * args.sample_rate) and len(test_signal) <=10 : # check if it fell back to impulse
-             console.print(f"[yellow]Warning: Tone burst generation might have defaulted to a short impulse due to parameters (freq/cycles/sr).[/yellow]")
+             console.print("[yellow]Warning: Tone burst generation might have defaulted to a short impulse due to parameters (freq/cycles/sr).[/yellow]")
 
 
     if test_signal is not None:

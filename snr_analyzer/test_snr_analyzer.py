@@ -2,7 +2,6 @@ import unittest
 import numpy as np
 import math
 import sys
-import os
 
 # Add the parent directory to sys.path to allow direct import of snr_analyzer
 # This is necessary for running the test script directly or with some test runners.
@@ -13,7 +12,7 @@ import os
 # sys.path.insert(0, parent_dir)
 
 from snr_analyzer.snr_analyzer import calculate_rms, generate_sine_wave, measure_snr
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # For testing the SNR calculation logic, we'll replicate the core math here
 # as the measure_snr function itself is more of an integration test due to audio I/O.

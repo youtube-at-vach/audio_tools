@@ -1,6 +1,5 @@
 import unittest
 import numpy as np
-from scipy.signal import windows # For Tukey window comparison if needed directly
 
 # Assuming the main script is in a file named audio_transient_analyzer.py
 # and is either in the same directory or the package structure is set up correctly.
@@ -89,7 +88,6 @@ class TestSignalGenerationAndHelpers(unittest.TestCase):
         amplitude_dbfs = -6.0
         linear_amp = dbfs_to_linear(amplitude_dbfs)
         expected_samples = int(cycles * sample_rate / freq)
-        alpha = 0.5 # Default alpha in main code
 
         burst_signal = generate_tone_burst(freq, amplitude_dbfs, cycles, 'tukey', sample_rate)
         self.assertEqual(len(burst_signal), expected_samples)
@@ -229,11 +227,6 @@ class TestAnalysisFunctions(unittest.TestCase):
         # 90% value (0.9) is first met at index np.ceil(0.9*(N-1)) = ceil(89.1) = 90 (approx)
         # expected_rise_samples = ceil(0.9*(N-1)) - ceil(0.1*(N-1))
         
-        # Let's use the exact points for linspace:
-        # For linspace(0, 1, N), value v is at index v*(N-1)
-        idx_10_in_ramp_strict = 0.1 * (N - 1)
-        idx_90_in_ramp_strict = 0.9 * (N - 1)
-        
         # The function uses np.where(segment >= val)[0][0] which finds the first index.
         # If N=100, linspace points are 0, 1/99, 2/99 ... 99/99.
         # Value 0.1 is at index 9.9. np.where finds index 10. (segment[10] = 10/99 = 0.1010)
@@ -345,7 +338,6 @@ class TestAnalysisFunctions(unittest.TestCase):
         
         # Hold peak for 1ms
         signal_os[peak_sample_idx : peak_sample_idx + self.sample_rate // 1000] = peak_val
-        peak_idx_abs = peak_sample_idx # The function finds first peak, so this is ok.
         
         # Drop to steady state in 2ms
         steady_start_sample_idx = peak_sample_idx + self.sample_rate // 1000
@@ -386,8 +378,6 @@ class TestAnalysisFunctions(unittest.TestCase):
         ring_duration_samples = self.sample_rate * 50 // 1000 # 50ms
         t_ring = np.linspace(0, 10 * np.pi, ring_duration_samples) # More oscillations
         ringing = 0.2 * np.sin(t_ring) * np.exp(-t_ring / (2*np.pi)) # Make it decay
-        
-        peak_of_ringing_idx = np.argmax(np.abs(ringing)) # Relative to start of ringing
         
         # Place ringing at the beginning of the segment the function sees
         signal[0 : ring_duration_samples] = final_value + ringing

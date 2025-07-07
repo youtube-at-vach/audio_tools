@@ -29,8 +29,6 @@ import re
 
 import numpy as np
 import sounddevice as sd
-import soundfile as sf
-from scipy.signal import get_window
 from rich import print
 from rich.table import Table
 from rich.console import Console
@@ -296,7 +294,7 @@ def measure(device_index, output_channel, frequency, amplitude, phase, duration,
         else:
             console.print(f"[red]位相同期: 失敗, 相関係数:{coef:.2f}[/red]")
     else:
-        console.print(f"位相同期: 非同期(位相差確度なし)")
+        console.print("位相同期: 非同期(位相差確度なし)")
 
     return AudioCalc.analyze_harmonics(
         audio_data=audio,
@@ -611,7 +609,6 @@ def main():
 
     # トーン設定
     amplitude = 10 ** (args.amplitude / 20)  # dBFSを線形振幅に変換
-    phase = 0  # 位相は固定
 
     # モードに応じた周波数と振幅のリストを作成
     frequency_list = []

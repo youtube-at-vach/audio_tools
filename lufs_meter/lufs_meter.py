@@ -3,7 +3,7 @@ import numpy as np
 from scipy import signal
 import argparse
 import csv
-from typing import Tuple, List, Dict, Optional, Union, Any
+from typing import Tuple, List, Dict, Optional, Any
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -424,7 +424,8 @@ def main():
             diff = integrated_lufs - args.target_loudness
             color = "red" if diff > 0.5 else "green" if diff < -0.5 else "default" # Adding a bit of tolerance
             status_message = f"Measured Integrated Loudness is [bold {color}]{abs(diff):.1f} LUFS {'above' if diff > 0 else 'below' if diff < 0 else 'at'}[/bold {color}] target."
-            if abs(diff) <= 0.5: status_message = f"Measured Integrated Loudness is [bold green]at target[/bold green]."
+            if abs(diff) <= 0.5:
+                status_message = "Measured Integrated Loudness is [bold green]at target[/bold green]."
             console.print(Panel(status_message, title="Target Comparison", expand=False))
 
 

@@ -80,7 +80,7 @@ if __name__ == "__main__":
     v_rms = rms_noise(e_n, i_n, Ropt, bandwidth, T)
     
     print(f"最適な抵抗値 R_opt = {Ropt:.1f} Ω")
-    print(f"R_optでのノイズ密度:")
+    print("R_optでのノイズ密度:")
     print(f"  電圧ノイズ:        {v_n*1e9:.2f} nV/√Hz")
     print(f"  電流ノイズ:        {i_n_volt*1e9:.2f} nV/√Hz")
     print(f"  熱ノイズ (R):    {th_n*1e9:.2f} nV/√Hz")

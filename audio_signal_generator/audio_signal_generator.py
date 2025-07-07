@@ -56,10 +56,10 @@ def generate_sweep(start_freq, end_freq, duration, sample_rate, logarithmic=Fals
     
     if logarithmic: # 対数スイープ
         k = (end_freq / start_freq)**(1 / duration)
-        frequencies = start_freq * (end_freq / start_freq) ** (t / duration)
+        start_freq * (end_freq / start_freq) ** (t / duration)
     else: # 線形スイープ
         k = (end_freq - start_freq) / duration
-        frequencies = start_freq + k * t
+        start_freq + k * t
 
     if logarithmic:
         sweep = np.sin(2 * np.pi * start_freq * ((k**t - 1) / np.log(k)))
@@ -84,7 +84,6 @@ def a_weight(f):
 def b_weighting(f):
     f1 = 20.598997
     f2 = 158.48932
-    f3 = 737.86223
     f4 = 12194.217
     rb = f4 * f**3 / ((f**2 + f1**2) * np.sqrt(f**2 + f2**2) * (f**2 + f4**2))
     return rb
@@ -183,7 +182,7 @@ def apply_fade(tone, sample_rate, fade_duration):
 # 音量スイープを生成する関数
 def generate_volume_sweep(tone, sample_rate, duration, logarithmic=False):
     num_samples = len(tone)
-    t = np.linspace(0, duration, num_samples, endpoint=False)
+    np.linspace(0, duration, num_samples, endpoint=False)
 
     if logarithmic: # 対数スイープ
         volume_envelope = np.logspace(-3, np.log10(1), num_samples) # 0.001から0.5まで

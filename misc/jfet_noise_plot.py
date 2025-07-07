@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.ticker import ScalarFormatter, LogLocator
+from matplotlib.ticker import ScalarFormatter
 
 # === User-defined parameters ===
 I_ref = 5.0    # Reference drain current per JFET in mA
