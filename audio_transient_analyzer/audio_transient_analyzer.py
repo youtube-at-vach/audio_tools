@@ -43,7 +43,7 @@ def generate_tone_burst(frequency: float, amplitude_dbfs: float, cycles: int, en
 
 
     t = np.linspace(0, cycles / frequency, num_samples_burst, endpoint=False)
-    wave = amplitude_linear * np.sin(2 * np.pi * frequency * t)
+    wave = amplitude_linear * np.cos(2 * np.pi * frequency * t)
 
     if envelope_type == 'hann':
         if num_samples_burst > 0: # Hanning window requires non-zero length
