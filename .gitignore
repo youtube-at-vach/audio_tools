@@ -39,3 +39,4 @@ Thumbs.db
 ehthumbs.db
 
 *.wav
+\n# Ignore test result files\n*.csv\n*.png
