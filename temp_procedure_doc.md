@@ -4,102 +4,124 @@
 
 ## 1. 企画・設計 (Planning and Design)
 
--   **将来のアイデア確認**: まず `misc/future_tool_ideas.md` を確認し、既存の将来的なツール構想やアイデアに合致するものがないか、または参考にできる点がないかを確認します。(Check Future Ideas: First, review `misc/future_tool_ideas.md` to see if there are existing future tool concepts or ideas that align with the current task or can provide inspiration.)
+-   **将来のアイデア確認**: まず `misc/future_tool_ideas.md` を確認し、既存の将来的なツール構想やアイデアに合致するものがないか、または参考にできる点がないかを確認します。
 -   **目的の明確化**: 新しい測定プログラムが解決する課題、測定する具体的なオーディオ特性（例: THD+N, 周波数特性, IMDなど）を定義します。
 -   **既存ツールの確認**: リポジトリ内に類似の機能を持つツールがないか確認します。既存ツールを拡張できる場合は、新規作成よりも優先します。
-    -   **未カバーの測定カテゴリ特定**: 基本的なオーディオ測定カテゴリ（例：高調波歪み、周波数特性、相互変調歪み、ノイズ、ステレオ特性、過渡応答など）をリストアップし、未カバーの領域を特定します。例えば `audio_crosstalk_analyzer` はステレオ特性の未カバー領域（信号漏れ）に焦点を当てています。(Identify uncovered basic audio measurement categories by listing them (e.g., harmonic distortion, frequency response, IMD, noise, stereo characteristics, transient response) and target an uncovered area. For example, `audio_crosstalk_analyzer` focuses on an uncovered area of stereo characteristics - signal leakage.)
--   **必要な機能のリストアップ**:
+    -   **未カバーの測定カテゴリ特定**: 基本的なオーディオ測定カテゴリ（例：高調波歪み、周波数特性、相互変調歪み、ノイズ、ステレオ特性、過渡応答など）をリストアップし、未カバーの領域を特定します。例えば `audio_crosstalk_analyzer` はステレオ特性の未カバー領域（信号漏れ）に焦点を当てています。
+-   **必要な機能のリストアップ**: もし協力者がいればレビューを受け、フィードバックに基づいて修正を行います。
     -   入力信号の種類（例: サイン波、矩形波、ホワイトノイズ、外部ファイル）
     -   ユーザーが設定可能なパラメータ（例: 周波数、振幅、テスト時間、FFTサイズ）
     -   出力形式（例: コンソールへのテキスト表示、グラフ表示、CSVファイルへの保存）
     -   対応するオーディオ規格や測定方法（例: SMPTE, DIN, CCIF for IMD）
--   **使用ライブラリの選定**: `numpy`, `scipy`, `sounddevice`, `matplotlib`, `rich`など、必要なライブラリを検討します。
--   **設計段階で、新たに追加が必要となりそうなサードパーティライブラリ（例：データプロットのための `matplotlib`）を特定し、依存関係リストに追加する準備をします。(In the design phase, identify any new third-party libraries that may need to be added (e.g., `matplotlib` for data plotting) and prepare to add them to the dependency list.)**
+-   **使用ライブラリの選定**: `numpy`, `scipy`, `sounddevice`, `matplotlib`, `rich`など、プロジェクトで共通して使用されているライブラリを基本とします。
+-   **依存関係の確認**: 新たなサードパーティライブラリが必要な場合は、そのライブラリがプロジェクトの他の部分と競合しないか、ライセンスは適切かを確認します。可能であれば、既存のライブラリで代替できないか検討します。
 
 ## 2. 開発環境の準備 (Development Environment Setup)
 
--   Pythonの適切なバージョン（本リポジトリでは Python 3.8+ を推奨）を準備します。
--   必要なライブラリをインストールします (`pip install -r requirements.txt` もしくは個別に `pip install <library_name>`)。
-    -   必要なライブラリのインストールに加え、`sounddevice`のようなライブラリが依存する可能性のあるシステムレベルのオーディオライブラリ（例: Linux上のPortAudio (`libportaudio2`など)）がシステムにインストールされていることを確認します。これらは通常、Pythonライブラリのインストール時に自動的に解決されませんが、実行時エラーの原因となることがあります。(In addition to installing necessary libraries, ensure that system-level audio libraries that libraries like `sounddevice` might depend on (e.g., PortAudio on Linux (`libportaudio2`, etc.)) are installed on the system. These are typically not resolved automatically during Python library installation but can cause runtime errors.)
--   Gitリポジトリをクローンまたは最新の状態に更新します。
+-   **Pythonバージョン**: **Python 3.9+** を使用します。これにより、モダンな型ヒント構文 (`tuple[int]` など) が利用できます。
+-   **依存関係のインストール**: プロジェクトルートの `requirements.txt` を使って、共通の依存ライブラリをインストールします。
+    ```bash
+    pip install -r requirements.txt
+    ```
+    - ツール固有の依存関係がある場合は、そのツールのディレクトリにある `requirements.txt` を使って追加でインストールします。
+    - **システムライブラリの確認**: `sounddevice` が依存するPortAudio (`libportaudio2` など) がシステムにインストールされていることを確認してください。これは実行時エラーの一般的な原因です。
+-   **Gitリポジトリ**: `git clone` または `git pull` でリポジトリを最新の状態に更新します。
 
 ## 3. 実装 (Implementation)
 
--   **モジュール構成**:
+-   **モジュール構成**: 
     -   プログラムの主たる機能は、リポジトリルート直下に作成する専用のディレクトリ（例: `new_tool_analyzer/`）に配置します。
     -   メインスクリプトは `new_tool_analyzer/new_tool_analyzer.py` のように命名します。
     -   ディレクトリ内には `__init__.py` を配置し、Pythonパッケージとして認識できるようにします。
--   **信号生成**:
+-   **信号生成**: 
     -   必要なテスト信号を生成する関数を実装します。可能であれば既存の信号生成ツール（例: `audio_signal_generator`）の機能を活用します。
 -   **オーディオ入出力 (Audio I/O)**:
-    -   `sounddevice` ライブラリを使用して、オーディオデバイスの選択、再生、録音機能を実装します。
-    -   ユーザーが入力/出力チャンネル（L/R）を選択できるようにします。
-    -   オーディオストリーミングの要求（連続的な長時間処理か、断続的な短時間処理の繰り返し等）に応じて、`sounddevice`ライブラリの適切な利用方法（コールバック方式の`sd.Stream`か、ブロッキング方式の`sd.playrec`等）を選択します。また、`sd.playrec` のチャンネルマッピングなど、API特有の仕様にも注意します。(Select the appropriate usage method of the `sounddevice` library (e.g., callback-based `sd.Stream` or blocking `sd.playrec`) according to the audio streaming requirements (continuous long-term processing, intermittent repetition of short-term processing, etc.). Also, pay attention to API-specific specifications such as channel mapping for `sd.playrec`.)
-    -   `sounddevice`でオーディオデバイスを指定する際、多くの環境でデバイスの整数IDだけでなく、デバイス名（部分的な文字列でも可）も使用できます。これにより、CLIでのユーザーエクスペリエンスが向上する場合があります。(When specifying audio devices with `sounddevice`, device names (even partial strings) can often be used in addition to integer IDs in many environments. This can improve user experience in CLIs.)
-    -   **複数チャンネル同時再生録音時の注意点 (Notes on simultaneous multi-channel playback and recording)**:
-        -   ~~特定の出力チャンネルでモノラル信号を再生する場合、`sd.playrec()` に渡す出力バッファをデバイスの最大出力チャンネル数で初期化し、対象チャンネルに信号を配置します（例： `output_buffer = np.zeros((len(mono_signal), device_max_out_ch)); output_buffer[:, target_output_ch_idx] = mono_signal`）。(When playing a mono signal on a specific output channel, initialize the output buffer passed to `sd.playrec()` with the device's maximum number of output channels and place the signal in the target channel (e.g., `output_buffer = np.zeros((len(mono_signal), device_max_out_ch)); output_buffer[:, target_output_ch_idx] = mono_signal`).)~~ (この方法は依然として有効ですが、下記の `data` 引数と `output_mapping` に関する注意点がより直接的なアプローチを示す場合があります。)
-        -   `sd.playrec()` の `input_mapping` 引数を使用して、録音する物理入力チャンネルを1ベースのインデックスで指定します（例： `sd.playrec(..., input_mapping=[1, 2])` で物理チャンネル1と2を録音）。(Use the `input_mapping` argument of `sd.playrec()` with 1-based indices to specify the physical input channels to record from (e.g., `sd.playrec(..., input_mapping=[1, 2])` to record from physical channels 1 and 2).)
-        -   モノラル信号を特定の2チャンネル（例：ステレオ左右）から同一内容で出力する場合（デュアルモノ出力）、`np.tile(mono_signal.reshape(-1, 1), (1, 2))`のようにして2チャンネルのバッファを準備し、`sd.playrec`の`output_mapping`引数で物理出力チャンネルを指定します（例: `output_mapping=[1, 2]`）。(When outputting a mono signal with identical content from two specific channels (e.g., stereo left and right) for dual-mono output, prepare a 2-channel buffer, for example, using `np.tile(mono_signal.reshape(-1, 1), (1, 2))`, and specify the physical output channels using the `output_mapping` argument of `sd.playrec` (e.g., `output_mapping=[1, 2]`)).
-    -   **`sd.playrec()` の `data` 引数と `output_mapping` に関する注意 (Note regarding `sd.playrec()` `data` argument and `output_mapping`):**
-        -   `sd.playrec()` に渡す `data` (再生用Numpy配列) のチャンネル数 (すなわち `data.shape[1]`) は、`output_mapping` リストの要素数と厳密に一致させる必要があります。
-        -   例えば、モノラル信号 (`mono_signal`, 1D配列) を特定の1チャンネル (`target_idx`, 1ベース) のみに出力する場合、`sd.playrec()` の第一引数には `mono_signal.reshape(-1, 1)` のように1チャンネルの2D配列を渡し、`output_mapping=[target_idx]` と指定します。
-    -   **`input_mapping` 使用時の `channels` パラメータ (Regarding `channels` parameter when using `input_mapping`):**
-        -   `sd.rec()` や `sd.playrec()` で `input_mapping` を使用して録音チャンネルを明示的に指定する場合、`channels` パラメータは `len(input_mapping)` と設定します。例えば、`input_mapping=[input_ch_idx]` のように1チャンネルのみを録音対象とする場合、`channels=1` とします。
-    -   **チャンネルインデックスの事前検証 (Pre-validation of channel indices):**
-        -   ユーザーが指定した、またはプログラムが決定したチャンネルインデックス（1ベース）を使用する前に、必ず `sd.query_devices(device_id)['max_output_channels']` や `sd.query_devices(device_id)['max_input_channels']` と比較し、有効な範囲内にあることを確認することが推奨されます。これにより、範囲外のチャンネル指定による実行時エラーを未然に防ぎます。
-    -   **PortAudioライブラリの簡易チェック (Basic check for PortAudio library):**
-        -   `sounddevice` の初期化やデバイスクエリの前に `sd.check_hostapi()` を呼び出すことで、PortAudioシステムライブラリの基本的な存在確認が可能です。これが失敗する場合、ユーザーにPortAudioのインストールや設定を確認するよう促すことができます。（ただし、これは網羅的なチェックではありません。）
+    -   `sounddevice` ライブラリを使用します。
+    -   **デバイス選択**: ユーザーがオーディオデバイスをIDまたは名前で選択できるようにします。`rich` を使ってデバイスリストを分かりやすく表示することを推奨します。
+    -   **ストリーミング方式の選択**:
+        -   **一括再生・録音**: `sd.playrec()` は、決まった長さの信号を再生し、同時に録音する場合に適しています。多くの測定ツールでこの方式が使われています。
+        -   **リアルタイム処理**: `sd.InputStream` や `sd.Stream` のコールバック方式は、リアルタイムでのデータ可視化（例: `audio_lissajous_analyzer`）など、連続的なデータ処理が必要な場合に適しています。
+    -   **チャンネルマッピング**:
+        -   `sd.playrec()` や `sd.Stream` の `mapping` 引数（または `input_mapping`/`output_mapping`）は、物理チャンネルを1ベースのインデックスで指定するために使用します。
+        -   `data` (再生用Numpy配列) のチャンネル数 (`data.shape[1]`) は、`output_mapping` リストの要素数と厳密に一致させる必要があります。
+        -   `input_mapping` を使用する場合、`channels` パラメータは `len(input_mapping)` と設定します。
+    -   **チャンネルインデックスの事前検証**: ユーザーが指定したチャンネルインデックスが、`sd.query_devices()` で取得した `max_input_channels` や `max_output_channels` の範囲内にあることを必ず検証し、範囲外の場合は親切なエラーメッセージを表示します。
+    -   **PortAudioライブラリの簡易チェック**: `sd.check_hostapi()` を呼び出し、失敗した場合はPortAudioのインストールを促すメッセージを表示することを推奨します。
 -   **解析処理 (Analysis Processing)**:
-    -   FFT、ウィンドウ関数、フィルタリングなど、測定に必要な信号処理を実装します。
-    -   `numpy` や `scipy.signal` を活用します。
-    -   FFTを用いた解析では、正確な振幅スペクトルを得るための正規化（例：ウィンドウ関数の総和で除算）や、既知の周波数成分を正確に捉えるための周波数ビン選択/補間処理に注意を払います。(In analysis using FFT, pay attention to normalization for obtaining accurate amplitude spectra (e.g., dividing by the sum of the window function) and to frequency bin selection/interpolation processing for accurately capturing known frequency components.)
-    -   **相対測定におけるレベル比較 (Level comparison in relative measurements)**:
-        -   クロストーク測定のように、基準チャンネルの信号振幅 (A_ref) と測定対象チャンネルの信号振幅 (A_measured) を比較して相対的なdB値を算出する場合（例： `20 * np.log10(A_measured / A_ref)`）、両振幅が有効な値であることを確認し、ゼロ除算や非常に小さい値の対数処理を避けます。(When comparing signal amplitudes from a reference channel (A_ref) and a measured channel (A_measured) to calculate a relative dB value, as in crosstalk measurements (e.g., `20 * np.log10(A_measured / A_ref)`), ensure both amplitudes are valid and avoid division by zero or taking logarithms of very small values.)
-    -   位相解析などの相対的な測定を行う関数では、入力信号の特性（例：無音、非常に短い信号）に関するエッジケースを考慮し、エラー終了する代わりに警告を出すか、定義された値（例：位相0度）を返すなど、堅牢な処理を実装します。(For functions performing relative measurements like phase analysis, consider edge cases related to input signal characteristics (e.g., silence, very short signals) and implement robust handling, such as issuing a warning or returning a defined value (e.g., 0 degrees phase) instead of erroring out.)
+    -   FFT、ウィンドウ関数、フィルタリングなど、測定に必要な信号処理を `numpy` や `scipy.signal` を活用して実装します。
+    -   FFTを用いた解析では、正確な振幅スペクトルを得るための正規化や、既知の周波数成分を正確に捉えるための周波数ビン選択/補間処理に注意を払います。
+    -   無音や非常に短い信号など、エッジケースを考慮し、エラーで終了する代わりに警告を出すなど、堅牢な処理を実装します。
 -   **結果表示 (Results Display)**:
-    -   `rich` ライブラリを使用して、結果を整形してコンソールに表示します。
-    -   必要に応じて、`matplotlib` を用いたグラフ表示機能や、CSVファイルへの出力機能を実装します。
-    -   特定の種類のプロット（例：リサージュ図形）では、正確な視覚的解釈のために特有のmatplotlib設定が重要になる場合があります（例：リサージュ図形における `plt.axis('equal')`）。ツール開発者は、生成するプロットの種類に応じて適切な設定を調査・適用すべきです。(For certain types of plots (e.g., Lissajous figures), specific matplotlib settings may be crucial for accurate visual interpretation (e.g., `plt.axis('equal')` for Lissajous figures). Tool developers should investigate and apply appropriate settings depending on the type of plot being generated.)
+    -   **CLI出力**: `rich` ライブラリを積極的に活用し、`Table` や `Panel` を使って結果を整形し、分かりやすく表示します。
+    -   **グラフ表示**: 必要に応じて `matplotlib` を用いたグラフ表示機能を実装します。リサージュ図形における `plt.axis('equal')` のように、プロットの種類に応じた適切な設定を適用します。
 -   **コマンドラインインターフェース (CLI)**:
     -   `argparse` を使用して、ユーザーがパラメータを指定できるCLIを設計します。
-    -   ヘルプメッセージ (`--help`) を充実させます。
+    -   `--help` メッセージを充実させ、各オプションの役割を明確に説明します。
 -   **エラーハンドリング**:
-    -   デバイスが見つからない場合、不正なパラメータが指定された場合など、予期されるエラーを適切に処理し、ユーザーフレンドリーなエラーメッセージを表示します。
--   **周波数スイープのように反復的な測定を行うツールでは、全データ点を収集した後に実行する後処理（例：位相データのアンラップ処理）の順序とデータフローを考慮して統合します。(For tools that perform iterative measurements like frequency sweeps, integrate by considering the order and data flow of post-processing (e.g., unwrapping phase data) to be executed after collecting all data points.)**
+    -   デバイスが見つからない場合、不正なパラメータが指定された場合など、予期されるエラーを適切に処理し、`rich` を使ってユーザーフレンドリーなエラーメッセージ（可能であれば解決策も）を表示します。
 -   **コーディング規約**:
     -   PEP 8 に準拠したコーディングスタイルを心がけます。
-    -   コメントやdocstringを適切に追加します。
+    -   型ヒント (`typing` モジュールまたは Python 3.9+ の組み込み型) を適切に使用し、コードの可読性と保守性を高めます。
 
 ## 4. テスト (Testing)
 
 -   **単体テスト (Unit Tests)**:
     -   主要な関数（信号生成、解析処理など）に対して単体テストを作成します。
     -   Pythonの `unittest` フレームワークを使用し、テストスクリプトは `new_tool_analyzer/test_new_tool_analyzer.py` のように命名します。
-    -   テストケースでは、既知の入力に対する期待される出力を検証します。
-    -   位相差計算のような方向性を持つ測定（例：Ch1に対するCh2の位相）をテストする場合、テストケース設計時に期待される符号（+/-）や規約（例：Ch2-Ch1かCh1-Ch2か）を明確に定義し、それに基づいてアサーションを行います。(When testing directional measurements like phase difference calculation (e.g., phase of Ch2 relative to Ch1), clearly define the expected sign (+/-) and convention (e.g., Ch2-Ch1 or Ch1-Ch2) during test case design and make assertions accordingly.)
-    -   **複数チャンネル処理のテストデータ生成 (Test data generation for multi-channel processing)**:
-        -   複数チャンネルのオーディオデータを扱う関数をテストする際は、各チャンネルで特性の異なる合成信号を含む2次元NumPy配列をテスト入力として作成します（例： `test_data = np.array([ch1_signal, ch2_signal]).T`）。(When testing functions that handle multi-channel audio data, create 2D NumPy arrays as test input, synthesizing signals with different characteristics for each channel (e.g., `test_data = np.array([ch1_signal, ch2_signal]).T`).)
--   **統合テスト**:
-    -   実際にオーディオデバイスを使用してループバックテストなどを行い、プログラム全体が意図した通りに動作することを確認します。
-    -   様々なパラメータの組み合わせでテストします。
+    -   テストケースでは、既知の入力に対する期待される出力を検証します。`unittest.mock` を活用して、ハードウェアに依存する部分（例: `sounddevice` の呼び出し）をモック化します。
 -   **テストの実行**:
-    -   リポジトリルートから `python -m unittest new_tool_analyzer/test_new_tool_analyzer.py` のようにしてテストを実行します。
--   **テストコードが依存するライブラリ（特にオーディオ処理やプロット用ライブラリ）がテスト環境で利用可能であること、また、必要なシステムレベルの依存関係（例：PortAudio）が満たされていることを確認します。(Ensure that libraries depended upon by the test code (especially audio processing and plotting libraries) are available in the test environment, and that necessary system-level dependencies (e.g., PortAudio) are satisfied.)**
+    -   リポジトリのルートディレクトリから **`python3 -m unittest discover`** を実行し、プロジェクト全体のテストが成功することを確認します。これにより、変更が他のツールに影響を与えていないことを保証します。
+-   **テスト環境**:
+    -   テストコードが依存するライブラリがテスト環境で利用可能であること、また、必要なシステムレベルの依存関係（例：PortAudio）が満たされていることを確認します。
 
 ## 5. ドキュメント作成 (Documentation)
 
--   **README.md**:
-    -   `new_tool_analyzer/README.md` を作成し、以下の情報を記載します:
-        -   ツールの概要と目的
-        -   関連するオーディオ規格（もしあれば）
-        -   依存ライブラリ（新たに追加したものも含む、例: `matplotlib`）と、その標準的なインストール方法を明記します。(Clearly state the dependent libraries (including newly added ones, e.g., `matplotlib`) and their standard installation method.)
-        -   使用方法（コマンドラインオプション、設定可能なパラメータの説明）
-        -   出力結果の例と説明
-        -   注意事項（例: ループバック設定、オーディオインターフェースの品質など）
--   **本体リポジトリのREADME.md更新**:
-    -   リポジトリルートの `README.md` に、新しいツールへのリンクと簡単な説明を追加します。
--   **サンプルファイル**:
-    -   必要であれば、設定ファイル例や出力結果のサンプルを提供します。
+#### 5.1. ツール固有の `README.md` 作成
+
+各ツールディレクトリ（例: `new_tool_analyzer/`）には、必ず `README.md` を作成します。このファイルには、以下の情報を明確かつ簡潔に記載してください。
+
+-   **ツールの概要**:
+    -   このツールが何をするものなのか、一文で説明します。
+    -   どのような目的（例: スピーカーの位相チェック、アンプの歪み測定）で使用されるのかを記述します。
+
+-   **依存ライブラリ**:
+    -   このツールが依存するPythonライブラリをリストアップします。
+    -   プロジェクト共通の `requirements.txt` に含まれるライブラリと、このツール固有のライブラリを明記します。
+    -   インストールコマンドの例を記載します。
+        ```markdown
+        # 共通ライブラリのインストール
+        pip install -r ../requirements.txt
+
+        # このツール固有のライブラリのインストール (もしあれば)
+        pip install -r requirements.txt
+        ```
+
+-   **使用方法**:
+    -   基本的なコマンドラインの実行例を記載します。
+    -   `--help` で表示される主要なオプション（特に重要なもの）をリストアップし、それぞれの役割とデフォルト値を説明します。
+
+-   **出力結果の例**:
+    -   ツールの実行結果（コンソール出力や生成されるグラフ）のサンプルを記載し、ユーザーがどのような情報を得られるのかを示します。
+
+-   **注意事項**:
+    -   正しい測定に必要な前提条件（例: オーディオインターフェースのループバック設定、マイクの配置）や、測定結果に影響を与える可能性のある要因について記述します。
+
+#### 5.2. プロジェクトルートの `README.md` 更新
+
+新しいツールを追加したら、プロジェクトのトップレベルにある `README.md` のツールリストを更新します。以下のルールに厳密に従ってください。
+
+1.  **リストへの追加**:
+    -   既存のツールリストの中から、新ツールのカテゴリに最も近い場所を見つけて項目を追加します。リストの順序は、関連性の高いツールが近くに配置されるように意識してください。
+
+2.  **表記ルール**:
+    -   **言語**: 全てのツールの説明は日本語で記述します。
+    -   **項目名**: 各ツールリストの項目は、ツールの日本語名で開始します。
+    -   **リンク形式**: ツールのディレクトリ名はバッククォート（` `` `）で囲み、そのディレクトリ内の `README.md` ファイルへのリンクとします。
+        -   例: `- リサージュアナライザー ([\`audio_lissajous_analyzer\`](./audio_lissajous_analyzer/README.md)): （ここに説明文）`
+    -   **説明文**:
+        -   ツールが「何をするのか」「どのような機能を持つのか」を明確に記述します。
+        -   専門用語を避け、平易な言葉で説明することを心がけてください。
+    -   **装飾**: ツール名や説明文に太字やイタリックなどの特別な文字装飾は使用しません。
 
 ## 6. プルリクエストとレビュー (Pull Request and Review)
 
@@ -114,32 +136,7 @@
 
 ## 8. 知見の記録と将来構想へのフィードバック (Logging Knowledge and Feedback to Future Concepts)
 
--   **新たな知見・アイデアの記録**: 作業完了後、開発プロセスを通じて得られた新たな知見、または将来的に有用と思われる新しい測定ツールのアイデアが生まれた場合は、`misc/future_tool_ideas.md` に追記して下さい。これは将来のツール開発のための貴重なリソースとなります。(Record New Insights/Ideas: After completing the work, if new insights were gained through the development process, or if new ideas for potentially useful measurement tools emerged, append them to `misc/future_tool_ideas.md`. This serves as a valuable resource for future tool development.)
-
-### 8.1. 具体的な開発事例からの学び (Learnings from Specific Development Cases)
-
-#### LUFS Meter 開発より (From LUFS Meter Development):
-
--   **Pythonバージョンと型ヒントの互換性 (Python Versioning & Type Hint Compatibility)**: Python 3.8+ のような特定のバージョンをターゲットにする場合、型ヒントの構文に注意が必要です。Python 3.9+ では組み込みジェネリック型（例: `tuple[int]`）が導入されましたが、3.8のような古いバージョンでは `typing.Tuple[int]` のように `typing` モジュールからインポートする必要があります。これを怠ると `TypeError` が発生する可能性があります。開発初期段階でのバージョン互換性テストが推奨されます。
--   **複雑な技術標準の実装 (Implementing Complex Technical Standards)**: LUFS測定のためのITU-R BS.1770のような詳細な技術標準に基づくツールを実装するには、フィルタリング、ウィンドウ処理、ゲーティング、特定の数学的変換など、アルゴリズムの各ステップに細心の注意を払う必要があります。可能であれば、公式のテストベクターや参照実装へのアクセスは、検証のために非常に価値があります。
--   **オーディオI/Oと処理のためのライブラリ選定 (Library Selection for Audio I/O & Processing)**: オーディオファイルI/Oには `soundfile` が堅牢な選択肢です。フィルタリングやリサンプリングのようなDSP操作には `scipy.signal` が不可欠です。リサンプリングメソッド（例: `resample` 対 `resample_poly`）は、品質と計算コストを考慮してタスクに応じて適切に選択する必要があります。
--   **`rich` を用いたCLI出力 (CLI Output with `rich`)**: `rich` のようなライブラリを使用すると、整形されたテーブル、パネル、スタイル付きテキストを提供することでCLIツールのユーザビリティを大幅に向上させ、複雑なデータを一目で理解しやすくすることができます。
--   **テスト容易性 (Testability)**: 複雑なアルゴリズム（例：ゲーティングロジック）を持つ関数は、テスト容易性を考慮して設計することが望ましいです。可能であれば、主要なロジック部分を分離して個別にテストできるようにするか、明確に定義された入力に対して予測可能な出力を生成するテストケースを作成します。合成テストデータ（例：既知のLUFSレベルを持つように計算された信号セグメント）の生成は、エンドツーエンドの検証に役立ちます。
+-   **新たな知見・アイデアの記録**: 作業完了後、開発プロセスを通じて得られた新たな知見、または将来的に有用と思われる新しい測定ツールのアイデアが生まれた場合は、`misc/future_tool_ideas.md` に追記して下さい。これは将来のツール開発のための貴重なリソースとなります。
 
 ---
-
-この手順はあくまでガイドラインであり、開発するツールの特性や規模に応じて適宜調整してください。 (This procedure is merely a guideline; please adjust it as appropriate according to the characteristics and scale of the tool being developed.)
-
-## トップページ README.md の表記ルール
-
-プロジェクトのトップにある `README.md` ファイルに新しいツールを追加する際は、以下の表記ルールに従ってください。これにより、ドキュメントの一貫性と可読性を保ちます。
-
-- **言語**: 全てのツールの説明は日本語で記述します。
-- **項目名**: 各ツールリストの項目は、ツールの日本語名で開始します。
-- **リンク形式**: ツールのディレクトリ名はバッククォートで囲み、そのディレクトリ内の `README.md` ファイルへのリンクとします。
-    - 例: `[`ツール名`](./ディレクトリ名/README.md)`
-- **説明文**: 各ツールの説明文は、そのツールが具体的に何をするのか、どのような機能を持つのかが明確に伝わるように記述します。専門用語だけでなく、平易な言葉での説明も心がけてください。
-- **装飾**: ツール名や説明文に太字やイタリックなどの特別な文字装飾は使用しません。シンプルで統一された見た目を維持します。
-
-このルールに従うことで、ユーザーが情報を探しやすく、理解しやすい `README.md` を維持することができます。
-```
+この手順はあくまでガイドラインであり、開発するツールの特性や規模に応じて適宜調整してください。
