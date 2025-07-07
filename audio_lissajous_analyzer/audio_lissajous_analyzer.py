@@ -61,7 +61,7 @@ def main():
     )
     parser.add_argument(
         "-d", "--device", type=int, default=DEFAULT_INPUT_DEVICE_ID,
-        help=f"Input device ID. Defaults to the system's default input device."
+        help="Input device ID. Defaults to the system's default input device."
     )
     parser.add_argument(
         "-c", "--channels", type=int, nargs=2, default=DEFAULT_INPUT_CHANNELS,
@@ -74,7 +74,7 @@ def main():
     )
     parser.add_argument(
         "-b", "--blocksize", type=int,
-        help=f"Block size (number of frames). Default is calculated from --block-duration."
+        help="Block size (number of frames). Default is calculated from --block-duration."
     )
     parser.add_argument(
         "--block-duration", type=int, default=DEFAULT_BLOCK_DURATION_MS,
@@ -108,7 +108,7 @@ def main():
     ch_x, ch_y = args.channels
     max_in_ch = device_info['max_input_channels']
     if not (1 <= ch_x <= max_in_ch and 1 <= ch_y <= max_in_ch):
-        console.print(f"[bold red]Error: Invalid channel index.[/bold red]")
+        console.print("[bold red]Error: Invalid channel index.[/bold red]")
         console.print(f"Device {device_id} ('{device_info['name']}') has {max_in_ch} input channels.")
         console.print(f"Please provide channel indices between 1 and {max_in_ch}.")
         return
@@ -120,7 +120,7 @@ def main():
     samplerate = args.samplerate
     blocksize = args.blocksize or int(samplerate * args.block_duration / 1000)
 
-    console.print(f"Starting Lissajous Analyzer...")
+    console.print("Starting Lissajous Analyzer...")
     console.print(f"  Device: [cyan]{device_info['name']} (ID: {device_id})[/cyan]")
     console.print(f"  Channels (X, Y): [cyan]{ch_x}, {ch_y}[/cyan]")
     console.print(f"  Sample Rate: [cyan]{samplerate} Hz[/cyan]")

@@ -8,7 +8,7 @@
 
 このスクリプトは、音声信号の高調波解析を行うツールです。主な機能には、THD（全高調波歪）、THD+N、SNRの測定、音声信号のゲイン表示、周波数スイープや振幅スイープによる連続測定、テストトーンの出力、および新機能としてマッピング測定が含まれます。
 
-- **作成者**: ChatGPT, vach, Jules
+- **作成者**: ChatGPT, vach, Jules, Gemini
 - **日付**: 2024年10月16日  
 - **Copyright**: pass  
 
@@ -108,6 +108,9 @@ python distorsion_visualizer.py sample.csv --device_name "Test Device"
 | `-d, --device_name` | タイトルに含めるデバイス名（任意） |
 | `-a, --amplitude_type` | Output(dBFS) または Input(dBFS) を選択（デフォルト: Output） |
 | `-c, --convert_to_dBVrms` | 振幅をdBVrmsに変換するオプション |
+| `-p, --plot_type` | グラフの種類を選択: "contour" (等高線) または "3d" (3Dサーフェス)。デフォルトは等高線。 |
+| `--color` | 等高線プロットで色を表示する（白黒の代わりにカラーマップを使用）。 |
+| `--rotate` | 3Dプロットを自動で回転させる（アニメーション）。 |
 
 ---
 

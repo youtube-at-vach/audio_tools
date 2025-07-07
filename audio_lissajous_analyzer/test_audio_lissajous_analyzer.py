@@ -1,8 +1,7 @@
 # test_audio_lissajous_analyzer.py
 
 import unittest
-from unittest.mock import patch, MagicMock
-import numpy as np
+from unittest.mock import patch
 
 # By placing tests in the same package, we can use relative imports
 from .audio_lissajous_analyzer import list_audio_devices, main

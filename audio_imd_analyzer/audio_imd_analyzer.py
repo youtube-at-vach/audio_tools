@@ -336,6 +336,42 @@ def analyze_imd_ccif(recorded_audio, sample_rate, f1, f2, window_name='blackmanh
         'imd_products_details': imd_products_details
     }
 
+def save_results_to_csv(imd_results, standard, output_csv_path):
+    """Saves IMD analysis results to a CSV file."""
+    try:
+        with open(output_csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+
+            # Write summary information
+            writer.writerow([f'IMD Standard:', standard.upper()])
+            if standard == 'smpte':
+                writer.writerow(['IMD Percentage:', f'{imd_results['imd_percentage']:.4f} %'])
+                writer.writerow(['IMD (dB):', f'{imd_results['imd_db']:.2f} dB'])
+                writer.writerow(['Reference f2 (Hz):', f'{imd_results['amp_f2_freq_actual']:.1f}'])
+                writer.writerow(['Reference f2 (dBFS):', f'{imd_results['amp_f2_dbfs']:.2f}'])
+                writer.writerow([]) # Blank row for separation
+                writer.writerow(['Order (n)', 'Type', 'Nom. Freq (Hz)', 'Act. Freq (Hz)', 'Amplitude (Lin)', 'Level (dBr f2)'])
+                for p in imd_results['imd_products_details']:
+                    writer.writerow([p['order_n'], p['type'], f'{p['freq_hz_nominal']:.1f}', 
+                                     f'{p['freq_hz_actual']:.1f}', f'{p['amp_linear']:.2e}', f'{p['amp_dbr_f2']:.2f}'])
+            elif standard == 'ccif':
+                writer.writerow(['IMD Percentage:', f'{imd_results['imd_percentage']:.4f} %'])
+                writer.writerow(['IMD (dB):', f'{imd_results['imd_db']:.2f} dB'])
+                writer.writerow(['Reference f1 (Hz):', f'{imd_results['amp_f1_freq_actual']:.1f}'])
+                writer.writerow(['Reference f1 (dBFS):', f'{imd_results['amp_f1_dbfs']:.2f}'])
+                writer.writerow(['Reference f2 (Hz):', f'{imd_results['amp_f2_freq_actual']:.1f}'])
+                writer.writerow(['Reference f2 (dBFS):', f'{imd_results['amp_f2_dbfs']:.2f}'])
+                writer.writerow([]) # Blank row for separation
+                writer.writerow(['Product Type', 'Nom. Freq (Hz)', 'Act. Freq (Hz)', 'Amplitude (Lin)', 'Level (dBr f1+f2)'])
+                for p in imd_results['imd_products_details']:
+                    writer.writerow([p['type'], f'{p['freq_hz_nominal']:.1f}', 
+                                     f'{p['freq_hz_actual']:.1f}', f'{p['amp_linear']:.2e}', f'{p['amp_dbr_f_sum']:.2f}'])
+        console.print(f"[green]Results saved to CSV: {output_csv_path}[/green]")
+    except IOError as e:
+        error_console.print(f"Error writing CSV file {output_csv_path}: {e}")
+    except Exception as e:
+        error_console.print(f"An unexpected error occurred while writing CSV: {e}")
+
 def main():
     parser = argparse.ArgumentParser(description="Generate, play, record, and analyze a dual-tone signal for IMD testing.")
     # Group arguments for clarity
@@ -356,6 +392,9 @@ def main():
     analysis_group.add_argument("--window", type=str, default='blackmanharris', help="FFT window type")
     analysis_group.add_argument("--num_sidebands", type=int, default=3, help="Number of sideband pairs for SMPTE IMD")
     analysis_group.add_argument("--standard", "-std", type=str, default='smpte', choices=['smpte', 'ccif'], help="IMD standard to use (smpte or ccif)")
+
+    output_group = parser.add_argument_group('Output Options')
+    output_group.add_argument("--output-csv", type=str, default=None, help="Path to save IMD product details as a CSV file.")
     args = parser.parse_args()
 
     # --- Adjust defaults for CCIF ---
@@ -536,7 +575,10 @@ def main():
         sys.exit(1)
 
     if imd_results: # General success message if any analysis was done
-        console.print(f"\n[green]IMD analysis ({args.standard.upper()}) complete.[/green]")
+        console.print(f"
+[green]IMD analysis ({args.standard.upper()}) complete.[/green]")
+        if args.output_csv:
+            save_results_to_csv(imd_results, args.standard, args.output_csv)
     else: # Fallback, though specific errors should have exited earlier
         error_console.print("IMD analysis could not be performed or returned no meaningful results.")
         sys.exit(1)
