@@ -45,19 +45,19 @@ python audio_crosstalk_analyzer/audio_crosstalk_analyzer.py [OPTIONS]
 |-----------------------------|-------|------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
 | `--frequency HZ`            |       | `1000.0`         | Frequency for single mode test (Hz). Must be positive.                                                                                    |
 | `--sweep`                   |       | `False`          | Enable sweep mode. Overrides `--frequency`.                                                                                               |
-| `--start_freq HZ`           |       | `20.0`           | Start frequency for sweep mode (Hz). Must be positive.                                                                                    |
-| `--end_freq HZ`             |       | `20000.0`        | End frequency for sweep mode (Hz). Must be positive.                                                                                      |
-| `--points_per_octave N`     | `-ppo`| `3`              | Number of test points per octave in sweep mode. Must be positive.                                                                         |
+| `--start-frequency HZ`    |       | `20.0`           | Start frequency for sweep mode (Hz). Must be positive.                                                                                    |
+| `--end-frequency HZ`      |       | `20000.0`        | End frequency for sweep mode (Hz). Must be positive.                                                                                      |
+| `--points-per-octave N`   | `-ppo`| `3`              | Number of test points per octave in sweep mode. Must be positive.                                                                         |
 | `--amplitude DBFS`          |       | `-12.0`          | Amplitude of the test signal (dBFS). Must be <= 0.                                                                                        |
 | `--device ID`               |       | Prompts user     | Integer ID of the audio device for playback and recording. If not provided, a list of available devices will be shown for selection.      |
-| `--sample_rate HZ`          |       | `48000`          | Sampling rate in Hz for signal generation, playback, and recording.                                                                       |
-| `--output_channel CH_SPEC`  | `-oc` | `L`              | Output channel for test signal (e.g., 'L', 'R', or numeric 0-based index '0', '1', ...).                                                  |
-| `--input_channels CH_SPEC [...]` | `-ic` | **Required**   | List of input channels to record (e.g., 'L' 'R' or '0' '1' ...). The first channel is the reference for crosstalk calculation (i.e., the channel receiving the direct signal or loopback of the output channel). All specified input channels must be unique. At least two must be specified. |
+| `--sample-rate HZ`        |       | `48000`          | Sampling rate in Hz for signal generation, playback, and recording.                                                                       |
+| `--output-channel CH_SPEC`| `-oc` | `L`              | Output channel for test signal (e.g., 'L', 'R', or numeric 0-based index '0', '1', ...).                                                  |
+| `--input-channels CH_SPEC [...]` | `-ic` | **Required**   | List of input channels to record (e.g., 'L' 'R' or '0' '1' ...). The first channel is the reference for crosstalk calculation (i.e., the channel receiving the direct signal or loopback of the output channel). All specified input channels must be unique. At least two must be specified. |
 | `--window WINDOW_TYPE`      |       | `hann`           | FFT window type for analysis (e.g., `hann`, `blackmanharris`).                                                                              |
-| `--duration_per_step SECS`  |       | `0.5`            | Duration of tone generation and recording for each frequency step (seconds). Must be positive.                                            |
-| `--output_csv FILENAME.csv` |       | `None`           | Path to save results in CSV format (e.g., `results.csv`).                                                                                 |
-| `--output_plot FILENAME.png`|       | `None`           | Path to save crosstalk plot as an image (e.g., `plot.png`). Plot is generated for sweep mode only.                                        |
-| `--no_plot_display`         |       | `False`          | Suppress interactive display of the plot. The plot will still be saved if `--output_plot` is specified.                                     |
+| `--duration-per-step SECS`|       | `0.5`            | Duration of tone generation and recording for each frequency step (seconds). Must be positive.                                            |
+| `--output-csv FILENAME.csv` |       | `None`           | Path to save results in CSV format (e.g., `results.csv`).                                                                                 |
+| `--output-plot FILENAME.png`|       | `None`           | Path to save crosstalk plot as an image (e.g., `plot.png`). Plot is generated for sweep mode only.                                        |
+| `--no-plot-display`       |       | `False`          | Suppress interactive display of the plot. The plot will still be saved if `--output_plot` is specified.                                     |
 | `--help`                    | `-h`  |                  | Show this help message and exit.                                                                                                          |
 
 *CH_SPEC refers to a channel specifier, which can be 'L' (left), 'R' (right), or a numeric 0-based index (e.g., '0', '1').*

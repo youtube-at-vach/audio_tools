@@ -31,20 +31,20 @@ python audio_freq_response_analyzer/audio_freq_response_analyzer.py [OPTIONS]
 
 | Option                | Alias | Default Value      | Description                                                                                                |
 |-----------------------|-------|--------------------|------------------------------------------------------------------------------------------------------------|
-| `--start_freq`        |       | `20.0`             | Start frequency for the sweep in Hz.                                                                       |
-| `--end_freq`          |       | `20000.0`          | End frequency for the sweep in Hz.                                                                         |
-| `--points_per_octave` |       | `12`               | Number of frequency points to measure per octave.                                                          |
+| `--start-frequency`   |       | `20.0`             | Start frequency for the sweep in Hz.                                                                       |
+| `--end-frequency`     |       | `20000.0`          | End frequency for the sweep in Hz.                                                                         |
+| `--points-per-octave` |       | `12`               | Number of frequency points to measure per octave.                                                          |
 | `--amplitude`         |       | `-20.0`            | Amplitude of the generated test tones in dBFS.                                                             |
-| `--duration_per_step` |       | `0.2`              | Duration of each individual sine wave tone segment in seconds.                                               |
+| `--duration-per-step` |       | `0.2`              | Duration of each individual sine wave tone segment in seconds.                                               |
 | `--device`            |       | Prompts user       | Integer ID of the audio device to use for both playback and recording. Prompts if not provided.            |
-| `--output_channel`    | `-oc` | `R`                | Output channel for playback: 'L' (left) or 'R' (right).                                                    |
-| `--input_channel`     | `-ic` | `L`                | Input channel for recording: 'L' (left) or 'R' (right).                                                    |
-| `--sample_rate`       |       | `48000`            | Sampling rate in Hz for signal generation, playback, and recording.                                        |
+| `--output-channel`    | `-oc` | `R`                | Output channel for playback: 'L' (left) or 'R' (right).                                                    |
+| `--input-channel`     | `-ic` | `L`                | Input channel for recording: 'L' (left) or 'R' (right).                                                    |
+| `--sample-rate`       |       | `48000`            | Sampling rate in Hz for signal generation, playback, and recording.                                        |
 | `--window`            |       | `hann`             | FFT window type for analysis (e.g., `hann`, `hamming`, `blackmanharris`).                                  |
-| `--output_csv`        |       | `None`             | Optional. Filename to save the frequency response results as a CSV file (e.g., `response_data.csv`).       |
-| `--output_plot_amp`   |       | `None`             | Optional. Filename to save the amplitude response plot as an image (e.g., `amp_response.png`).             |
-| `--output_plot_phase` |       | `None`             | Optional. Filename to save the phase response plot as an image (e.g., `phase_response.png`).               |
-| `--no_plot_display`   |       | `False` (StoreTrue)| Suppress displaying plots interactively using Matplotlib's `plt.show()`. Plots are still saved if filenames are given. |
+| `--output-csv`        |       | `None`             | Optional. Filename to save the frequency response results as a CSV file (e.g., `response_data.csv`).       |
+| `--output-plot-amplitude` |       | `None`             | Optional. Filename to save the amplitude response plot as an image (e.g., `amp_response.png`).             |
+| `--output-plot-phase` |       | `None`             | Optional. Filename to save the phase response plot as an image (e.g., `phase_response.png`).               |
+| `--no-plot-display`   |       | `False` (StoreTrue)| Suppress displaying plots interactively using Matplotlib's `plt.show()`. Plots are still saved if filenames are given. |
 | `--help`              | `-h`  |                    | Show this help message and exit.                                                                           |
 
 ### Example Command

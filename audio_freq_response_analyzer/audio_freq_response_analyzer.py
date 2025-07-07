@@ -298,22 +298,22 @@ def plot_frequency_response(results_data, amp_plot_filename, phase_plot_filename
 def main():
     parser = argparse.ArgumentParser(description="Measure audio frequency response.")
     # Existing args
-    parser.add_argument("--start_freq", type=float, default=20.0, help="Start frequency (Hz)")
-    parser.add_argument("--end_freq", type=float, default=20000.0, help="End frequency (Hz)")
-    parser.add_argument("--points_per_octave", type=int, default=12, help="Number of points per octave")
+    parser.add_argument("--start-frequency", type=float, default=20.0, help="Start frequency (Hz)")
+    parser.add_argument("--end-frequency", type=float, default=20000.0, help="End frequency (Hz)")
+    parser.add_argument("--points-per-octave", type=int, default=12, help="Number of points per octave")
     parser.add_argument("--amplitude", type=float, default=-20.0, help="Amplitude of test tone (dBFS)")
-    parser.add_argument("--duration_per_step", type=float, default=0.2, help="Duration of each tone segment (seconds)")
+    parser.add_argument("--duration-per-step", type=float, default=0.2, help="Duration of each tone segment (seconds)")
     parser.add_argument("--device", type=int, help="Audio device ID. Prompts if not provided.")
-    parser.add_argument("--output_channel", "-oc", type=str, choices=['L', 'R'], default='R', help="Output channel ('L' or 'R')")
-    parser.add_argument("--input_channel", "-ic", type=str, choices=['L', 'R'], default='L', help="Input channel ('L' or 'R')")
-    parser.add_argument("--sample_rate", type=int, default=48000, help="Sampling rate (Hz)")
+    parser.add_argument("--output-channel", "-oc", type=str, choices=['L', 'R'], default='R', help="Output channel ('L' or 'R')")
+    parser.add_argument("--input-channel", "-ic", type=str, choices=['L', 'R'], default='L', help="Input channel ('L' or 'R')")
+    parser.add_argument("--sample-rate", type=int, default=48000, help="Sampling rate (Hz)")
     parser.add_argument("--window", type=str, default='hann', help="FFT window type for analysis")
     
     # New args for CSV and plotting
-    parser.add_argument("--output_csv", type=str, default=None, help="Filename to save results as CSV.")
-    parser.add_argument("--output_plot_amp", type=str, default=None, help="Filename to save amplitude plot (e.g., amp_response.png).")
-    parser.add_argument("--output_plot_phase", type=str, default=None, help="Filename to save phase plot (e.g., phase_response.png).")
-    parser.add_argument("--no_plot_display", action='store_true', help="Suppress displaying plots interactively.")
+    parser.add_argument("--output-csv", type=str, default=None, help="Filename to save results as CSV.")
+    parser.add_argument("--output-plot-amplitude", type=str, default=None, help="Filename to save amplitude plot (e.g., amp_response.png).")
+    parser.add_argument("--output-plot-phase", type=str, default=None, help="Filename to save phase plot (e.g., phase_response.png).")
+    parser.add_argument("--no-plot-display", action='store_true', help="Suppress displaying plots interactively.")
     
     args = parser.parse_args()
 
@@ -362,8 +362,8 @@ def main():
         error_console.print(f"Error: Input channel {args.input_channel} (idx {input_ch_numeric}) not available on device '{device_info['name']}'. Max input channels: {device_info['max_input_channels']-1}.")
         sys.exit(1)
 
-    freq_list = generate_log_frequencies(args.start_freq, args.end_freq, args.points_per_octave)
-    console.print(f"Generated {len(freq_list)} frequency steps from {args.start_freq} Hz to {args.end_freq} Hz.")
+    freq_list = generate_log_frequencies(args.start_frequency, args.end_frequency, args.points_per_octave)
+    console.print(f"Generated {len(freq_list)} frequency steps from {args.start_frequency} Hz to {args.end_frequency} Hz.")
     
     results_data = []
     for freq in freq_list:
@@ -433,11 +433,11 @@ def main():
         save_results_to_csv(results_data, args.output_csv, console)
 
     # Plotting
-    plotting_needed = args.output_plot_amp or args.output_plot_phase or not args.no_plot_display
+    plotting_needed = args.output_plot_amplitude or args.output_plot_phase or not args.no_plot_display
     if plotting_needed:
         plot_frequency_response(
             results_data, 
-            args.output_plot_amp, 
+            args.output_plot_amplitude, 
             args.output_plot_phase, 
             not args.no_plot_display, 
             console
