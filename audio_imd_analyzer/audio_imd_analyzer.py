@@ -345,27 +345,27 @@ def save_results_to_csv(imd_results, standard, output_csv_path):
             # Write summary information
             writer.writerow([f'IMD Standard:', standard.upper()])
             if standard == 'smpte':
-                writer.writerow(['IMD Percentage:', f'{imd_results['imd_percentage']:.4f} %'])
-                writer.writerow(['IMD (dB):', f'{imd_results['imd_db']:.2f} dB'])
-                writer.writerow(['Reference f2 (Hz):', f'{imd_results['amp_f2_freq_actual']:.1f}'])
-                writer.writerow(['Reference f2 (dBFS):', f'{imd_results['amp_f2_dbfs']:.2f}'])
+                writer.writerow(['IMD Percentage:', f"{imd_results['imd_percentage']:.4f} %"])
+                writer.writerow(['IMD (dB):', f"{imd_results['imd_db']:.2f} dB"])
+                writer.writerow(['Reference f2 (Hz):', f"{imd_results['amp_f2_freq_actual']:.1f}"])
+                writer.writerow(['Reference f2 (dBFS):', f"{imd_results['amp_f2_dbfs']:.2f}"])
                 writer.writerow([]) # Blank row for separation
                 writer.writerow(['Order (n)', 'Type', 'Nom. Freq (Hz)', 'Act. Freq (Hz)', 'Amplitude (Lin)', 'Level (dBr f2)'])
                 for p in imd_results['imd_products_details']:
-                    writer.writerow([p['order_n'], p['type'], f'{p['freq_hz_nominal']:.1f}', 
-                                     f'{p['freq_hz_actual']:.1f}', f'{p['amp_linear']:.2e}', f'{p['amp_dbr_f2']:.2f}'])
+                    writer.writerow([p['order_n'], p['type'], f"{p['freq_hz_nominal']:.1f}", 
+                                     f"{p['freq_hz_actual']:.1f}", f"{p['amp_linear']:.2e}", f"{p['amp_dbr_f2']:.2f}"])
             elif standard == 'ccif':
-                writer.writerow(['IMD Percentage:', f'{imd_results['imd_percentage']:.4f} %'])
-                writer.writerow(['IMD (dB):', f'{imd_results['imd_db']:.2f} dB'])
-                writer.writerow(['Reference f1 (Hz):', f'{imd_results['amp_f1_freq_actual']:.1f}'])
-                writer.writerow(['Reference f1 (dBFS):', f'{imd_results['amp_f1_dbfs']:.2f}'])
-                writer.writerow(['Reference f2 (Hz):', f'{imd_results['amp_f2_freq_actual']:.1f}'])
-                writer.writerow(['Reference f2 (dBFS):', f'{imd_results['amp_f2_dbfs']:.2f}'])
+                writer.writerow(['IMD Percentage:', f"{imd_results['imd_percentage']:.4f} %"])
+                writer.writerow(['IMD (dB):', f"{imd_results['imd_db']:.2f} dB"])
+                writer.writerow(['Reference f1 (Hz):', f"{imd_results['amp_f1_freq_actual']:.1f}"])
+                writer.writerow(['Reference f1 (dBFS):', f"{imd_results['amp_f1_dbfs']:.2f}"])
+                writer.writerow(['Reference f2 (Hz):', f"{imd_results['amp_f2_freq_actual']:.1f}"])
+                writer.writerow(['Reference f2 (dBFS):', f"{imd_results['amp_f2_dbfs']:.2f}"])
                 writer.writerow([]) # Blank row for separation
                 writer.writerow(['Product Type', 'Nom. Freq (Hz)', 'Act. Freq (Hz)', 'Amplitude (Lin)', 'Level (dBr f1+f2)'])
                 for p in imd_results['imd_products_details']:
-                    writer.writerow([p['type'], f'{p['freq_hz_nominal']:.1f}', 
-                                     f'{p['freq_hz_actual']:.1f}', f'{p['amp_linear']:.2e}', f'{p['amp_dbr_f_sum']:.2f}'])
+                    writer.writerow([p['type'], f"{p['freq_hz_nominal']:.1f}", 
+                                     f"{p['freq_hz_actual']:.1f}", f"{p['amp_linear']:.2e}", f"{p['amp_dbr_f_sum']:.2f}"])
         console.print(f"[green]Results saved to CSV: {output_csv_path}[/green]")
     except IOError as e:
         error_console.print(f"Error writing CSV file {output_csv_path}: {e}")
@@ -575,8 +575,8 @@ def main():
         sys.exit(1)
 
     if imd_results: # General success message if any analysis was done
-        console.print(f"
-[green]IMD analysis ({args.standard.upper()}) complete.[/green]")
+        console.print(f"""
+[green]IMD analysis ({args.standard.upper()}) complete.[/green]""")
         if args.output_csv:
             save_results_to_csv(imd_results, args.standard, args.output_csv)
     else: # Fallback, though specific errors should have exited earlier

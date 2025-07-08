@@ -26,7 +26,7 @@ This document lists potential ideas for future audio measurement programs. These
     A higher-level tool to run a predefined sequence of existing analyzer tools and compile a combined report for comprehensive device testing.
 
 -   **Automated Loopback Path Finder/Tester**:
-    A utility that attempts to automatically detect viable audio loopback paths between output and input channels on a selected audio device. This could simplify the setup process for other measurement tools by identifying which channel combinations form a closed loop, perhaps by sending a specific test signal and scanning inputs for its presence.
+    A utility that attempts to automatically detect viable audio loopback paths between output and input channels on a selected audio device. This could simplify the setup process for other measurement tools by identifying which channel combinations form a closed loop, perhaps by sending a specific test signal and scanning inputs for its presence. (Implemented in `audio_loopback_finder/`)
 
 -   **Audio Interface Calibration Utility**:
     A guided tool to help users create basic calibration profiles for their audio interfaces. This could involve:
