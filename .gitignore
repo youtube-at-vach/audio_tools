@@ -39,4 +39,10 @@ Thumbs.db
 ehthumbs.db
 
 *.wav
-\n# Ignore test result files\n*.csv\n*.png
+
+# Ignore test result files
+*.csv
+*.png
+
+# Calibration settings
+calibration_settings.ini
