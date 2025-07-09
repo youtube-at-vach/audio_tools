@@ -13,6 +13,7 @@
 - 位相アナライザー ([`audio_phase_analyzer`](./audio_phase_analyzer/README.md)): ステレオオーディオチャンネル間の位相差を周波数ごとに測定・計算するツールです。スピーカーの極性チェックやステレオ機器の位相整合性の確認に使用します。(詳細は [`audio_phase_analyzer/README.md`](./audio_phase_analyzer/README.md) を参照)
 - リサージュアナライザー ([`audio_lissajous_analyzer`](./audio_lissajous_analyzer/README.md)): 2チャンネルのオーディオ信号の位相関係とステレオイメージを、リサージュ図形（X-Yスコープ）としてリアルタイムに可視化するツールです。モノラル互換性、ステレオの広がり、位相問題を直感的に把握するのに役立ちます。
 - SNRアナライザー ([`snr_analyzer`](./snr_analyzer/README.md)): テスト信号の再生と録音を通じて、オーディオシステムのS/N比（シグナル対ノイズ比）を測定するツールです。オーディオインターフェースやプリアンプなどのノイズ性能評価に利用できます。
+- ダイナミックレンジ・アナライザー（重み付けなし） ([`dynamic_range_analyzer`](./dynamic_range_analyzer/README.md)): -60dBFSのテスト信号を再生・録音し、信号を除去した後の残留ノイズレベルから、オーディオデバイスの重み付けなしダイナミックレンジを測定します。
 - LUFSメーター ([`lufs_meter`](./lufs_meter/README.md)): ITU-R BS.1770 および EBU R128規格に準拠したラウドネス測定を行うツールです。統合ラウドネス（Integrated）、モーメンタリラウドネス（Momentary）、ショートタームラウドネス（Short-term）、ラウドネスレンジ（LRA）、トゥルーピークレベルを測定し、放送コンテンツや音楽制作におけるラウドネス管理に不可欠です。
 - ループバックファインダー ([`audio_loopback_finder`](./audio_loopback_finder/README.md)): オーディオデバイスの出力・入力チャンネル間で、有効なループバック経路を自動的に検出するツールです。各出力チャンネルからテスト信号を送信し、全入力チャンネルで受信を監視することで、手動での確認作業を不要にします。
 
