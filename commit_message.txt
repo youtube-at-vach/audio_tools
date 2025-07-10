@@ -1,0 +1,9 @@
+feat: Add unweighted dynamic range analyzer
+
+This commit introduces a new tool for measuring the unweighted dynamic range of audio devices.
+It uses a -60 dBFS test tone and an FFT-based method to remove the tone,
+then calculates the RMS of the residual noise floor.
+
+Also, updated `temp_procedure_doc.md` with insights gained during development,
+specifically regarding filter selection (IIR vs. FFT for tone removal) and
+the complexities of implementing standard weighting filters.

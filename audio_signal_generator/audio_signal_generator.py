@@ -64,15 +64,18 @@ def generate_sweep(start_freq, end_freq, duration, sample_rate, logarithmic=Fals
     t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
     
     if logarithmic: # 対数スイープ
-        k = (end_freq / start_freq)**(1 / duration)
-        start_freq * (end_freq / start_freq) ** (t / duration)
+        # 正しい対数スイープの位相計算
+        # 瞬時周波数 f(t) = start_freq * (end_freq / start_freq)^(t / duration)
+        # 位相 phi(t) = 2 * pi * integral(f(tau) d_tau)
+        # 積分すると以下のようになる
+        log_ratio = np.log(end_freq / start_freq)
+        if log_ratio == 0: # start_freq == end_freq の場合
+            sweep = np.sin(2 * np.pi * start_freq * t)
+        else:
+            phase = 2 * np.pi * start_freq * duration / log_ratio * ((end_freq / start_freq)**(t / duration) - 1)
+            sweep = np.sin(phase)
     else: # 線形スイープ
         k = (end_freq - start_freq) / duration
-        start_freq + k * t
-
-    if logarithmic:
-        sweep = np.sin(2 * np.pi * start_freq * ((k**t - 1) / np.log(k)))
-    else:
         sweep = np.sin(2 * np.pi * (start_freq * t + (k / 2) * t * t))
     
     if wave_type == 'square': # 矩形波スイープ
@@ -165,7 +168,13 @@ def generate_noise(duration, sample_rate, color='white'):
     else:
         raise ValueError(f"Unknown noise color: {color}. Supported colors are white, pink, grey, brown, red, blue, purple, violet.")
 
-    return noise / np.max(np.abs(noise))  # 正規化
+    max_abs_noise = np.max(np.abs(noise))
+    if max_abs_noise > 1e-10: # 非常に小さい値と比較してゼロ除算を避ける
+        return noise / max_abs_noise
+    else:
+        # ノイズが実質的にゼロの場合、ゼロ配列を返すか、警告を出す
+        # このケースは非常に稀なので、ここではゼロ配列を返す
+        return np.zeros_like(noise)
 
 
 # フェードイン・フェードアウトを適用する関数
@@ -205,8 +214,13 @@ def save_tone_to_wav(filename, tone, sample_rate, bit_depth, fade_duration=None,
         tone = apply_fade(tone, sample_rate, fade_duration)
 
     # dBFS値に基づいて振幅を調整
-    amplitude = 10**(dbfs / 20)
-    tone = tone / np.max(np.abs(tone)) * amplitude
+    amplitude_linear = 10**(dbfs / 20)
+    max_abs_tone = np.max(np.abs(tone))
+    if max_abs_tone > 1e-10: # 非常に小さい値と比較してゼロ除算を避ける
+        tone = tone / max_abs_tone * amplitude_linear
+    else:
+        # 信号が実質的にゼロの場合、振幅調整は不要（結果はゼロのまま）
+        tone = np.zeros_like(tone)
 
     # ビット深度に応じてデータを変換
     if bit_depth == '16':

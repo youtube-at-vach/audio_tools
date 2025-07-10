@@ -1,11 +1,12 @@
 import argparse
-import sys
 import numpy as np
-import scipy.signal
 import sounddevice as sd
+import scipy.signal
 from rich.console import Console
-from rich.prompt import Prompt
 from rich.table import Table
+from rich.prompt import Prompt
+import csv
+import sys
 
 # Global variable to keep track of playback position in play_and_record callback
 current_frame_playback = 0
@@ -343,7 +344,7 @@ def save_results_to_csv(imd_results, standard, output_csv_path):
             writer = csv.writer(csvfile)
 
             # Write summary information
-            writer.writerow([f'IMD Standard:', standard.upper()])
+            writer.writerow(['IMD Standard:', standard.upper()])
             if standard == 'smpte':
                 writer.writerow(['IMD Percentage:', f"{imd_results['imd_percentage']:.4f} %"])
                 writer.writerow(['IMD (dB):', f"{imd_results['imd_db']:.2f} dB"])
