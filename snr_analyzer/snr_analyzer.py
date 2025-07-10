@@ -96,7 +96,6 @@ def measure_snr(device_id: int, output_channel_idx: int, input_channel_idx: int,
         signal_amp (float): Amplitude of the test sine wave (0.0-1.0).
         signal_duration (float): Duration of signal playback/recording in seconds.
         noise_duration (float): Duration of noise floor recording in seconds.
-        signal_file_path (str, optional): Path to an audio file for the signal. Defaults to None.
 
     Returns:
         tuple: (snr_db, rms_signal_only, rms_noise) or (None, None, None) if error.
@@ -122,19 +121,26 @@ def measure_snr(device_id: int, output_channel_idx: int, input_channel_idx: int,
             console.print(f"[bold red]Error: Input channel {input_channel_idx} is out of range for device {device_id} (1-{max_in_channels}).[/bold red]")
             return None, None, None
 
+        # Convert 1-based channel indices to 0-based for mapping
+        output_map_0based = [output_channel_idx - 1]
+        input_map_0based = [input_channel_idx - 1]
+
+        # Create an output buffer with the correct number of channels for the device
+        # and place the signal in the specified output channel
+        output_buffer = np.zeros((len(signal), max_out_channels), dtype=signal.dtype)
+        output_buffer[:, output_map_0based[0]] = signal
+
         # Playback Signal and Record (Signal + Noise)
-        console.print(f"\n[cyan]Preparing to play signal on '{device_info['name']}' (Output Channel {output_channel_idx}) and record from '{device_info['name']}' (Input Channel {input_channel_idx})...[/cyan]")
+        console.print(f"\n[cyan]Playing signal on '{device_info['name']}' (Output Channel {output_channel_idx}) and recording from '{device_info['name']}' (Input Channel {input_channel_idx})...[/cyan]")
         console.print("[yellow]Ensure your audio loopback or measurement setup is ready.[/yellow]")
         
-        # The 'signal' is a 1D NumPy array.
-        # For sd.playrec, if output_mapping specifies a single channel,
-        # the data should be a 2D array with shape (n_frames, 1).
         console.print("Playing signal and recording (signal + noise)...")
         recorded_signal_plus_noise = sd.playrec(
-            signal.reshape(-1, 1), # Play the mono signal on the specified output_channel_idx
+            output_buffer,
             samplerate=samplerate,
-            device=device_id, 
-            channels=1, # Record 1 channel
+            device=device_id,
+            input_mapping=input_map_0based, # Specify which input channel to record
+            output_mapping=output_map_0based, # Specify which output channel to play on
             blocking=True
         )
         sd.wait() # Ensure playback and recording are finished
@@ -148,8 +154,8 @@ def measure_snr(device_id: int, output_channel_idx: int, input_channel_idx: int,
         recorded_noise = sd.rec(
             int(noise_duration * samplerate),
             samplerate=samplerate,
-            device=device_id, 
-            channels=1, # Record 1 channel
+            device=device_id,
+            mapping=input_map_0based, # Specify which input channel to record
             blocking=True
         )
         sd.wait() # Ensure recording is finished
@@ -225,6 +231,7 @@ def measure_snr(device_id: int, output_channel_idx: int, input_channel_idx: int,
     except Exception as e:
         console.print(f"[bold red]An unexpected error occurred: {e}[/bold red]")
         return None, None, None
+
 
 def main():
     parser = argparse.ArgumentParser(description="SNR (Signal-to-Noise Ratio) Analyzer Tool")

@@ -2,7 +2,6 @@
 import argparse
 import numpy as np
 import sounddevice as sd
-import scipy.signal as sig
 from scipy.signal import get_window
 from rich.console import Console
 from rich.table import Table
@@ -91,6 +90,9 @@ def measure_unweighted_dynamic_range(device_id, output_channel, input_channel, s
     window = get_window('hann', n_samples)
     windowed_data = recorded_data * window
 
+    # Calculate window energy gain for later correction
+    window_energy_gain = np.sum(window**2) / n_samples # This is the correct energy gain for RMS
+
     # Compute the FFT
     fft_data = np.fft.rfft(windowed_data)
     fft_freq = np.fft.rfftfreq(n_samples, 1 / samplerate)
@@ -100,14 +102,15 @@ def measure_unweighted_dynamic_range(device_id, output_channel, input_channel, s
 
     # Zero out the target bin and a few bins around it to ensure full removal
     # A wider notch helps to remove the peak's energy more effectively.
-    notch_width_bins = 3 # Bins on each side of the target
+    notch_width_bins = 5 # Increased from 3 to 5
     fft_data[max(0, target_bin - notch_width_bins) : target_bin + notch_width_bins + 1] = 0
 
     # Reconstruct the signal without the test tone
     data_notched = np.fft.irfft(fft_data, n=n_samples)
 
     # 2. Calculate RMS of the remaining noise (unweighted)
-    rms_noise = np.sqrt(np.mean(data_notched**2))
+    # Correct for window energy gain
+    rms_noise = np.sqrt(np.mean(data_notched**2) / window_energy_gain)
     if rms_noise < 1e-12:
         return float('inf'), 1e-12 # Avoid log(0)
 

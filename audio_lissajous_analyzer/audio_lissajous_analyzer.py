@@ -94,6 +94,13 @@ def main():
     
 
     device_id = args.device
+    if device_id is None:
+        try:
+            device_id = sd.default.device[0] # Get default input device ID
+        except Exception as e:
+            console.print(f"[bold red]Error: Could not determine default input device. {e}[/bold red]")
+            return
+
     device_info = get_device_info(device_id)
     if device_info is None:
         # get_device_info already printed an error
@@ -171,7 +178,7 @@ def main():
             callback=audio_callback
         )
         with stream:
-            ani = FuncAnimation(
+            _ani = FuncAnimation(
                 fig,
                 update_plot,
                 interval=args.update_interval,

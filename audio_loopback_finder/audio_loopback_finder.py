@@ -1,10 +1,10 @@
-
 import argparse
 import sounddevice as sd
 from rich.console import Console
 from rich.table import Table
+import numpy as np
 
-def get_devices():
+def list_devices():
     """Lists available audio devices."""
     devices = sd.query_devices()
     console = Console()
@@ -18,8 +18,6 @@ def get_devices():
         table.add_row(str(i), device['name'], str(device['max_input_channels']), str(device['max_output_channels']))
     
     console.print(table)
-
-import numpy as np
 
 def find_loopback(device_id, sample_rate=48000, test_freq=440, duration=0.1, threshold=0.1):
     """
@@ -84,11 +82,11 @@ def main():
     args = parser.parse_args()
 
     if args.list_devices:
-        get_devices()
+        list_devices()
         return
 
     if args.device is None:
-        get_devices()
+        list_devices()
         print("\nPlease specify a device ID with the -d or --device option.")
         return
         
