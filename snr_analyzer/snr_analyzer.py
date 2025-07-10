@@ -134,9 +134,7 @@ def measure_snr(device_id: int, output_channel_idx: int, input_channel_idx: int,
             signal.reshape(-1, 1), # Play the mono signal on the specified output_channel_idx
             samplerate=samplerate,
             device=device_id, 
-            channels=1, # Record 1 channel specified by input_mapping
-            input_mapping=[input_channel_idx], # 1-based
-            output_mapping=[output_channel_idx], # 1-based, directs the single channel from data
+            channels=1, # Record 1 channel
             blocking=True
         )
         sd.wait() # Ensure playback and recording are finished
@@ -151,8 +149,7 @@ def measure_snr(device_id: int, output_channel_idx: int, input_channel_idx: int,
             int(noise_duration * samplerate),
             samplerate=samplerate,
             device=device_id, 
-            channels=1, # Record 1 channel specified by mapping
-            mapping=[input_channel_idx], # 1-based
+            channels=1, # Record 1 channel
             blocking=True
         )
         sd.wait() # Ensure recording is finished
@@ -267,13 +264,7 @@ def main():
 
     # Check if system has libportaudio2, if not, instruct user.
     # This check is basic and might not cover all PortAudio installation issues.
-    try:
-        sd.check_hostapi()
-    except Exception as e: 
-        if "PortAudio library not found" in str(e) or "portaudio" in str(e).lower():
-            console.print("[bold red]PortAudio library seems to be missing or not configured correctly.[/bold red]")
-            console.print("Please ensure libportaudio2 is installed (e.g., `sudo apt-get install libportaudio2`) and detectable by sounddevice.")
-            return
+    
 
     snr_db, rms_signal, rms_noise = measure_snr(
         device_id=args.device,

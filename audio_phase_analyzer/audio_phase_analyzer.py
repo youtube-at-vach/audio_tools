@@ -42,7 +42,8 @@ def generate_sine_wave(frequency, duration, sample_rate, amplitude_dbfs=DEFAULT_
 
 def play_and_record_stereo(signal, sample_rate, 
                            output_device=None, input_device=None, 
-                           output_mapping_channels=None, input_mapping_channels=None):
+                           output_mapping_channels=None, input_mapping_channels=None, 
+                           input_device_info=None):
     """
     Plays a mono signal on specified output channels and records from specified input channels.
 
@@ -74,20 +75,33 @@ def play_and_record_stereo(signal, sample_rate,
         # This case should ideally not be hit if generate_sine_wave always returns mono
         raise ValueError("Input signal to play_and_record_stereo must be mono.")
 
-    num_input_channels_to_record = len(input_map) # Should be 2
+    num_input_channels_to_record = input_device_info['max_input_channels'] if input_device_info else 2 # Default to 2 if no info
 
     console.print(f"Preparing to play mono signal on output channels {output_map} and record from input channels {input_map} "
                   f"for {output_signal_stereo.shape[0] / sample_rate:.2f} seconds...")
+    console.print("[yellow]Note: With sounddevice v0.5.2, explicit output channel mapping is not supported by playrec. "
+                  "The signal will be played on the default output channels of the device.[/yellow]")
     
     try:
         recorded_audio = sd.playrec(output_signal_stereo, # Play the prepared stereo signal
                                    samplerate=sample_rate,
-                                   channels=num_input_channels_to_record, # Number of channels to record
-                                   input_mapping=input_map,
-                                   output_mapping=output_map,
+                                   channels=num_input_channels_to_record, # Record all available input channels
                                    device=(input_device, output_device),
                                    blocking=True)
         console.print("[green]Finished playing and recording.[/green]")
+
+        # Extract the desired input channels from the recorded_audio
+        if recorded_audio.ndim == 2 and recorded_audio.shape[1] >= max(input_map):
+            # Adjust input_map to be 0-based for numpy indexing
+            recorded_audio = recorded_audio[:, [ch - 1 for ch in input_map]]
+        elif recorded_audio.ndim == 1 and len(input_map) == 1 and input_map[0] == 1: # Mono recording, expecting 1st channel
+            pass # recorded_audio is already the desired channel
+        else:
+            console.print("[bold red]Error:[/bold red] Recorded audio shape or channel count mismatch after recording. "
+                          "Expected 2 channels for phase analysis.")
+            num_frames = int(signal.shape[0])
+            recorded_audio = np.zeros((num_frames, 2)) # Return empty 2-channel data
+
     except sd.PortAudioError as pae:
         console.print(f"[bold red]PortAudioError during playback and recording:[/bold red] {pae}")
         console.print("This often indicates an issue with device capabilities (e.g., sample rate, channel count) or device selection.")
@@ -95,14 +109,14 @@ def play_and_record_stereo(signal, sample_rate,
         console.print("Available devices:")
         list_audio_devices() # list_audio_devices will use console.print
         num_frames = int(signal.shape[0])
-        recorded_audio = np.zeros((num_frames, num_input_channels_to_record)) # Return empty data matching expected shape
+        recorded_audio = np.zeros((num_frames, 2)) # Return empty 2-channel data
     except Exception as e:
         console.print(f"[bold red]Error during playback and recording:[/bold red] {e}")
         console.print("Please ensure you have valid input and output devices selected.")
         console.print("Available devices:")
         list_audio_devices() # list_audio_devices will use console.print
         num_frames = int(signal.shape[0])
-        recorded_audio = np.zeros((num_frames, num_input_channels_to_record))
+        recorded_audio = np.zeros((num_frames, 2))
 
     return recorded_audio
 
@@ -472,7 +486,8 @@ def main():
         output_device=selected_output_device_arg,
         input_device=selected_input_device_arg,
         output_mapping_channels=output_mapping,
-        input_mapping_channels=input_mapping
+        input_mapping_channels=input_mapping,
+        input_device_info=sd.query_devices(selected_input_device_arg) if selected_input_device_arg is not None else None
     )
     
     console.print(f"Recorded data shape: {recorded_data.shape}")

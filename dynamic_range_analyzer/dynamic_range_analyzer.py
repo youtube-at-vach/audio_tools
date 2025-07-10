@@ -74,8 +74,6 @@ def measure_unweighted_dynamic_range(device_id, output_channel, input_channel, s
         samplerate=samplerate,
         device=device_id,
         channels=1,
-        input_mapping=[input_channel],
-        output_mapping=[output_channel],
         blocking=True
     )
     sd.wait()

@@ -24,6 +24,8 @@ On some systems (like Debian/Ubuntu), you may also need to install the PortAudio
 sudo apt-get install libportaudio2
 ```
 
+Note: Depending on your `sounddevice` version, explicit `sd.check_hostapi()` calls might not be necessary or might cause errors if the function has been deprecated/removed. The current script is designed to work without this explicit call, as the check is often handled internally by `sounddevice` during stream initialization.
+
 ## Usage
 
 Run the script from the command line. You must have an audio source connected to your input device. A loopback configuration is recommended for analyzing playback.
