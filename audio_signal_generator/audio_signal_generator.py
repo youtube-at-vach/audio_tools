@@ -39,6 +39,15 @@ def generate_triangle_wave(frequency, duration, sample_rate):
     triangle_wave = (2 * np.abs(2 * ((t * frequency) % 1) - 1) - 1)
     return triangle_wave
 
+# 指定された周波数のパルス波を生成する関数
+def generate_pulse_wave(frequency, duration, sample_rate, duty_cycle=0.5):
+    if not (0.0 <= duty_cycle <= 1.0):
+        raise ValueError("duty_cycleは0.0から1.0の範囲で指定してください。")
+    t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+    # パルス波を生成
+    pulse_wave = np.where((t * frequency) % 1 < duty_cycle, 1.0, -1.0)
+    return pulse_wave
+
 # 指定された周波数のノコギリ波を生成する関数 (上昇/下降を指定可能)
 def generate_sawtooth_wave(frequency, duration, sample_rate, ramp_type='ramp+'):
     t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
@@ -243,6 +252,8 @@ def main():
     parser.add_argument('--noise', choices=['white', 'pink', 'grey', 'brown', 'red', 'blue', 'purple', 'violet'], help='ノイズの色を指定 (例: --noise pink)')
     parser.add_argument('--square', action='store_true', help='矩形波を生成する')
     parser.add_argument('--triangle', action='store_true', help='三角波を生成する')
+    parser.add_argument('--pulse', action='store_true', help='パルス波を生成する')
+    parser.add_argument('--duty_cycle', type=float, default=0.5, help='パルス波のデューティサイクル (0.0-1.0, デフォルト: 0.5)')
     parser.add_argument('--sawtooth', action='store_true', help='ノコギリ波を生成する')
     parser.add_argument('--ramp_type', choices=['ramp+', 'ramp-'], default='ramp+', help='ノコギリ波の上昇/下降タイプ (ramp+ または ramp-, デフォルト: ramp+)')
 
@@ -276,6 +287,8 @@ def main():
         tone = generate_square_wave(args.frequency, args.duration, args.sample_rate)
     elif args.triangle: # 三角波生成
         tone = generate_triangle_wave(args.frequency, args.duration, args.sample_rate)
+    elif args.pulse: # パルス波生成
+        tone = generate_pulse_wave(args.frequency, args.duration, args.sample_rate, args.duty_cycle)
     elif args.sawtooth: # ノコギリ波生成
         tone = generate_sawtooth_wave(args.frequency, args.duration, args.sample_rate, args.ramp_type)
     else: # サイン波生成 (デフォルト)

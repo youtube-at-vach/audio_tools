@@ -57,3 +57,13 @@ This document lists potential ideas for future audio measurement programs. These
 
 -   **Automated Audio Test Report Generator**:
     Acts as a test executive. Users could define a sequence of existing analyzer tools (e.g., `audio_freq_response_analyzer`, `audio_analyzer`) to run on a DUT. The tool would execute tests, collect results/plots, and compile a comprehensive report (e.g., HTML, PDF, Markdown), building on the "Automated Test Sequencer" idea with a strong reporting focus.
+
+-   **Real-time Harmonic Distortion Analyzer with Loopback Correction**:
+    This tool aims to measure the true harmonic distortion of an audio device by actively compensating for the distortion introduced by the playback loopback path. It would involve:
+    1.  Generating a test signal (e.g., a pure sine wave).
+    2.  Playing it through the device under test (DUT) and simultaneously recording the output.
+    3.  Analyzing the recorded signal to identify harmonic components.
+    4.  Crucially, generating a real-time "anti-harmonic" signal (inverse phase and amplitude of detected harmonics) and mixing it with the original test signal before playback.
+    5.  Iteratively adjusting the anti-harmonic signal to minimize the detected harmonics in the recorded signal, effectively "nulling out" the loopback distortion.
+    6.  The remaining distortion would then represent the true distortion of the DUT.
+    This is a technically challenging feature requiring precise real-time audio processing, low-latency audio I/O, and robust adaptive filtering algorithms. Implementation should be considered once the technical feasibility and required computational resources are thoroughly assessed.

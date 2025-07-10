@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 import sounddevice as sd
 import scipy.signal as sig
+from scipy.signal import get_window
 from rich.console import Console
 from rich.table import Table
 
@@ -87,8 +88,13 @@ def measure_unweighted_dynamic_range(device_id, output_channel, input_channel, s
 
     # 1. Remove the test tone using FFT filtering.
     n_samples = len(recorded_data)
+
+    # Apply a window function to the recorded data to reduce spectral leakage
+    window = get_window('hann', n_samples)
+    windowed_data = recorded_data * window
+
     # Compute the FFT
-    fft_data = np.fft.rfft(recorded_data)
+    fft_data = np.fft.rfft(windowed_data)
     fft_freq = np.fft.rfftfreq(n_samples, 1 / samplerate)
 
     # Find the bin corresponding to the test frequency
