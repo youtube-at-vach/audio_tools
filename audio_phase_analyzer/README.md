@@ -69,9 +69,12 @@ The script accepts various arguments to customize its behavior:
 | `-a, --amplitude DBFS`        | `-6.0` dBFS           | Amplitude of the test tone in dBFS (0 dBFS = 1.0 linear).                                                  |
 | `--input_device ID_OR_NAME`   | System Default        | Input device ID (integer) or name (string).                                                                |
 | `--output_device ID_OR_NAME`  | System Default        | Output device ID (integer) or name (string).                                                               |
-| `--output_channels CHANNELS`  | `"1,2"`               | Comma-separated physical output channels (1-based) for the stereo signal (e.g., "1,2").                    |
-| `--input_channels CHANNELS`   | `"1,2"`               | Comma-separated physical input channels (1-based) to record from (e.g., "1,2"). Used for phase comparison. |
+    | `--output_channels CHANNELS`  | `"1,2"`               | Comma-separated physical output channels (1-based) for the stereo signal (e.g., "1,2"). **Note: Due to `sounddevice` API changes (e.g., v0.5.2), explicit output channel mapping for `sd.playrec` is not directly supported. The signal will be played on the default output channels of the selected device, and this argument primarily serves for documentation/future compatibility.** |
+| `--input_channels CHANNELS`   | `"1,2"`               | Comma-separated physical input channels (1-based) to record from (e.g., "1,2"). These are used for phase comparison. |
 | `--plot`                      | N/A (action)          | Display a Lissajous figure (X-Y plot) of the recorded stereo channels using matplotlib.                      |
+
+**Important Note on `sounddevice` API:**
+This tool has been updated to be compatible with `sounddevice` versions where `sd.check_hostapi()` and `mapping` arguments for `sd.playrec`/`sd.rec` are deprecated or removed (e.g., v0.5.2 and later). If you encounter issues, ensure your `sounddevice` library is up-to-date and refer to its official documentation for API changes. Specifically, direct physical output channel mapping via `output_mapping` in `sd.playrec` is no longer supported in these versions; the signal will be routed to the device's default output channels.
 
 ## Example Output
 

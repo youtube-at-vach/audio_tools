@@ -91,12 +91,7 @@ def main():
         list_audio_devices()
         return
 
-    try:
-        sd.check_hostapi()
-    except Exception as e:
-        console.print(f"[bold red]Host API check failed: {e}[/bold red]")
-        console.print("PortAudio might be missing or misconfigured.")
-        return
+    
 
     device_id = args.device
     device_info = get_device_info(device_id)
@@ -115,10 +110,10 @@ def main():
     if ch_x == ch_y:
         console.print("[bold yellow]Warning: Both axes are mapped to the same input channel.[/bold yellow]")
 
-    input_mapping = [ch_x, ch_y]
-    num_channels = len(input_mapping)
     samplerate = args.samplerate
     blocksize = args.blocksize or int(samplerate * args.block_duration / 1000)
+
+    num_channels_to_open = max(ch_x, ch_y)
 
     console.print("Starting Lissajous Analyzer...")
     console.print(f"  Device: [cyan]{device_info['name']} (ID: {device_id})[/cyan]")
@@ -142,7 +137,7 @@ def main():
     # This queue will hold the latest block of audio data
     # We use a fixed-size numpy array as a circular buffer for simplicity
     q_size = blocksize * 2 # A bit of buffer
-    audio_buffer = np.zeros((q_size, num_channels))
+    audio_buffer = np.zeros((q_size, num_channels_to_open))
     latest_data_ptr = [0] # Use a list to make it mutable inside the callback
 
     def audio_callback(indata, frames, time, status):
@@ -150,9 +145,13 @@ def main():
         if status:
             console.print(f"[yellow]Status: {status}[/yellow]")
         
+        # Extract the desired channels based on 0-based indexing
+        # ch_x and ch_y are 1-based, so subtract 1
+        extracted_data = indata[:, [ch_x - 1, ch_y - 1]]
+
         start = latest_data_ptr[0]
-        end = start + len(indata)
-        audio_buffer[start:end, :] = indata
+        end = start + len(extracted_data)
+        audio_buffer[start:end, :] = extracted_data
         latest_data_ptr[0] = end if end < q_size else 0
 
 
@@ -166,11 +165,10 @@ def main():
     try:
         stream = sd.InputStream(
             device=device_id,
-            channels=num_channels,
+            channels=num_channels_to_open,
             samplerate=samplerate,
             blocksize=blocksize,
-            callback=audio_callback,
-            mapping=input_mapping
+            callback=audio_callback
         )
         with stream:
             ani = FuncAnimation(
