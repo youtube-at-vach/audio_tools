@@ -10,7 +10,7 @@ from scipy.optimize import curve_fit
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from audio_signal_generator.audio_signal_generator import (
     generate_tone, save_tone_to_wav, get_wav_subtype,
-    generate_square_wave, generate_triangle_wave, generate_sawtooth_wave,
+    generate_square_wave, generate_triangle_wave, generate_sawtooth_wave, generate_pulse_wave,
     generate_sweep, generate_noise,
     apply_fade, generate_volume_sweep, apply_weighting # Added these
 )
@@ -111,6 +111,57 @@ class TestAudioSignalGenerator(unittest.TestCase):
         info = sf.info(filename)
         self.assertEqual(info.samplerate, self.sample_rate)
         self.assertAlmostEqual(info.duration, self.duration, delta=0.01)
+
+    def test_generate_pulse_wave(self):
+        filename = os.path.join(self.test_output_dir, "test_pulse.wav")
+        test_duty_cycle = 0.25
+        wave_signal = generate_pulse_wave(self.frequency, self.duration, self.sample_rate, duty_cycle=test_duty_cycle)
+
+        self.assertIsInstance(wave_signal, np.ndarray)
+        expected_length = int(self.sample_rate * self.duration)
+        self.assertEqual(len(wave_signal), expected_length)
+
+        # Pulse wave values should be -1 or 1
+        self.assertTrue(np.all(np.isin(wave_signal, [-1.0, 1.0])))
+
+        # Verify duty cycle for a single period
+        samples_per_period = self.sample_rate / self.frequency
+        # Take a few periods to average out any edge effects from linspace
+        num_periods_to_check = min(5, int(self.duration * self.frequency))
+        if num_periods_to_check == 0: # For very low frequencies or short durations
+            num_periods_to_check = 1
+
+        total_positive_samples = 0
+        total_samples_checked = 0
+
+        for i in range(num_periods_to_check):
+            start_idx = int(i * samples_per_period)
+            end_idx = int((i + 1) * samples_per_period)
+            if end_idx > len(wave_signal):
+                end_idx = len(wave_signal)
+            
+            period_segment = wave_signal[start_idx:end_idx]
+            total_positive_samples += np.sum(period_segment == 1.0)
+            total_samples_checked += len(period_segment)
+        
+        if total_samples_checked > 0:
+            actual_duty_cycle = total_positive_samples / total_samples_checked
+            self.assertAlmostEqual(actual_duty_cycle, test_duty_cycle, delta=0.05, msg=f"Duty cycle mismatch: Expected {test_duty_cycle}, Got {actual_duty_cycle}")
+        else:
+            self.fail("Not enough samples to check duty cycle.")
+
+
+        save_tone_to_wav(filename, wave_signal, self.sample_rate, '16', dbfs=-6)
+        self.assertTrue(os.path.exists(filename))
+        info = sf.info(filename)
+        self.assertEqual(info.samplerate, self.sample_rate)
+        self.assertAlmostEqual(info.duration, self.duration, delta=0.01)
+
+    def test_generate_pulse_wave_invalid_duty_cycle(self):
+        with self.assertRaises(ValueError):
+            generate_pulse_wave(self.frequency, self.duration, self.sample_rate, duty_cycle=1.1)
+        with self.assertRaises(ValueError):
+            generate_pulse_wave(self.frequency, self.duration, self.sample_rate, duty_cycle=-0.1)
 
     def test_generate_sawtooth_wave_ramp_plus(self):
         filename = os.path.join(self.test_output_dir, "test_sawtooth_plus.wav")
@@ -497,6 +548,44 @@ class TestAudioSignalGenerator(unittest.TestCase):
         # Blue noise (f^1): +3dB/octave. Tolerance: +2 to +4 dB/octave.
         self.assertTrue(2.0 < slope_db_octave < 4.0,
                         f"{color} noise slope {slope_db_octave:.2f} dB/octave out of range (+2 to +4).")
+
+    def test_generate_white_noise_spectrum(self):
+        color = 'white'
+        test_duration = 3.0
+        test_sample_rate = 48000
+        noise_signal = generate_noise(test_duration, test_sample_rate, color=color)
+
+        self.assertIsInstance(noise_signal, np.ndarray)
+        expected_length = int(test_sample_rate * test_duration)
+        self.assertAlmostEqual(len(noise_signal), expected_length, delta=2)
+
+        frequencies, psd = self._calculate_psd(noise_signal, test_sample_rate)
+        self.assertTrue(len(frequencies) > 10, f"PSD calculation yielded too few points for {color} noise ({len(frequencies)} points).")
+
+        slope_db_octave = self._fit_psd_slope(frequencies, psd)
+        self.assertFalse(np.isnan(slope_db_octave), f"Slope calculation failed for {color} noise.")
+        # White noise: 0dB/octave. Tolerance: -1 to +1 dB/octave.
+        self.assertTrue(-1.0 < slope_db_octave < 1.0,
+                        f"{color} noise slope {slope_db_octave:.2f} dB/octave out of range (-1 to +1).")
+
+    def test_generate_purple_noise_spectrum(self):
+        color = 'purple'
+        test_duration = 3.0
+        test_sample_rate = 48000
+        noise_signal = generate_noise(test_duration, test_sample_rate, color=color)
+
+        self.assertIsInstance(noise_signal, np.ndarray)
+        expected_length = int(test_sample_rate * test_duration)
+        self.assertAlmostEqual(len(noise_signal), expected_length, delta=2)
+
+        frequencies, psd = self._calculate_psd(noise_signal, test_sample_rate)
+        self.assertTrue(len(frequencies) > 10, f"PSD calculation yielded too few points for {color} noise ({len(frequencies)} points).")
+
+        slope_db_octave = self._fit_psd_slope(frequencies, psd)
+        self.assertFalse(np.isnan(slope_db_octave), f"Slope calculation failed for {color} noise.")
+        # Purple noise (f^2): +6dB/octave. Tolerance: +5 to +7 dB/octave.
+        self.assertTrue(5.0 < slope_db_octave < 7.0,
+                        f"{color} noise slope {slope_db_octave:.2f} dB/octave out of range (+5 to +7).")
 
     def test_generate_invalid_noise_color(self):
         with self.assertRaisesRegex(ValueError, "Unknown noise color: invalid_color"):

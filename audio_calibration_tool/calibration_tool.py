@@ -133,7 +133,10 @@ def analyze_wav_file(filename):
 
         signal = data[:, 0] if data.ndim > 1 else data
         n = len(signal)
-        fft_result = np.abs(np.fft.fft(signal)[:n//2])
+        # Apply a Hann window to the signal to reduce spectral leakage
+        window = np.hanning(n)
+        windowed_signal = signal * window
+        fft_result = np.abs(np.fft.fft(windowed_signal)[:n//2])
         fft_freq = np.fft.fftfreq(n, d=1/samplerate)[:n//2]
 
         peak_index = np.argmax(fft_result)
