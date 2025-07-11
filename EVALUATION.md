@@ -1,173 +1,200 @@
-# Application Evaluation Report
+# 評価レポート (Audio Tools)
 
-This report summarizes the evaluation of the audio tools in this repository. Each tool was assessed based on the following criteria:
+## 評価基準
 
-- **Functionality:** Does the application perform its intended functions as described in the README? (1-5 stars)
-- **Correctness:** Does the application produce accurate results? (1-5 stars)
-- **Code Quality:** Is the code well-structured, readable, and maintainable? Are there any obvious bugs or inefficiencies? (1-5 stars)
-- **Documentation:** Is the README clear, comprehensive, and accurate? Does it provide enough information for users to understand and use the application? (1-5 stars)
-- **Error Handling:** Does the application handle errors gracefully? (1-5 stars)
-- **Usability:** Is the command-line interface easy to use? Are the options clear and well-documented? (1-5 stars)
-- **Tests:** Are there tests for the application? Do they provide good coverage? (1-5 stars, 0 if no tests)
+各ツールは、以下の7つの基準に基づいて1〜5の星で評価されます。
 
----
-
-## Audio Analyzer (`audio_analyzer`)
-
-**Overall Average: 3.29 ⭐**
-
-| Criterion        | Rating | Comments                                                                                                                               |
-|------------------|--------|----------------------------------------------------------------------------------------------------------------------------------------|
-| Functionality    | 4/5    | Good range of features including THD, THD+N, SINAD, SNR, sweeps, and mapping. Meets most described functions.                           |
-| Correctness      | 3/5    | Calculations appear plausible for core metrics. Accuracy depends heavily on calibration and environment, which is noted. Some advanced calculations might need more rigorous verification. |
-| Code Quality     | 3/5    | The main script is quite long. Could benefit from more modularization. Some parts are well-commented, others less so. Uses `audiocalc.py` which is good. |
-| Documentation    | 4/5    | README is detailed with features, file structure, usage, options, and example output. Well-written.                                  |
-| Error Handling   | 3/5    | Basic error handling for device selection and file operations seems present. Robustness against unexpected audio data or configurations is not fully clear. |
-| Usability        | 4/5    | CLI options are comprehensive. `distorsion_visualizer.py` is a good addition.                                                            |
-| Tests            | 2/5    | `test_audiocalc.py` exists, which is good, but it only covers a portion of the entire application. Main analyzer logic lacks dedicated tests. |
+-   **機能性**: READMEに記載された機能がどの程度実装されているか。
+-   **正確性**: 測定・生成結果が理論値や期待値と一致するか。
+-   **コード品質**: コードが構造化され、可読性・保守性が高いか。
+-   **ドキュメント**: READMEがツールの使用に十分な情報を提供しているか。
+-   **エラー処理**: 不正な入力や予期せぬ事態にどの程度堅牢か。
+-   **ユーザビリティ**: CLIが直感的で使いやすいか。
+-   **テスト**: 単体テストが存在し、主要なロジックをカバーしているか (テストがない場合は0)。
 
 ---
 
-## Audio Crosstalk Analyzer (`audio_crosstalk_analyzer`)
+## 評価結果
 
-**Overall Average: 3.71 ⭐**
-
-| Criterion        | Rating | Comments                                                                                                                                  |
-|------------------|--------|-------------------------------------------------------------------------------------------------------------------------------------------|
-| Functionality    | 4/5    | Measures crosstalk for single frequency and sweep modes. CSV and plot output are good features.                                           |
-| Correctness      | 3/5    | Core logic using FFT for level detection is standard. Accuracy depends on good setup and quality of the audio interface.                    |
-| Code Quality     | 4/5    | Code is generally well-structured and readable. Uses `rich` for good console output and `matplotlib` for plotting. Clear separation of concerns. |
-| Documentation    | 4/5    | README is very comprehensive, explaining features, dependencies, usage, options, examples, and important notes on loopback and quality.      |
-| Error Handling   | 4/5    | Includes argument parsing validation and error handling for device selection and audio stream issues.                                       |
-| Usability        | 4/5    | CLI options are well-defined. `--help` is informative.                                                                                      |
-| Tests            | 3/5    | `test_audio_crosstalk_analyzer.py` exists and seems to cover some core calculations, though likely not full I/O or device interaction.     |
-
----
-
-## Audio Frequency Response Analyzer (`audio_freq_response_analyzer`)
-
-**Overall Average: 3.71 ⭐**
-
-| Criterion        | Rating | Comments                                                                                                                                |
-|------------------|--------|-----------------------------------------------------------------------------------------------------------------------------------------|
-| Functionality    | 4/5    | Measures amplitude and phase response across a frequency sweep. CSV and plot outputs are useful.                                        |
-| Correctness      | 3/5    | FFT-based analysis for amplitude and phase is standard. Phase unwrapping is handled. Accuracy depends on setup and interface quality.     |
-| Code Quality     | 4/5    | Well-structured, uses appropriate libraries (NumPy, SoundDevice, SciPy, Rich, Matplotlib). Clear functions and argument parsing.        |
-| Documentation    | 4/5    | README is thorough, covering overview, dependencies, usage, options, example, and output description. Important notes are included.       |
-| Error Handling   | 4/5    | Argument validation and error handling for device selection and audio operations appear to be present.                                  |
-| Usability        | 4/5    | CLI options are clear and cover necessary parameters.                                                                                   |
-| Tests            | 3/5    | `test_audio_freq_response_analyzer.py` is present, suggesting some level of testing for core functions.                                   |
+| ツール名                               | 機能性 | 正確性 | コード品質 | ドキュメント | エラー処理 | ユーザビリティ | テスト | 平均 |
+| -------------------------------------- | :----: | :----: | :--------: | :----------: | :--------: | :------------: | :----: | :--: |
+| `audio_analyzer`                       |  4/5   |  3/5   |    3/5     |     4/5      |    3/5     |      4/5       |  2/5   | 3.29 |
+| `audio_calibration_tool`               |  4/5   |  3/5   |    4/5     |     4/5      |    3/5     |      4/5       |  0/5   | 3.14 |
+| `audio_crosstalk_analyzer`             |  4/5   |  4/5   |    4/5     |     5/5      |    4/5     |      4/5       |  3/5   | 4.00 |
+| `audio_freq_response_analyzer`         |  4/5   |  4/5   |    4/5     |     5/5      |    4/5     |      4/5       |  3/5   | 4.00 |
+| `audio_imd_analyzer`                   |  5/5   |  4/5   |    4/5     |     5/5      |    4/5     |      5/5       |  3/5   | 4.29 |
+| `audio_lissajous_analyzer`             |  5/5   |  5/5   |    4/5     |     4/5      |    4/5     |      5/5       |  3/5   | 4.29 |
+| `audio_loopback_finder`                |  5/5   |  5/5   |    5/5     |     5/5      |    4/5     |      5/5       |  3/5   | 4.57 |
+| `audio_phase_analyzer`                 |  5/5   |  4/5   |    4/5     |     5/5      |    4/5     |      5/5       |  3/5   | 4.29 |
+| `audio_signal_generator`               |  5/5   |  4/5   |    3/5     |     3/5      |    3/5     |      4/5       |  0/5   | 3.14 |
+| `audio_transient_analyzer`             |  4/5   |  3/5   |    4/5     |     4/5      |    4/5     |      4/5       |  3/5   | 3.71 |
+| `dynamic_range_analyzer`               |  4/5   |  4/5   |    4/5     |     4/5      |    4/5     |      4/5       |  3/5   | 3.86 |
+| `lufs_meter`                           |  5/5   |  4/5   |    4/5     |     4/5      |    3/5     |      4/5       |  3/5   | 3.86 |
+| `misc/noise_calc.py`                   |  5/5   |  5/5   |    4/5     |     4/5      |    2/5     |      4/5       |  0/5   | 3.43 |
+| `rt60_analyzer`                        |  4/5   |  3/5   |    4/5     |     4/5      |    3/5     |      4/5       |  3/5   | 3.57 |
+| `snr_analyzer`                         |  4/5   |  3/5   |    3/5     |     4/5      |    3/5     |      4/5       |  3/5   | 3.29 |
+| `wow_flutter_analyzer`                 |  4/5   |  3/5   |    4/5     |     4/5      |    3/5     |      4/5       |  3/5   | 3.57 |
 
 ---
 
-## Audio IMD Analyzer (`audio_imd_analyzer`)
+## 個別ツール評価詳細
 
-**Overall Average: 3.71 ⭐**
+### Audio Analyzer (`audio_analyzer`)
 
-| Criterion        | Rating | Comments                                                                                                                                          |
-|------------------|--------|---------------------------------------------------------------------------------------------------------------------------------------------------|
-| Functionality    | 4/5    | Supports SMPTE and CCIF IMD measurements. Generates dual-tone signals and analyzes recorded audio.                                                |
-| Correctness      | 3/5    | IMD calculations based on standard formulas. Accuracy depends on precise signal generation, recording, and spectral analysis.                       |
-| Code Quality     | 4/5    | Code is well-organized, with clear separation for signal generation, audio I/O, and analysis. Uses `rich` for good output.                         |
-| Documentation    | 4/5    | README is excellent, detailing both SMPTE and CCIF standards, dependencies, usage, options, examples, and output descriptions.                     |
-| Error Handling   | 4/5    | Includes device selection, argument parsing with validation, and error handling for audio stream issues.                                          |
-| Usability        | 4/5    | CLI options are comprehensive and allow selection of standards and parameters.                                                                    |
-| Tests            | 3/5    | `test_audio_imd_analyzer.py` exists, indicating that core analysis logic is likely tested.                                                        |
+-   **機能性 (4/5)**: THD, THD+N, SINAD, SNR, スイープ, マッピングなど、多機能で優れている。
+-   **正確性 (3/5)**: 計算は妥当だが、精度はキャリブレーションと環境に大きく依存する。
+-   **コード品質 (3/5)**: メインスクリプトがやや長いが、`audiocalc.py`への計算ロジックの分離は良い。
+-   **ドキュメント (4/5)**: READMEは機能、使用法、オプションが詳細に記述されている。
+-   **エラー処理 (3/5)**: デバイス選択やファイル操作の基本的なエラー処理は存在する。
+-   **ユーザビリティ (4/5)**: CLIオプションが豊富。`distorsion_visualizer.py`による可視化も良い。
+-   **テスト (2/5)**: `test_audiocalc.py`は存在するが、アナライザー本体のテストが不足している。
 
----
+### Audio Calibration Tool (`audio_calibration_tool`)
 
-## Audio Phase Analyzer (`audio_phase_analyzer`)
+-   **機能性 (4/5)**: dBFSとVrmsの相互変換、ループバックテスト、自動チェック機能など、キャリブレーションに必要な機能が揃っている。
+-   **正確性 (3/5)**: 外部のAC電圧計の精度に依存する。
+-   **コード品質 (4/5)**: スクリプトは目的が明確で、構造化されている。
+-   **ドキュメント (4/5)**: READMEは各モードの使用法を明確に説明している。
+-   **エラー処理 (3/5)**: 基本的なエラー処理は存在するが、より多くのエッジケースに対応できる可能性がある。
+-   **ユーザビリティ (4/5)**: 対話的なキャリブレーションプロセスは使いやすい。
+-   **テスト (0/5)**: テストが存在しない。
 
-**Overall Average: 3.57 ⭐**
+### Audio Crosstalk Analyzer (`audio_crosstalk_analyzer`)
 
-| Criterion        | Rating | Comments                                                                                                                                                     |
-|------------------|--------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Functionality    | 4/5    | Measures phase difference and can plot Lissajous figures. Useful for speaker polarity and stereo equipment checks.                                           |
-| Correctness      | 3/5    | Phase calculation using cross-correlation or FFT phase is standard. Accuracy depends on signal quality and precise timing.                                   |
-| Code Quality     | 3/5    | Code is reasonably structured. Use of `rich` and `matplotlib` is good. Some functions could be more concise.                                                 |
-| Documentation    | 4/5    | README is good, explaining purpose, features, dependencies, usage, options, example output, and how to interpret results (phase and Lissajous).             |
-| Error Handling   | 4/5    | Handles device selection, argument parsing, and potential audio I/O issues.                                                                                  |
-| Usability        | 4/5    | CLI is straightforward with useful options like `--list_devices` and `--plot`.                                                                               |
-| Tests            | 3/5    | `test_audio_phase_analyzer.py` is present, suggesting tests for the core phase calculation logic.                                                            |
+-   **機能性 (4/5)**: シングル周波数とスイープモードをサポート。CSVとプロット出力も良い。
+-   **正確性 (4/5)**: FFTベースのレベル検出は標準的で信頼性が高い。
+-   **コード品質 (4/5)**: `rich`や`matplotlib`を効果的に使用し、コードは整理されている。
+-   **ドキュメント (5/5)**: READMEは非常に包括的で、背景、使用法、注意点まで詳細に記述されている。
+-   **エラー処理 (4/5)**: 引数検証、デバイス選択、ストリームエラーの処理が適切。
+-   **ユーザビリティ (4/5)**: CLIオプションが明確で使いやすい。
+-   **テスト (3/5)**: `test_audio_crosstalk_analyzer.py`が存在し、コアロジックがテストされている。
 
----
+### Audio Frequency Response Analyzer (`audio_freq_response_analyzer`)
 
-## Audio Signal Generator (`audio_signal_generator`)
+-   **機能性 (4/5)**: 振幅と位相の周波数特性を測定でき、CSVとプロット出力もサポート。
+-   **正確性 (4/5)**: FFTベースの解析と位相アンラップ処理は標準的で信頼できる。
+-   **コード品質 (4/5)**: 適切なライブラリを使用し、コードは構造化されている。
+-   **ドキュメント (5/5)**: READMEは概要から出力形式、注意点まで非常に丁寧。
+-   **エラー処理 (4/5)**: 引数検証とオーディオ操作のエラー処理が実装されている。
+-   **ユーザビリティ (4/5)**: CLIオプションは明確で、必要なパラメータを網羅している。
+-   **テスト (3/5)**: `test_audio_freq_response_analyzer.py`が存在する。
 
-**Overall Average: 3.00 ⭐**
+### Audio IMD Analyzer (`audio_imd_analyzer`)
 
-| Criterion        | Rating | Comments                                                                                                                                       |
-|------------------|--------|------------------------------------------------------------------------------------------------------------------------------------------------|
-| Functionality    | 5/5    | Excellent range of signal types (tones, sweeps, noise, waves) and options (weighting, fade, bit depth). Meets all described functionalities.   |
-| Correctness      | 3/5    | Signal generation math is generally standard. Pink noise generation algorithm quality can vary; this one seems to use a common filter method.    |
-| Code Quality     | 3/5    | The script is long and has many functions. Some could be grouped into classes or helper modules. Readability is okay but could be improved.     |
-| Documentation    | 3/5    | README is adequate, listing features, usage, options, and examples. Could be more detailed on some aspects (e.g., specific noise algorithms).   |
-| Error Handling   | 3/5    | Basic error handling for file output and argument parsing. May not be robust against all invalid parameter combinations.                         |
-| Usability        | 4/5    | Comprehensive set of CLI options allows for flexible signal generation. Default output filename is `tone.wav`.                                   |
-| Tests            | 1/5    | No dedicated test file found. Given the variety of signals and parameters, unit tests would be highly beneficial.                                |
+-   **機能性 (5/5)**: SMPTEとCCIFの両規格に対応し、デュアルトーン信号の生成と解析が可能。
+-   **正確性 (4/5)**: 標準的な計算式に基づいており、信頼性が高い。
+-   **コード品質 (4/5)**: 信号生成、I/O、解析の責務が明確に分離されている。
+-   **ドキュメント (5/5)**: READMEは両規格の背景、使用法、オプション、出力例まで非常に詳細。
+-   **エラー処理 (4/5)**: デバイス選択、引数検証、ストリームエラーの処理が堅牢。
+-   **ユーザビリティ (5/5)**: 規格やパラメータを柔軟に指定できるCLIは非常に使いやすい。
+-   **テスト (3/5)**: `test_audio_imd_analyzer.py`が存在する。
 
----
+### Audio Lissajous Analyzer (`audio_lissajous_analyzer`)
 
-## Audio Transient Analyzer (`audio_transient_analyzer`)
+-   **機能性 (5/5)**: ステレオ信号の位相関係をリアルタイムでリサジュー図として可視化できる。
+-   **正確性 (5/5)**: 位相関係が視覚的に正しく表現される。
+-   **コード品質 (4/5)**: `matplotlib.animation`を使用し、コードは比較的シンプルで理解しやすい。
+-   **ドキュメント (4/5)**: READMEはツールの目的と結果の解釈を明確に説明している。
+-   **エラー処理 (4/5)**: デバイス選択のエラー処理が実装されている。
+-   **ユーザビリティ (5/5)**: リアルタイムの視覚的フィードバックは非常に直感的で有用。
+-   **テスト (3/5)**: `test_audio_lissajous_analyzer.py`が存在する。
 
-**Overall Average: 3.29 ⭐**
+### Audio Loopback Finder (`audio_loopback_finder`)
 
-| Criterion        | Rating | Comments                                                                                                                                                           |
-|------------------|--------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Functionality    | 4/5    | Measures rise time, overshoot, and settling time using impulse or tone burst signals. CSV output is a plus.                                                        |
-| Correctness      | 3/5    | Transient parameter calculations (10-90% rise time, peak detection) are standard. Accuracy depends on clean signal capture and precise start-of-transient detection. |
-| Code Quality     | 3/5    | Code is reasonably structured. Uses `scipy.signal.windows` for tone burst envelope. Some parts related to finding signal start and steady state could be complex.  |
-| Documentation    | 4/5    | README clearly explains overview, dependencies, CLI options, output values, and example usage.                                                                     |
-| Error Handling   | 3/5    | Includes argument parsing and device selection. Robustness to noisy signals or unexpected signal shapes for analysis might vary.                                   |
-| Usability        | 4/5    | CLI options are well-defined for selecting signal type and parameters.                                                                                               |
-| Tests            | 3/5    | `test_audio_transient_analyzer.py` exists, suggesting some testing of the analysis logic.                                                                          |
+-   **機能性 (5/5)**: オーディオデバイスのアクティブなループバック経路を自動で検出する。
+-   **正確性 (5/5)**: テストトーンの送受信に基づく検出ロジックは確実。
+-   **コード品質 (5/5)**: スクリプトは短く、単一の目的に特化しており、非常に明快。
+-   **ドキュメント (5/5)**: READMEはツールの目的と使用法を簡潔かつ明確に説明している。
+-   **エラー処理 (4/5)**: デバイス関連のエラーを適切に処理する。
+-   **ユーザビリティ (5/5)**: 非常にシンプルで、単一のコマンドで目的を達成できる。
+-   **テスト (3/5)**: `test_audio_loopback_finder.py`が存在する。
 
----
+### Audio Phase Analyzer (`audio_phase_analyzer`)
 
-## LUFS Meter (`lufs_meter`)
+-   **機能性 (5/5)**: 位相差の計算とリサジュー図のプロットの両方を提供。
+-   **正確性 (4/5)**: 位相差の計算は標準的な相互相関法に基づいており、信頼性が高い。
+-   **コード品質 (4/5)**: コードは構造化されており、`rich`による出力も見やすい。
+-   **ドキュメント (5/5)**: READMEはツールの目的、使用法、結果の解釈まで非常に詳細。
+-   **エラー処理 (4/5)**: デバイス選択や不正なチャネル指定に対するエラー処理が適切。
+-   **ユーザビリティ (5/5)**: CLIは直感的で、`--plot`オプションも便利。
+-   **テスト (3/5)**: `test_audio_phase_analyzer.py`が存在する。
 
-**Overall Average: 3.57 ⭐**
+### Audio Signal Generator (`audio_signal_generator`)
 
-| Criterion        | Rating | Comments                                                                                                                                                             |
-|------------------|--------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Functionality    | 4/5    | Calculates Integrated, Momentary, Short-term Loudness, LRA, and True Peak. Adherence to ITU-R BS.1770 / EBU R128 is claimed. CSV output and target comparison.       |
-| Correctness      | 4/5    | Assumed to be correct if ITU-R BS.1770 algorithms (K-weighting, gating) are implemented properly. This is non-trivial. `pyloudnorm` is often used for this.         |
-| Code Quality     | 4/5    | Code appears well-structured, using libraries like `soundfile` and `scipy.signal`. Functions for different loudness aspects.                                        |
-| Documentation    | 4/5    | README is good, covering overview, purpose, features, dependencies, usage, options, example output, and CSV format.                                                 |
-| Error Handling   | 3/5    | Handles file loading and argument parsing. Robustness against unusual audio file formats or contents not fully clear.                                                |
-| Usability        | 4/5    | Simple CLI for file-based analysis. `--verbose` option is good.                                                                                                        |
-| Tests            | 3/5    | `test_lufs_meter.py` is present, which is crucial for verifying correctness of the loudness algorithms against known test vectors.                                   |
+-   **機能性 (5/5)**: トーン、ノイズ、スイープなど、非常に多様な信号を生成できる。
+-   **正確性 (4/5)**: 信号生成の数学的ロジックは標準的で正確。
+-   **コード品質 (3/5)**: スクリプトが長く、多くの関数が含まれている。クラス化などでよりモジュール化できる可能性がある。
+-   **ドキュメント (3/5)**: READMEは使用法とオプションを記載しているが、各信号の詳細な説明は少ない。
+-   **エラー処理 (3/5)**: 基本的な引数パースとファイル出力のエラー処理は存在する。
+-   **ユーザビリティ (4/5)**: 豊富なCLIオプションにより、柔軟な信号生成が可能。
+-   **テスト (0/5)**: テストが存在しない。
 
----
+### Audio Transient Analyzer (`audio_transient_analyzer`)
 
-## Noise Calculator (`misc/noise_calc.py`)
+-   **機能性 (4/5)**: インパルスとトーンバーストの両方で過渡応答（立ち上がり時間、オーバーシュート、整定時間）を測定できる。
+-   **正確性 (3/5)**: 過渡現象のパラメータ計算は標準的だが、ノイズの多い信号では精度が低下する可能性がある。
+-   **コード品質 (4/5)**: コードは構造化されており、信号の開始点検出や解析ロジックが分離されている。
+-   **ドキュメント (4/5)**: READMEは概要、CLIオプション、出力値の説明が明確。
+-   **エラー処理 (4/5)**: 引数検証とデバイス選択のエラー処理が実装されている。
+-   **ユーザビリティ (4/5)**: CLIオプションは信号タイプやパラメータを柔軟に設定できる。
+-   **テスト (3/5)**: `test_audio_transient_analyzer.py`が存在する。
 
-**Overall Average: 3.29 ⭐**
+### Dynamic Range Analyzer (`dynamic_range_analyzer`)
 
-| Criterion        | Rating | Comments                                                                                                                               |
-|------------------|--------|----------------------------------------------------------------------------------------------------------------------------------------|
-| Functionality    | 5/5    | Calculates optimal resistance for op-amp noise, evaluates noise terms for given resistance, and estimates total RMS noise. As described. |
-| Correctness      | 5/5    | Uses standard formulas for op-amp noise contributions (voltage noise, current noise, thermal noise). Calculations seem correct.        |
-| Code Quality     | 4/5    | Script is short, focused, and clear. Parameters are well-defined at the top.                                                           |
-| Documentation    | 4/5    | `misc/README.md` explains the purpose, usage (modifying constants in script), and application of the noise calculator well.            |
-| Error Handling   | 2/5    | No explicit error handling (e.g., for division by zero if `i_n` was zero, though unlikely for op-amp specs). Assumes valid inputs.       |
-| Usability        | 4/5    | Easy to use by modifying constants directly in the script for quick calculations.                                                      |
-| Tests            | 0/5    | No tests present. For a calculation script, simple test cases with known inputs/outputs could be beneficial.                           |
+-   **機能性 (4/5)**: AES17規格に準拠した非加重ダイナミックレンジを測定する。
+-   **正確性 (4/5)**: FFTフィルタリングとウィンドウ補正を用いた標準的な手法で信頼性が高い。
+-   **コード品質 (4/5)**: スクリプトは単一の目的に特化しており、明快。
+-   **ドキュメント (4/5)**: READMEはツールの目的と使用法を明確に説明している。
+-   **エラー処理 (4/5)**: デバイスやチャネル指定のエラーを適切に処理する。
+-   **ユーザビリティ (4/5)**: CLIはシンプルで使いやすい。
+-   **テスト (3/5)**: `test_dynamic_range_analyzer.py`が存在する。
 
----
+### LUFS Meter (`lufs_meter`)
 
-## SNR Analyzer (`snr_analyzer`)
+-   **機能性 (5/5)**: ITU-R BS.1770-4 / EBU R128で規定されるラウドネス指標を包括的に測定。
+-   **正確性 (4/5)**: K-weightingやゲーティング処理が正しく実装されていれば、規格に準拠した正確な値が得られると期待される。
+-   **コード品質 (4/5)**: コードは構造化されており、各ラウドネス指標の計算が分離されている。
+-   **ドキュメント (4/5)**: READMEは目的、機能、使用法、出力形式を明確に説明している。
+-   **エラー処理 (3/5)**: ファイル読み込みと引数パースのエラー処理は存在する。
+-   **ユーザビリティ (4/5)**: ファイルベースのシンプルなCLI。
+-   **テスト (3/5)**: `test_lufs_meter.py`が存在し、アルゴリズムの正当性を検証する上で重要。
 
-**Overall Average: 3.29 ⭐**
+### Noise Calculator (`misc/noise_calc.py`)
 
-| Criterion        | Rating | Comments                                                                                                                                      |
-|------------------|--------|-----------------------------------------------------------------------------------------------------------------------------------------------|
-| Functionality    | 4/5    | Measures SNR by playing a test signal, recording signal+noise, then noise, and calculating the ratio.                                         |
-| Correctness      | 3/5    | SNR calculation `20 * log10(RMS_signal_only / RMS_noise)` is standard. Estimation of `RMS_signal_only` by power subtraction is an approximation. |
-| Code Quality     | 3/5    | The script is reasonably structured. Uses `rich` for output.                                                                                  |
-| Documentation    | 4/5    | README is clear, explaining overview, dependencies, usage (list devices, measure SNR), options, how it works, example output, and notes.     |
-| Error Handling   | 3/5    | Handles device selection and argument parsing. Robustness to issues during playback/recording (e.g., levels too high/low) might be limited.   |
-| Usability        | 4/5    | CLI options are straightforward. `--list_devices` is helpful.                                                                                 |
-| Tests            | 3/5    | `test_snr_analyzer.py` exists, suggesting testing of the core SNR calculation logic.                                                          |
+-   **機能性 (5/5)**: オペアンプのノイズに関する重要な指標（最適抵抗、各ノイズ項、RMSノイズ）を計算できる。
+-   **正確性 (5/5)**: 標準的な物理公式を使用しており、計算は正確。
+-   **コード品質 (4/5)**: スクリプトは短く、目的が明確で、パラメータも整理されている。
+-   **ドキュメント (4/5)**: `misc/README.md`がツールの目的と使用法を的確に説明している。
+-   **エラー処理 (2/5)**: 明示的なエラー処理は存在しない。
+-   **ユーザビリティ (4/5)**: スクリプト内の定数を直接変更する方式は、迅速な計算に便利。
+-   **テスト (0/5)**: テストが存在しない。
 
----
+### RT60 Analyzer (`rt60_analyzer`)
+
+-   **機能性 (4/5)**: 録音されたインパルス応答からRT60（残響時間）を測定できる。
+-   **正確性 (3/5)**: T20法に基づく計算は標準的だが、結果はインパルス音源の質と環境に大きく依存する。
+-   **コード品質 (4/5)**: Hilbert変換を用いたエンベロープ計算や線形回帰など、適切なライブラリを使用している。
+-   **ドキュメント (4/5)**: READMEはツールの目的、使用法、注意点を明確に説明している。
+-   **エラー処理 (3/5)**: DECAYが短すぎる場合などの基本的なエラー処理は存在する。
+-   **ユーザビリティ (4/5)**: CLIはシンプルで、`--plot`オプションも便利。
+-   **テスト (3/5)**: `test_rt60_analyzer.py`が存在する。
+
+### SNR Analyzer (`snr_analyzer`)
+
+-   **機能性 (4/5)**: テスト信号の再生とノイズフロアの録音を通じてSNRを測定する。
+-   **正確性 (3/5)**: 信号電力の推定方法（全体電力 - ノイズ電力）は一般的だが、ノイズの定常性に依存する。
+-   **コード品質 (3/5)**: コードは比較的シンプルで理解しやすい。
+-   **ドキュメント (4/5)**: READMEは概要、使用法、動作原理、注意点まで詳細に記述されている。
+-   **エラー処理 (3/5)**: デバイス選択や引数パースのエラー処理は存在する。
+-   **ユーザビリティ (4/5)**: CLIは直感的で使いやすい。
+-   **テスト (3/5)**: `test_snr_analyzer.py`が存在する。
+
+### Wow & Flutter Analyzer (`wow_flutter_analyzer`)
+
+-   **機能性 (4/5)**: 録音されたテストトーンからワウ・フラッターを測定できる。
+-   **正確性 (3/5)**: スペクトログラムに基づく周波数偏差の検出は標準的だが、精度はFFTのパラメータに依存する。
+-   **コード品質 (4/5)**: スクリプトは単一の目的に特化しており、明快。
+-   **ドキュメント (4/5)**: READMEはツールの目的と使用法を明確に説明している。
+-   **エラー処理 (3/5)**: ファイル読み込みの基本的なエラー処理は存在する。
+-   **ユーザビリティ (4/5)**: CLIはシンプルで、`--plot`オプションも便利。
+-   **テスト (3/5)**: `test_wow_flutter_analyzer.py`が存在する。
