@@ -483,7 +483,7 @@ def results_to_measurement(result, noise_rms, output_dbfs, physical_gain, freq=N
         console.print(f"THD+N(%, dBr): {thdn:.4f} / {thdn_db:.2f}")
         console.print(f"SINAD(dB): {sinad_db:.2f}" if sinad_db is not None else "SINAD(dB): N/A") # Print SINAD
         console.print(f"SNR(dB): {snr:.2f}")
-        console.print(f"FFT処理ゲイン(dB): {corrected_gain_db:+.2f} (理論値: {20 * np.log10(AudioCalc.WINDOW_COHERENT_GAINS.get(window_name, 1.0)):.2f} dB for {window_name})\n")
+        console.print(f"ゲイン(dB): {corrected_gain_db:+.2f} (理論値: {20 * np.log10(AudioCalc.WINDOW_COHERENT_GAINS.get(window_name, 1.0)):.2f} dB for {window_name})\n")
 
         print_harmonic_analysis(result['harmonics'])
     else:
@@ -496,7 +496,7 @@ def results_to_measurement(result, noise_rms, output_dbfs, physical_gain, freq=N
             'THD+N(dBr)': None,
             'SINAD(dB)': None, # Add SINAD to measurement (None case)
             'SNR(dB)': None,
-            'FFT処理ゲイン(dB)': None
+            'ゲイン(dB)': None
         })
         console.print("[yellow]測定結果:[/yellow]")
         console.print(f"出力(dBFS): {output_dbfs:.2f}")
@@ -505,7 +505,7 @@ def results_to_measurement(result, noise_rms, output_dbfs, physical_gain, freq=N
         console.print("THD+N(%, dBr): N/A")
         console.print("SINAD(dB): N/A") # Print SINAD (None case)
         console.print("SNR(dB): N/A")
-        console.print('FFT処理ゲイン(dB): N/A')
+        console.print('ゲイン(dB): N/A')
 
     return measurement
 
@@ -528,7 +528,7 @@ def perform_measurements(device_index, output_channel, sample_rate, apply_bandpa
     # CSVファイルが指定されている場合、書き込み準備
     if output_csv:
         csvfile = open(output_csv, mode='w', newline='', encoding='utf-8')
-        csv_writer = csv.DictWriter(csvfile, fieldnames=['Measurement_Number', 'Frequency(Hz)', 'Amplitude(dBFS)', 'Output(dBFS)', 'Input(基本波ピークdBFS)', 'THD(%)', 'THD(dBr)', 'THD+N(%)', 'THD+N(dBr)', 'SINAD(dB)', 'SNR(dB)', 'FFT処理ゲイン(dB)']) # Add SINAD to CSV fieldnames
+        csv_writer = csv.DictWriter(csvfile, fieldnames=['Measurement_Number', 'Frequency(Hz)', 'Amplitude(dBFS)', 'Output(dBFS)', 'Input(基本波ピークdBFS)', 'THD(%)', 'THD(dBr)', 'THD+N(%)', 'THD+N(dBr)', 'SINAD(dB)', 'SNR(dB)', 'ゲイン(dB)']) # Add SINAD to CSV fieldnames
         csv_writer.writeheader()
     else:
         csv_writer = None
@@ -567,7 +567,7 @@ def perform_measurements(device_index, output_channel, sample_rate, apply_bandpa
                     'THD+N(dBr)': f"{measurement['THD+N(dBr)']:.4f}" if measurement['THD+N(dBr)'] is not None else '',
                     'SINAD(dB)': f"{measurement.get('SINAD(dB)', ''):.2f}" if measurement.get('SINAD(dB)') is not None else '', # Add SINAD to CSV row
                     'SNR(dB)': f"{measurement['SNR(dB)']:.2f}" if measurement['SNR(dB)'] is not None else '',
-                    'FFT処理ゲイン(dB)': f"{measurement['FFT処理ゲイン(dB)']:+.2f}" if measurement['FFT処理ゲイン(dB)'] is not None else ''
+                    'ゲイン(dB)': f"{measurement['ゲイン(dB)']:+.2f}" if measurement['ゲイン(dB)'] is not None else ''
                 })
     finally:
         if csv_writer:
