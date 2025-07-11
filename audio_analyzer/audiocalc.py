@@ -3,17 +3,7 @@ import numpy as np
 from scipy.signal import butter, sosfiltfilt, get_window
 
 class AudioCalc:
-    # 窓関数ごとのコヒーレントゲイン（振幅補正係数）
-    # 参照: https://www.ap.idec.com/jp/ja/products/series/C100/C100_Window_Functions.pdf (P.10)
-    WINDOW_COHERENT_GAINS = {
-        'boxcar': 1.0, # 矩形窓
-        'triang': 0.5, # 三角窓
-        'blackman': 0.42, # ブラックマン窓
-        'hamming': 0.54, # ハミング窓
-        'hann': 0.5, # ハン窓
-        'blackmanharris': 0.42323, # ブラックマンハリス窓
-        'flattop': 0.99996, # フラットトップ窓 (非常に1に近い)
-    }
+    
     @staticmethod
     def bandpass_filter(signal, sampling_rate, lowcut=20.0, highcut=20000.0):
         """
@@ -98,9 +88,7 @@ class AudioCalc:
         freqs = np.fft.fftfreq(len(audio_data), 1/sampling_rate)[:len(audio_data)//2]
 
         # 窓関数のコヒーレントゲインで振幅を補正
-        coherent_gain = AudioCalc.WINDOW_COHERENT_GAINS.get(window_name, 1.0)
-        if coherent_gain == 1.0 and window_name not in AudioCalc.WINDOW_COHERENT_GAINS:
-            print(f"警告: 未知の窓関数 '{window_name}' が指定されました。振幅補正は行われません。")
+        coherent_gain = np.sum(window) / len(window)
 
         amplitude_spectrum = (2.0 / len(audio_data)) * np.abs(fft_result[:len(audio_data)//2]) / coherent_gain
         phase_spectrum = np.angle(fft_result[:len(audio_data)//2], deg=True)

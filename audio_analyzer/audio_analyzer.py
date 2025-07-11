@@ -368,7 +368,7 @@ def display_measurements(measurements):
     table.add_column("THD+N(%)", justify="right")
     table.add_column("SINAD(dB)", justify="right")  # Add SINAD column
     table.add_column("SNR(dB)", justify="right")
-    table.add_column("FFT処理ゲイン(dB)", justify="right")
+    table.add_column("ゲイン(dB)", justify="right")
     for i, m in enumerate(measurements):
         table.add_row(
             str(i + 1),
@@ -380,7 +380,7 @@ def display_measurements(measurements):
             f"{m['THD+N(%)']:.4f}" if m['THD+N(%)'] is not None else "N/A",
             f"{m.get('SINAD(dB)', 'N/A'):.2f}" if m.get('SINAD(dB)') is not None else "N/A", # Add SINAD value
             f"{m['SNR(dB)']:.2f}" if m['SNR(dB)'] is not None else "N/A",
-            f"{m['FFT処理ゲイン(dB)']:+.2f}" if m['FFT処理ゲイン(dB)'] is not None else "N/A"
+            f"{m['ゲイン(dB)']:+.2f}" if m['ゲイン(dB)'] is not None else "N/A"
         )
     console.print(table)
 
@@ -391,7 +391,7 @@ def display_statics(measurements):
     thdn_list = [m['THD+N(%)'] for m in measurements if m['THD+N(%)'] is not None]
     sinad_list = [m['SINAD(dB)'] for m in measurements if m.get('SINAD(dB)') is not None] # Collect SINAD values
     snr_list = [m['SNR(dB)'] for m in measurements if m['SNR(dB)'] is not None]
-    gain_list = [m['FFT処理ゲイン(dB)'] for m in measurements if m['FFT処理ゲイン(dB)'] is not None]
+    gain_list = [m['ゲイン(dB)'] for m in measurements if m['ゲイン(dB)'] is not None]
 
     console.print("[bold]=== 平均測定結果 ===[/bold]")
     avg_table = Table(show_header=True, header_style="bold blue")
@@ -429,9 +429,9 @@ def display_statics(measurements):
     if gain_list:
         avg_gain = np.mean(gain_list)
         std_gain = np.std(gain_list, ddof=1) if len(gain_list) > 1 else 0.0
-        avg_table.add_row("FFT処理ゲイン(dB)", f"{avg_gain:+.2f} dB ± {std_gain:+.2f} dB")
+        avg_table.add_row("ゲイン(dB)", f"{avg_gain:+.2f} dB ± {std_gain:+.2f} dB")
     else:
-        avg_table.add_row("FFT処理ゲイン(dB)", "N/A")
+        avg_table.add_row("ゲイン(dB)", "N/A")
 
     console.print(avg_table)
 
@@ -473,7 +473,7 @@ def results_to_measurement(result, noise_rms, output_dbfs, physical_gain, freq=N
             'THD+N(dBr)':thdn_db,
             'SINAD(dB)': sinad_db,          # Add SINAD to measurement
             'SNR(dB)': snr,                 # 数値型
-            'FFT処理ゲイン(dB)': corrected_gain_db           # 数値型
+            'ゲイン(dB)': corrected_gain_db           # 数値型
         })
 
         console.print("[cyan]測定結果:[/cyan]")
@@ -483,7 +483,7 @@ def results_to_measurement(result, noise_rms, output_dbfs, physical_gain, freq=N
         console.print(f"THD+N(%, dBr): {thdn:.4f} / {thdn_db:.2f}")
         console.print(f"SINAD(dB): {sinad_db:.2f}" if sinad_db is not None else "SINAD(dB): N/A") # Print SINAD
         console.print(f"SNR(dB): {snr:.2f}")
-        console.print(f"ゲイン(dB): {corrected_gain_db:+.2f} (理論値: {20 * np.log10(AudioCalc.WINDOW_COHERENT_GAINS.get(window_name, 1.0)):.2f} dB for {window_name})\n")
+        console.print(f"ゲイン(dB): {corrected_gain_db:+.2f}\n")
 
         print_harmonic_analysis(result['harmonics'])
     else:
