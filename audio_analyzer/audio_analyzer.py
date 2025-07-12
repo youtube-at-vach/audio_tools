@@ -592,7 +592,7 @@ def main():
     parser.add_argument('-f', '--frequency', type=float, default=1000, help='基本周波数 (デフォルト: 1000 Hz)')
     parser.add_argument('-a', '--amplitude', type=float, default=-6, help='トーン振幅 (dBFS) (デフォルト: -6 dBFS)')
     parser.add_argument('-w', '--window', type=str, default='blackmanharris', help='窓関数種類 (デフォルト: blackmanharris)')
-    parser.add_argument('--duration', type=float, default=5.0, help='測定時間 (秒) (デフォルト: 5.0秒)')
+    parser.add_argument('--duration', type=float, default=10.0, help='測定時間 (秒) (デフォルト: 10.0秒)')
     parser.add_argument('--bandpass', action='store_true', help='バンドパスフィルター適用オプション')
     parser.add_argument('-sr', '--sample_rate', type=int, default=48000, help='サンプリングレート (デフォルト: 48000 Hz)')
     parser.add_argument('-oc', '--output-channel', type=str, choices=['L', 'R'], default='R', help='出力チャンネル (LまたはR, デフォルト: R)')
