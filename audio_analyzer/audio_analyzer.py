@@ -352,7 +352,11 @@ def measure_noise(device_index, output_channel, duration, sample_rate, apply_ban
         noise_audio = AudioCalc.bandpass_filter(noise_audio, sample_rate)
 
     noise_rms = np.sqrt(np.mean(noise_audio ** 2))
-    console.print(f"ノイズ RMS(dBFS): {20 * np.log10(noise_rms):.2f}\n")
+    if noise_rms == 0:
+        noise_dbfs = -np.inf
+    else:
+        noise_dbfs = 20 * np.log10(noise_rms)
+    console.print(f"ノイズ RMS(dBFS): {noise_dbfs:.2f}\n")
     return noise_rms
 
 def display_measurements(measurements):
