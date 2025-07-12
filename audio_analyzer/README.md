@@ -73,6 +73,8 @@ python audio_analyzer.py --frequency 1000 --amplitude -6 --duration 5.0
 | `--bandpass` | バンドパスフィルターの適用 |
 | `-sr, --sample-rate` | サンプリングレート（デフォルト: 48000 Hz） |
 | `-oc, --output-channel` | 出力チャンネル（LまたはR、デフォルト: R） |
+| `-ic, --input-channel` | 入力チャンネル（LまたはR、デフォルト: 出力チャンネルの反対） |
+| `-oc, --output-channel` | 出力チャンネル（LまたはR、デフォルト: R） |
 | `-d, --device` | 音声デバイスの番号 |
 | `-n, --num_measurements` | 測定回数（デフォルト: 2回） |
 
