@@ -19,7 +19,7 @@ class AudioCalc:
             np.ndarray: フィルタリング後の信号。
         """
         nyquist = 0.5 * sampling_rate
-        sos = butter(8, [lowcut / nyquist, highcut / nyquist], btype='bandpass', output='sos')
+        sos = butter(12, [lowcut / nyquist, highcut / nyquist], btype='bandpass', output='sos')
         return sosfiltfilt(sos, signal)
     
     @staticmethod
@@ -39,11 +39,11 @@ class AudioCalc:
         nyquist = 0.5 * sampling_rate
         w0 = target_frequency / nyquist
         bandwidth = w0 / quality_factor
-        sos = butter(2, [w0 - bandwidth/2, w0 + bandwidth/2], btype='bandstop', output='sos')
+        sos = butter(4, [w0 - bandwidth/2, w0 + bandwidth/2], btype='bandstop', output='sos')
         return sosfiltfilt(sos, signal)
     
     @staticmethod
-    def calculate_thdn(signal, sampling_rate, target_frequency, min_db=-140.0):
+    def calculate_thdn(signal, sampling_rate, target_frequency, window_name, min_db=-140.0):
         """
         THD+N（Total Harmonic Distortion plus Noise）を計算します。
 
@@ -51,6 +51,7 @@ class AudioCalc:
             signal (np.ndarray): 入力信号。
             sampling_rate (float): サンプリングレート（Hz）。
             target_frequency (float): 基本周波数（Hz）。
+            window_name (str): 使用する窓関数の名前。
             min_db (float, optional): 振幅が0の場合や無効な場合に返す最小dB値。デフォルトは-140.0 dB。
 
         Returns:
@@ -59,7 +60,7 @@ class AudioCalc:
         if np.max(np.abs(signal)) == 0:
             return min_db  # 振幅が0の場合のデフォルト値
         signal = signal / np.max(np.abs(signal))
-        signal *= get_window('hann', len(signal))
+        signal *= get_window(window_name, len(signal))
         filtered_signal = AudioCalc.notch_filter(signal, sampling_rate, target_frequency)
         fundamental_rms = np.sqrt(np.mean(signal**2))
         filtered_rms = np.sqrt(np.mean(filtered_signal**2))
@@ -139,7 +140,7 @@ class AudioCalc:
         thd_db = 20 * np.log10(thd / 100) if thd > 0 else min_db
     
         # THD+N計算
-        thdn = AudioCalc.calculate_thdn(audio_data, sampling_rate, fundamental_freq, min_db=min_db)
+        thdn = AudioCalc.calculate_thdn(audio_data, sampling_rate, fundamental_freq, window_name=window_name, min_db=min_db)
         thdn_percent = 10 ** (thdn / 20) * 100 if thdn > min_db else 0.0
         sinad_db = -thdn
     
