@@ -19,7 +19,7 @@ class AudioCalc:
             np.ndarray: フィルタリング後の信号。
         """
         nyquist = 0.5 * sampling_rate
-        sos = butter(12, [lowcut / nyquist, highcut / nyquist], btype='bandpass', output='sos')
+        sos = butter(8, [lowcut / nyquist, highcut / nyquist], btype='bandpass', output='sos')
         return sosfiltfilt(sos, signal)
     
     @staticmethod
@@ -39,7 +39,7 @@ class AudioCalc:
         nyquist = 0.5 * sampling_rate
         w0 = target_frequency / nyquist
         bandwidth = w0 / quality_factor
-        sos = butter(4, [w0 - bandwidth/2, w0 + bandwidth/2], btype='bandstop', output='sos')
+        sos = butter(2, [w0 - bandwidth/2, w0 + bandwidth/2], btype='bandstop', output='sos')
         return sosfiltfilt(sos, signal)
     
     @staticmethod

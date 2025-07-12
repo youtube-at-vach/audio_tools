@@ -424,9 +424,14 @@ def display_statics(measurements):
         avg_table.add_row("SINAD(dB)", "N/A")
 
     if snr_list:
-        avg_snr = np.mean(snr_list)
-        std_snr = np.std(snr_list, ddof=1) if len(snr_list) > 1 else 0.0
-        avg_table.add_row("SNR(dB)", f"{avg_snr:.2f} dB ± {std_snr:.2f} dB")
+        # inf を除外して平均と標準偏差を計算
+        finite_snr_list = [s for s in snr_list if np.isfinite(s)]
+        if finite_snr_list:
+            avg_snr = np.mean(finite_snr_list)
+            std_snr = np.std(finite_snr_list, ddof=1) if len(finite_snr_list) > 1 else 0.0
+            avg_table.add_row("SNR(dB)", f"{avg_snr:.2f} dB ± {std_snr:.2f} dB")
+        else:
+            avg_table.add_row("SNR(dB)", "inf dB") # 全てinfの場合はinfと表示
     else:
         avg_table.add_row("SNR(dB)", "N/A")
 
@@ -463,7 +468,7 @@ def results_to_measurement(result, noise_rms, output_dbfs, physical_gain, freq=N
         thdn_db = result['thdn_db']
         sinad_db = result.get('sinad_db')  # Retrieve SINAD
         signal_rms = result['basic_wave']['max_amplitude'] / np.sqrt(2)
-        snr = 20 * np.log10(signal_rms / noise_rms) if noise_rms > 0 else -140.00
+        snr = 20 * np.log10(signal_rms / noise_rms) if noise_rms > 0 else np.inf
         
         # 補正済みゲインの計算
         corrected_gain_db = (result['basic_wave']['amplitude_dbfs'] - output_dbfs) - physical_gain
