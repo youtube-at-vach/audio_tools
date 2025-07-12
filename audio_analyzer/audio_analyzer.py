@@ -587,8 +587,9 @@ def main():
     parser.add_argument('--bandpass', action='store_true', help='バンドパスフィルター適用オプション')
     parser.add_argument('-sr', '--sample_rate', type=int, default=48000, help='サンプリングレート (デフォルト: 48000 Hz)')
     parser.add_argument('-oc', '--output-channel', type=str, choices=['L', 'R'], default='R', help='出力チャンネル (LまたはR, デフォルト: R)')
+    parser.add_argument('-ic', '--input-channel', type=str, choices=['L', 'R'], default=None, help='入力チャンネル (LまたはR, デフォルト: 出力チャンネルの反対)')
 
-    # 測定回数オプション（通常モード用）
+    # 測定回数オプション
     parser.add_argument('-n', '--num_measurements', type=int, default=2, help='測定回数 (デフォルト: 2)')
 
     # モード選択オプション
@@ -598,6 +599,7 @@ def main():
     group.add_argument('--map', action='store_true', help='マッピングモードを有効化')
     group.add_argument('--test', action='store_true', help='テストトーンを出力')
     group.add_argument('--calib', action='store_true', help='キャリブレーションモード')
+
     # 追加オプション
     parser.add_argument('--output-csv', type=str, help='測定結果を保存するCSVファイル名')
     parser.add_argument('-d', '--device', type=int, help='音声デバイスの番号')
@@ -614,11 +616,17 @@ def main():
     sample_rate = args.sample_rate
     console.print(f"サンプリングレートを [bold]{sample_rate}[/bold] Hz に設定しました。\n")
 
-    # 出力チャンネル設定と入力チャンネルの決定
+    # 出力チャンネル設定
     output_channel = 0 if args.output_channel.upper() == 'L' else 1
-    input_channel = 1 - output_channel
+
+    # 入力チャンネル設定（明示されていない場合は出力の逆）
+    if args.input_channel is not None:
+        input_channel = 0 if args.input_channel.upper() == 'L' else 1
+    else:
+        input_channel = 1 - output_channel
+
     console.print(f"出力チャンネル: [bold]{'左 (L)' if output_channel == 0 else '右 (R)'}[/bold]")
-    console.print(f"入力チャンネル: [bold]{'右 (R)' if input_channel == 1 else '左 (L)'}[/bold]\n")
+    console.print(f"入力チャンネル: [bold]{'左 (L)' if input_channel == 0 else '右 (R)'}[/bold]\n")
 
     if args.test:
         # テストトーンモード
