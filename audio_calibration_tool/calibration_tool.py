@@ -61,7 +61,7 @@ def list_devices():
     print("利用可能なオーディオデバイス:")
     print(sd.query_devices())
 
-def run_calibration(device_id, samplerate, frequency, amplitude):
+def run_calibration(device_id, samplerate, frequency, amplitude, input_channel, output_channel):
     """
     キャリブレーションモード: 基準信号を再生し、入力レベルをリアルタイムで表示する。
     ユーザーは表示を見ながら出力ノブを調整する。
@@ -69,30 +69,36 @@ def run_calibration(device_id, samplerate, frequency, amplitude):
     print("--- キャリブレーション開始 ---")
     print(f"デバイスID: {device_id}")
     print(f"基準信号: {frequency} Hz サイン波")
+    print(f"出力チャンネル: {output_channel}, 入力チャンネル: {input_channel}")
     print("目標入力レベル: 約 -6 dBFS (振幅 {amplitude} の場合)")
     print("Ctrl+C を押すと終了します。")
 
-    # 出力信号 (右チャンネルのみ)
+    # 出力信号
     blocksize = samplerate # 1秒ごとに更新
-    output_signal = np.zeros((blocksize, 2), dtype='float32')
+    # 必要なチャンネル数を出力と入力チャンネルの最大値+1で設定
+    num_channels = max(input_channel, output_channel) + 1
+    output_signal = np.zeros((blocksize, num_channels), dtype='float32')
     t = np.arange(blocksize) / samplerate
     sine_wave = amplitude * np.sin(2 * np.pi * frequency * t)
-    output_signal[:, 1] = sine_wave
+    output_signal[:, output_channel] = sine_wave
 
     def callback(indata, outdata, frames, time, status):
         if status:
             print(status)
         outdata[:] = output_signal[:frames]
         # 入力レベルを計算して表示
-        volume = dbfs(indata[:, 0]) # 左チャンネルの入力
-        # プログレスバーのように表示
-        bar_length = 40
-        level = int((volume + 60) / 60 * bar_length) # -60dBFSを0とする
-        bar = '#' * level + '-' * (bar_length - level)
-        print(f"\r入力レベル: [{bar}] {volume:+.2f} dBFS", end='')
+        if indata.shape[1] > input_channel:
+            volume = dbfs(indata[:, input_channel]) # 指定された入力チャンネルの入力
+            # プログレスバーのように表示
+            bar_length = 40
+            level = int((volume + 60) / 60 * bar_length) # -60dBFSを0とする
+            bar = '#' * level + '-' * (bar_length - level)
+            print(f"\r入力レベル: [{bar}] {volume:+.2f} dBFS", end='')
+        else:
+            print(f"\rエラー: 指定された入力チャンネル {input_channel} が存在しません。", end='')
 
     try:
-        with sd.Stream(device=device_id, samplerate=samplerate, channels=2, callback=callback):
+        with sd.Stream(device=device_id, samplerate=samplerate, channels=num_channels, callback=callback):
             while True:
                 time.sleep(0.1)
     except KeyboardInterrupt:
@@ -100,25 +106,29 @@ def run_calibration(device_id, samplerate, frequency, amplitude):
     except Exception as e:
         print(f"\nエラーが発生しました: {e}")
 
-def run_loopback_test(device_id, samplerate, frequency, duration, amplitude, filename):
+def run_loopback_test(device_id, samplerate, frequency, duration, amplitude, filename, input_channel, output_channel):
     """ループバックテストを実行し、結果をWAVファイルに保存する"""
     print("--- ループバックテスト開始 ---")
     try:
         device_info = sd.query_devices(device_id)
         print(f"テストデバイス: {device_info['name']}")
+        print(f"出力チャンネル: {output_channel}, 入力チャンネル: {input_channel}")
 
         num_samples = int(duration * samplerate)
         t = np.linspace(0., duration, num_samples, endpoint=False)
         sine_wave = amplitude * np.sin(2. * np.pi * frequency * t)
 
-        output_signal = np.zeros((num_samples, 2), dtype='float32')
-        output_signal[:, 1] = sine_wave
+        # 必要なチャンネル数を出力と入力チャンネルの最大値+1で設定
+        num_channels = max(input_channel, output_channel) + 1
+        output_signal = np.zeros((num_samples, num_channels), dtype='float32')
+        output_signal[:, output_channel] = sine_wave
 
-        print(f"{duration}秒間、右チャンネルからサイン波を再生し、左チャンネルで録音します...")
+        print(f"{duration}秒間、チャンネル {output_channel} からサイン波を再生し、チャンネル {input_channel} で録音します...")
         recorded_signal = sd.playrec(
-            output_signal, samplerate=samplerate, channels=1, device=device_id, blocking=True
+            output_signal, samplerate=samplerate, channels=num_channels, device=device_id, blocking=True
         )
-        sf.write(filename, recorded_signal, samplerate)
+        # 指定された入力チャンネルのみを保存
+        sf.write(filename, recorded_signal[:, input_channel], samplerate)
         print(f"テスト完了。録音データを '{filename}' に保存しました。")
 
     except Exception as e:
@@ -166,36 +176,46 @@ def analyze_wav_file(filename):
     except Exception as e:
         print(f"エラーが発生しました: {e}")
 
-def run_check_mode(device_id, samplerate, frequency, amplitude):
+def run_check_mode(device_id, samplerate, frequency, amplitude, input_channel, output_channel):
     """
     チェックモード: 基準信号を再生し、入力レベルを測定してキャリブレーションの成否を判定する。
     """
     print("--- キャリブレーションチェック開始 ---")
     print(f"デバイスID: {device_id}")
     print(f"基準信号: {frequency} Hz サイン波")
+    print(f"出力チャンネル: {output_channel}, 入力チャンネル: {input_channel}")
 
     recorded_data = []
     frame_counter = 0
     duration = 1.0 # 短時間で測定
+
+    # 必要なチャンネル数を出力と入力チャンネルの最大値+1で設定
+    num_channels = max(input_channel, output_channel) + 1
 
     def callback(indata, outdata, frames, time, status):
         nonlocal frame_counter
         if status:
             print(status)
 
-        # 出力信号 (右チャンネルのみ)
+        # 出力信号
         t = (np.arange(frames) + frame_counter) / samplerate
         sine_wave = amplitude * np.sin(2 * np.pi * frequency * t)
-        outdata[:, 1] = sine_wave
-        outdata[:, 0] = 0 # 左チャンネルは0
+        outdata[:, output_channel] = sine_wave
+        # 他の出力チャンネルは0
+        for i in range(num_channels):
+            if i != output_channel:
+                outdata[:, i] = 0
         frame_counter += frames
 
-        # 入力信号 (左チャンネル)
-        if indata.shape[1] >= 1:
-            recorded_data.append(indata[:, 0].copy())
+        # 入力信号
+        if indata.shape[1] > input_channel:
+            recorded_data.append(indata[:, input_channel].copy())
+        else:
+            print(f"\nエラー: 指定された入力チャンネル {input_channel} が存在しません。")
+            raise ValueError(f"Input channel {input_channel} not available.")
 
     try:
-        with sd.Stream(device=device_id, samplerate=samplerate, channels=2, callback=callback):
+        with sd.Stream(device=device_id, samplerate=samplerate, channels=num_channels, callback=callback):
             sd.sleep(int(duration * 1000))
 
         if not recorded_data:
@@ -203,7 +223,7 @@ def run_check_mode(device_id, samplerate, frequency, amplitude):
             return False
 
         audio = np.concatenate(recorded_data)
-        volume = peak_dbfs(audio) # 左チャンネルの入力 (ピークdBFS)
+        volume = peak_dbfs(audio) # 指定された入力チャンネルの入力 (ピークdBFS)
 
         # キャリブレーション成功の判定基準 (例: -7 dBFS から -5 dBFS の範囲内)
         # 基準振幅が0.5の場合、目標は-6dBFS
@@ -240,6 +260,8 @@ if __name__ == "__main__":
     parser.add_argument("-sr", "--samplerate", type=int, default=SAMPLERATE, help=f"サンプルレート (デフォルト: {SAMPLERATE})")
     parser.add_argument("-f", "--frequency", type=int, default=FREQUENCY, help=f"周波数 (Hz) (デフォルト: {FREQUENCY})")
     parser.add_argument("-a", "--amplitude", type=float, default=AMPLITUDE, help=f"振幅 (0.0-1.0) (デフォルト: {AMPLITUDE})")
+    parser.add_argument("-ic", "--input_channel", type=int, default=0, help="入力チャンネル (0: 左, 1: 右, ...) (デフォルト: 0)")
+    parser.add_argument("-oc", "--output_channel", type=int, default=1, help="出力チャンネル (0: 左, 1: 右, ...) (デフォルト: 1)")
     parser.add_argument("--duration", type=float, default=DURATION, help=f"テスト時間 (秒) (デフォルト: {DURATION})")
     parser.add_argument("--file", type=str, default=TEST_FILENAME, help=f"テスト用ファイル名 (デフォルト: {TEST_FILENAME})")
 
@@ -249,13 +271,13 @@ if __name__ == "__main__":
     if args.mode == 'list':
         list_devices()
     elif args.mode == 'calibrate':
-        run_calibration(args.device, args.samplerate, args.frequency, args.amplitude)
+        run_calibration(args.device, args.samplerate, args.frequency, args.amplitude, args.input_channel, args.output_channel)
     elif args.mode == 'test':
-        run_loopback_test(args.device, args.samplerate, args.frequency, args.duration, args.amplitude, args.file)
+        run_loopback_test(args.device, args.samplerate, args.frequency, args.duration, args.amplitude, args.file, args.input_channel, args.output_channel)
     elif args.mode == 'analyze':
         analyze_wav_file(args.file)
     elif args.mode == 'check':
-        physical_gain = run_check_mode(args.device, args.samplerate, args.frequency, args.amplitude)
+        physical_gain = run_check_mode(args.device, args.samplerate, args.frequency, args.amplitude, args.input_channel, args.output_channel)
         if physical_gain is not None:
             script_dir = os.path.dirname(os.path.abspath(__file__))
             project_root = os.path.abspath(os.path.join(script_dir, '..')) # audio_tools/audio_calibration_tool から audio_tools/ へ
