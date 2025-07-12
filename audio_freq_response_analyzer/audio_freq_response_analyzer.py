@@ -170,23 +170,31 @@ def select_device():
 
 def play_record_tone_segment(tone_segment, sample_rate, device_idx, 
                              output_channel_idx_0based, input_channel_idx_0based, 
-                             record_duration):
-    played_signal_mono = tone_segment.astype(np.float32)
-    actual_output_mapping = [output_channel_idx_0based + 1]
-    actual_input_mapping = [input_channel_idx_0based + 1]
+                             record_duration, device_info):
+    # 出力信号を適切なチャンネル数に拡張
+    output_channels = device_info['max_output_channels']
+    input_channels = device_info['max_input_channels']
+    
+    # sd.playrecに渡すchannels引数は、入出力の最大チャンネル数
+    # ただし、今回はモノラル信号を特定のチャンネルに出力し、特定のチャンネルから入力するため、
+    # 実際には1チャンネルのストリームで十分だが、PortAudioの制約でデバイスの最大チャンネル数を指定する必要がある場合がある。
+    # ここでは、入力と出力の最大チャンネル数を考慮して、より安全な方を選択する。
+    num_channels_to_use = max(output_channel_idx_0based + 1, input_channel_idx_0based + 1)
+    
+    played_signal_multi_channel = np.zeros((len(tone_segment), num_channels_to_use), dtype=np.float32)
+    played_signal_multi_channel[:, output_channel_idx_0based] = tone_segment
 
     try:
         recorded_data = sd.playrec(
-            data=played_signal_mono, 
+            data=played_signal_multi_channel, 
             samplerate=sample_rate, 
-            channels=1, 
-            input_mapping=actual_input_mapping, 
-            output_mapping=actual_output_mapping, 
+            channels=num_channels_to_use, 
             device=device_idx, 
             blocking=True
         )
         sd.wait() 
-        return recorded_data.flatten()
+        # 指定された入力チャンネルのデータのみを返す
+        return recorded_data[:, input_channel_idx_0based].flatten()
     except sd.PortAudioError as e:
         error_console.print(f"PortAudioError during play/record: {e}")
         return None
@@ -201,7 +209,7 @@ def save_results_to_csv(results_data, filename, console_instance):
         console_instance.print("[yellow]No results to save.[/yellow]")
         return
 
-    header = ['Target Frequency (Hz)', 'Actual Frequency (Hz)', 'Amplitude (dBFS)', 'Phase (degrees)']
+    header = ['Target Frequency (Hz)', 'Actual Frequency (Hz)', 'Amplitude (dBFS)', 'Phase Raw (degrees)', 'Phase Compensated (degrees)', 'Phase Unwrapped (degrees)']
     try:
         with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
@@ -211,8 +219,9 @@ def save_results_to_csv(results_data, filename, console_instance):
                     row.get('freq_target', ''),
                     row.get('freq_actual', ''),
                     row.get('amp_dbfs', ''),
-                    # Use 'phase_unwrapped_deg' if available, otherwise 'phase_raw_deg'
-                    row.get('phase_unwrapped_deg', row.get('phase_raw_deg', '')) 
+                    row.get('phase_raw_deg', ''),
+                    row.get('phase_compensated_deg', ''),
+                    row.get('phase_unwrapped_deg', '')
                 ])
         console_instance.print(f"[green]Results saved to {filename}[/green]")
     except IOError as e:
@@ -238,11 +247,11 @@ def plot_frequency_response(results_data, amp_plot_filename, phase_plot_filename
     amplitudes_dbfs = [r['amp_dbfs'] for r in plot_data]
     
     # Check if there's valid phase data to plot
-    phases_unwrapped_deg = [r.get('phase_unwrapped_deg') for r in plot_data]
-    has_valid_phase_data = any(p is not None for p in phases_unwrapped_deg)
-    # If phase_unwrapped_deg is None for some, filter them out for phase plot
-    plot_phase_frequencies_hz = [frequencies_hz[i] for i, p in enumerate(phases_unwrapped_deg) if p is not None]
-    plot_phases_unwrapped_deg = [p for p in phases_unwrapped_deg if p is not None]
+    phases_compensated_deg = [r.get('phase_compensated_deg') for r in plot_data]
+    has_valid_phase_data = any(p is not None for p in phases_compensated_deg)
+    # If phase_compensated_deg is None for some, filter them out for phase plot
+    plot_phase_frequencies_hz = [frequencies_hz[i] for i, p in enumerate(phases_compensated_deg) if p is not None]
+    plot_phases_compensated_deg = [p for p in phases_compensated_deg if p is not None]
 
 
     fig_amp, fig_phase = None, None # Initialize to None
@@ -267,9 +276,9 @@ def plot_frequency_response(results_data, amp_plot_filename, phase_plot_filename
     if has_valid_phase_data and plot_phase_frequencies_hz:
         try:
             fig_phase, ax_phase = plt.subplots()
-            ax_phase.plot(plot_phase_frequencies_hz, plot_phases_unwrapped_deg, marker='.')
+            ax_phase.plot(plot_phase_frequencies_hz, plot_phases_compensated_deg, marker='.')
             ax_phase.set_xscale('log')
-            ax_phase.set_title('Frequency Response - Phase')
+            ax_phase.set_title('Frequency Response - Phase (Compensated)')
             ax_phase.set_xlabel('Frequency (Hz)')
             ax_phase.set_ylabel('Phase (degrees)')
             ax_phase.grid(True, which='both', linestyle='--')
@@ -302,7 +311,7 @@ def main():
     parser.add_argument("--end-frequency", type=float, default=20000.0, help="End frequency (Hz)")
     parser.add_argument("--points-per-octave", type=int, default=12, help="Number of points per octave")
     parser.add_argument("--amplitude", type=float, default=-20.0, help="Amplitude of test tone (dBFS)")
-    parser.add_argument("--duration-per-step", type=float, default=0.2, help="Duration of each tone segment (seconds)")
+    parser.add_argument("--duration-per-step", type=float, default=1.0, help="Duration of each tone segment (seconds)")
     parser.add_argument("--device", type=int, help="Audio device ID. Prompts if not provided.")
     parser.add_argument("--output-channel", "-oc", type=str, choices=['L', 'R'], default='R', help="Output channel ('L' or 'R')")
     parser.add_argument("--input-channel", "-ic", type=str, choices=['L', 'R'], default='L', help="Input channel ('L' or 'R')")
@@ -373,7 +382,7 @@ def main():
         recorded = play_record_tone_segment(
             tone, args.sample_rate, selected_device_idx, 
             output_ch_numeric, input_ch_numeric, 
-            args.duration_per_step
+            args.duration_per_step, device_info
         )
         
         if recorded is not None and len(recorded) > 0:
@@ -387,9 +396,21 @@ def main():
 
     # Phase Unwrapping
     valid_phases_raw_indices = [i for i, r in enumerate(results_data) if r.get('amp_dbfs', -np.inf) > -np.inf and 'phase_raw_deg' in r]
-    
+
+    # Calculate total latency
+    total_latency = 0.041625 # 実測値
+    console.print(f"Input Latency: {device_info['default_low_input_latency']:.6f} s, Output Latency: {device_info['default_low_output_latency']:.6f} s, Total Latency: {total_latency:.6f} s")
+
+    for r_entry in results_data:
+        if r_entry.get('amp_dbfs', -np.inf) > -np.inf and 'phase_raw_deg' in r_entry:
+            # Compensate phase for latency
+            compensated_phase_deg = r_entry['phase_raw_deg'] - (360 * r_entry['freq_actual'] * total_latency)
+            r_entry['phase_compensated_deg'] = compensated_phase_deg
+        else:
+            r_entry['phase_compensated_deg'] = None # No compensation if no valid data
+
     if len(valid_phases_raw_indices) > 1:
-        phases_to_unwrap_deg = [results_data[i]['phase_raw_deg'] for i in valid_phases_raw_indices]
+        phases_to_unwrap_deg = [results_data[i]['phase_compensated_deg'] for i in valid_phases_raw_indices]
         unwrapped_phases_deg_values = np.degrees(np.unwrap(np.deg2rad(phases_to_unwrap_deg)))
         
         unwrapped_idx = 0
@@ -416,6 +437,7 @@ def main():
     table.add_column("Actual Freq (Hz)", justify="right", style="magenta")
     table.add_column("Amplitude (dBFS)", justify="right", style="green")
     table.add_column("Phase Raw (deg)", justify="right", style="yellow")
+    table.add_column("Phase Compensated (deg)", justify="right", style="yellow")
     table.add_column("Phase Unwrapped (deg)", justify="right", style="blue")
 
     for i, result in enumerate(results_data[:5]):
@@ -424,6 +446,7 @@ def main():
             f"{result.get('freq_actual', 0.0):.2f}",
             f"{result.get('amp_dbfs', -np.inf):.2f}",
             f"{result.get('phase_raw_deg', 0.0):.2f}",
+            f"{result.get('phase_compensated_deg', 0.0):.2f}",
             f"{result.get('phase_unwrapped_deg', result.get('phase_raw_deg', 'N/A')):.2f}"
         )
     console.print(table)
