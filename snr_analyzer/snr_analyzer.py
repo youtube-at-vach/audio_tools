@@ -85,7 +85,7 @@ def measure_snr(device_id: int, output_channel_idx: int, input_channel_idx: int,
                 samplerate: int, signal_freq: float, signal_amp: float,
                 signal_duration: float, noise_duration: float):
     """
-    Measures the Signal-to-Noise Ratio (SNR).
+    Measures the Signal-to-Noise Ratio (SNR) using a callback-based stream.
 
     Args:
         device_id (int): ID of the audio device for both input and output.
@@ -101,16 +101,7 @@ def measure_snr(device_id: int, output_channel_idx: int, input_channel_idx: int,
         tuple: (snr_db, rms_signal_only, rms_noise) or (None, None, None) if error.
     """
     try:
-        # Validate device ID
         device_info = sd.query_devices(device_id)
-    except (ValueError, sd.PortAudioError) as e:
-        console.print(f"[bold red]Error: Invalid device ID {device_id}. {e}[/bold red]")
-        return None, None, None
-
-    # Prepare Signal
-    signal = generate_sine_wave(signal_freq, signal_duration, signal_amp, samplerate)
-
-    try:
         max_out_channels = device_info['max_output_channels']
         max_in_channels = device_info['max_input_channels']
 
@@ -121,112 +112,82 @@ def measure_snr(device_id: int, output_channel_idx: int, input_channel_idx: int,
             console.print(f"[bold red]Error: Input channel {input_channel_idx} is out of range for device {device_id} (1-{max_in_channels}).[/bold red]")
             return None, None, None
 
-        # Convert 1-based channel indices to 0-based for mapping
-        output_map_0based = [output_channel_idx - 1]
-        input_map_0based = [input_channel_idx - 1]
-
-        # Create an output buffer with the correct number of channels for the device
-        # and place the signal in the specified output channel
-        output_buffer = np.zeros((len(signal), max_out_channels), dtype=signal.dtype)
-        output_buffer[:, output_map_0based[0]] = signal
-
-        # Playback Signal and Record (Signal + Noise)
+        # --- Signal + Noise Measurement ---
         console.print(f"\n[cyan]Playing signal on '{device_info['name']}' (Output Channel {output_channel_idx}) and recording from '{device_info['name']}' (Input Channel {input_channel_idx})...[/cyan]")
-        console.print("[yellow]Ensure your audio loopback or measurement setup is ready.[/yellow]")
+        recorded_data = []
+        frame_counter = 0
+        signal_wave = generate_sine_wave(signal_freq, signal_duration, signal_amp, samplerate)
+
+        def callback_signal(indata, outdata, frames, time, status):
+            nonlocal frame_counter
+            if status:
+                console.print(f"[yellow]Stream status: {status}[/yellow]")
+            
+            chunk_end = frame_counter + frames
+            remaining_frames = len(signal_wave) - frame_counter
+            
+            if remaining_frames > 0:
+                valid_frames = min(frames, remaining_frames)
+                # Prepare output buffer for all device channels
+                output_chunk = np.zeros((valid_frames, max_out_channels), dtype=np.float32)
+                # Place the mono signal into the correct output channel
+                output_chunk[:, output_channel_idx - 1] = signal_wave[frame_counter:frame_counter + valid_frames]
+                outdata[:valid_frames] = output_chunk
+                if frames > valid_frames:
+                    outdata[valid_frames:] = 0 # Zero out remaining part of the buffer
+            else:
+                outdata.fill(0)
+
+            recorded_data.append(indata[:, input_channel_idx - 1].copy())
+            frame_counter += frames
+
+        with sd.Stream(device=device_id, samplerate=samplerate, channels=(max_in_channels, max_out_channels), callback=callback_signal):
+            sd.sleep(int(signal_duration * 1000))
         
-        console.print("Playing signal and recording (signal + noise)...")
-        recorded_signal_plus_noise = sd.playrec(
-            output_buffer,
-            samplerate=samplerate,
-            device=device_id,
-            input_mapping=input_map_0based, # Specify which input channel to record
-            output_mapping=output_map_0based, # Specify which output channel to play on
-            blocking=True
-        )
-        sd.wait() # Ensure playback and recording are finished
+        recorded_signal_plus_noise = np.concatenate(recorded_data)
         console.print("[green]Signal playback and recording complete.[/green]")
 
-        # Record Noise Floor
-        console.print(f"\n[cyan]Preparing to record noise floor from '{device_info['name']}' (Input Channel {input_channel_idx})...[/cyan]")
-        console.print("[yellow]Ensure the environment is silent for noise measurement.[/yellow]")
+        # --- Noise Measurement ---
+        console.print(f"\n[cyan]Recording noise floor from '{device_info['name']}' (Input Channel {input_channel_idx})...[/cyan]")
+        noise_data = []
 
-        console.print(f"Recording noise for {noise_duration} seconds...")
-        recorded_noise = sd.rec(
-            int(noise_duration * samplerate),
-            samplerate=samplerate,
-            device=device_id,
-            mapping=input_map_0based, # Specify which input channel to record
-            blocking=True
-        )
-        sd.wait() # Ensure recording is finished
+        def callback_noise(indata, outdata, frames, time, status):
+            if status:
+                console.print(f"[yellow]Stream status: {status}[/yellow]")
+            outdata.fill(0) # No output during noise measurement
+            noise_data.append(indata[:, input_channel_idx - 1].copy())
+
+        with sd.Stream(device=device_id, samplerate=samplerate, channels=(max_in_channels, max_out_channels), callback=callback_noise):
+            sd.sleep(int(noise_duration * 1000))
+
+        recorded_noise = np.concatenate(noise_data)
         console.print("[green]Noise recording complete.[/green]")
 
-        # Calculate RMS
-        if recorded_signal_plus_noise.ndim > 1 and recorded_signal_plus_noise.shape[1] == 1:
-            recorded_signal_plus_noise = recorded_signal_plus_noise.squeeze()
-        if recorded_noise.ndim > 1 and recorded_noise.shape[1] == 1:
-            recorded_noise = recorded_noise.squeeze()
-
-        # Check if the recorded signal+noise is unexpectedly low
-        # This is a heuristic check. A very low RMS might indicate that the signal
-        # generated by --amplitude was not properly recorded.
-        # We compare against signal_amp / 100 as an arbitrary small fraction.
-        # A more sophisticated check might consider expected loopback attenuation.
-        # Check if signal_amp is not zero to avoid division by zero if it was set to 0.
-        if signal_amp > 1e-9: # Avoid issues if signal_amp is virtually zero
-            # Calculate RMS of the original generated signal for a rough reference
-            # This doesn't account for system gain/attenuation, it's a sanity check.
-            # The generated signal is 'signal', its RMS is signal_amp / sqrt(2) for a sine wave.
-            expected_min_rms_recorded_signal = (signal_amp / np.sqrt(2)) / 100.0 # e.g. 40dB lower than expected direct signal RMS
-
-            # Calculate RMS of recorded_signal_plus_noise before it's used further
-            # This avoids calculating it twice if it's already calculated below
-            # However, the current structure calculates it with calculate_rms(recorded_signal_plus_noise)
-            # So, let's calculate it here for the check.
-            temp_rms_signal_plus_noise = np.sqrt(np.mean(recorded_signal_plus_noise**2))
-
-            if temp_rms_signal_plus_noise < expected_min_rms_recorded_signal and temp_rms_signal_plus_noise < 0.01 : # Added an absolute threshold too
-                console.print(f"[bold yellow]Warning: The recorded 'signal + noise' level ({temp_rms_signal_plus_noise:.4e}) is very low "
-                              f"compared to the generated signal amplitude ({signal_amp:.2f}).[/bold yellow]")
-                console.print("[yellow]  Please check your audio device levels, connections, and loopback setup. "
-                              "The signal might not be recorded correctly or is extremely attenuated.[/yellow]")
-
+        # --- Calculation ---
         rms_signal_plus_noise = calculate_rms(recorded_signal_plus_noise)
         rms_noise = calculate_rms(recorded_noise)
 
-        if rms_noise < 1e-12 : # Effectively zero noise
-            console.print("[yellow]Warning: RMS of noise is extremely low. SNR might be very high or infinite.[/yellow]")
+        if rms_noise < 1e-12:
             return float('inf'), rms_signal_plus_noise, rms_noise
-        
+
         power_signal_plus_noise = rms_signal_plus_noise**2
         power_noise = rms_noise**2
 
-        # Estimate signal power by subtracting noise power from (signal+noise) power.
-        # This common method assumes that the signal and noise are uncorrelated,
-        # and that the noise characteristics are consistent between the two measurements.
         if power_signal_plus_noise < power_noise:
-            console.print("[bold red]Warning: Measured signal power is less than noise power. This indicates an issue with the measurement or high noise levels. SNR will be 0 dB or negative.[/bold red]")
-            rms_signal_only_val = 1e-12 # effectively zero signal
+            console.print("[bold red]Warning: Measured signal power is less than noise power.[/bold red]")
+            rms_signal_only_val = 1e-12
         else:
-            # Signal power = (Signal+Noise Power) - Noise Power
-            # RMS_signal_only = sqrt(Signal Power)
             rms_signal_only_val = np.sqrt(power_signal_plus_noise - power_noise)
-        
-        if rms_signal_only_val < 1e-12: # effectively zero signal
-             console.print("[yellow]Warning: Calculated signal RMS is very low or zero. SNR will be very low or negative.[/yellow]")
-             snr_db = 20 * math.log10(1e-12 / rms_noise) # Avoid log(0)
+
+        if rms_signal_only_val < 1e-12:
+            snr_db = 20 * math.log10(1e-12 / rms_noise)
         else:
-             snr_db = 20 * math.log10(rms_signal_only_val / rms_noise)
+            snr_db = 20 * math.log10(rms_signal_only_val / rms_noise)
 
         return snr_db, rms_signal_only_val, rms_noise
 
-    except sd.PortAudioError as e:
-        console.print(f"[bold red]PortAudio Error on device {device_id}: {e}[/bold red]")
-        console.print("[bold yellow]This might be due to incorrect device ID, channel configurations, or system audio issues.[/bold yellow]")
-        return None, None, None
-    except ValueError as e:
-        console.print(f"[bold red]ValueError: {e}[/bold red]")
-        console.print("[bold yellow]This could be due to invalid channel numbers for the selected device, data shape issues, or other parameter problems.[/bold yellow]")
+    except (ValueError, sd.PortAudioError) as e:
+        console.print(f"[bold red]Error: {e}[/bold red]")
         return None, None, None
     except Exception as e:
         console.print(f"[bold red]An unexpected error occurred: {e}[/bold red]")
