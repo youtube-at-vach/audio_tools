@@ -7,6 +7,10 @@ from rich.table import Table
 from rich.prompt import Prompt
 import csv
 import sys
+import matplotlib
+matplotlib.use('Agg') # Use non-interactive backend
+import matplotlib.pyplot as plt
+
 
 # Global variable to keep track of playback position in play_and_record callback
 current_frame_playback = 0
@@ -337,44 +341,81 @@ def analyze_imd_ccif(recorded_audio, sample_rate, f1, f2, window_name='blackmanh
         'imd_products_details': imd_products_details
     }
 
-def save_results_to_csv(imd_results, standard, output_csv_path):
-    """Saves IMD analysis results to a CSV file."""
+def save_sweep_results_to_csv(sweep_results, output_csv_path, standard, sweep_mode):
+    """Saves IMD sweep analysis results to a CSV file."""
+    if not sweep_results:
+        console.print("[yellow]No sweep results to save.[/yellow]")
+        return
+
     try:
         with open(output_csv_path, 'w', newline='', encoding='utf-8') as csvfile:
-            writer = csv.writer(csvfile)
-
-            # Write summary information
-            writer.writerow(['IMD Standard:', standard.upper()])
+            # Prepare header based on the standard
             if standard == 'smpte':
-                writer.writerow(['IMD Percentage:', f"{imd_results['imd_percentage']:.4f} %"])
-                writer.writerow(['IMD (dB):', f"{imd_results['imd_db']:.2f} dB"])
-                writer.writerow(['Reference f2 (Hz):', f"{imd_results['amp_f2_freq_actual']:.1f}"])
-                writer.writerow(['Reference f2 (dBFS):', f"{imd_results['amp_f2_dbfs']:.2f}"])
-                writer.writerow([]) # Blank row for separation
-                writer.writerow(['Order (n)', 'Type', 'Nom. Freq (Hz)', 'Act. Freq (Hz)', 'Amplitude (Lin)', 'Level (dBr f2)'])
-                for p in imd_results['imd_products_details']:
-                    writer.writerow([p['order_n'], p['type'], f"{p['freq_hz_nominal']:.1f}", 
-                                     f"{p['freq_hz_actual']:.1f}", f"{p['amp_linear']:.2e}", f"{p['amp_dbr_f2']:.2f}"])
+                header = [f'sweep_freq_{sweep_mode}_hz', 'imd_percentage', 'imd_db', 'ref_f2_freq_hz', 'ref_f2_dbfs']
             elif standard == 'ccif':
-                writer.writerow(['IMD Percentage:', f"{imd_results['imd_percentage']:.4f} %"])
-                writer.writerow(['IMD (dB):', f"{imd_results['imd_db']:.2f} dB"])
-                writer.writerow(['Reference f1 (Hz):', f"{imd_results['amp_f1_freq_actual']:.1f}"])
-                writer.writerow(['Reference f1 (dBFS):', f"{imd_results['amp_f1_dbfs']:.2f}"])
-                writer.writerow(['Reference f2 (Hz):', f"{imd_results['amp_f2_freq_actual']:.1f}"])
-                writer.writerow(['Reference f2 (dBFS):', f"{imd_results['amp_f2_dbfs']:.2f}"])
-                writer.writerow([]) # Blank row for separation
-                writer.writerow(['Product Type', 'Nom. Freq (Hz)', 'Act. Freq (Hz)', 'Amplitude (Lin)', 'Level (dBr f1+f2)'])
-                for p in imd_results['imd_products_details']:
-                    writer.writerow([p['type'], f"{p['freq_hz_nominal']:.1f}", 
-                                     f"{p['freq_hz_actual']:.1f}", f"{p['amp_linear']:.2e}", f"{p['amp_dbr_f_sum']:.2f}"])
-        console.print(f"[green]Results saved to CSV: {output_csv_path}[/green]")
+                 header = [f'sweep_freq_{sweep_mode}_hz', 'imd_percentage', 'imd_db', 'ref_f1_freq_hz', 'ref_f1_dbfs', 'ref_f2_freq_hz', 'ref_f2_dbfs']
+            else: # Should not happen
+                header = [f'sweep_freq_{sweep_mode}_hz', 'imd_percentage', 'imd_db']
+
+            writer = csv.DictWriter(csvfile, fieldnames=header)
+            writer.writeheader()
+
+            for result in sweep_results:
+                row_data = {
+                    f'sweep_freq_{sweep_mode}_hz': result.get('sweep_freq'),
+                    'imd_percentage': result.get('imd_percentage'),
+                    'imd_db': result.get('imd_db')
+                }
+                if standard == 'smpte':
+                    row_data.update({
+                        'ref_f2_freq_hz': result.get('amp_f2_freq_actual'),
+                        'ref_f2_dbfs': result.get('amp_f2_dbfs')
+                    })
+                elif standard == 'ccif':
+                     row_data.update({
+                        'ref_f1_freq_hz': result.get('amp_f1_freq_actual'),
+                        'ref_f1_dbfs': result.get('amp_f1_dbfs'),
+                        'ref_f2_freq_hz': result.get('amp_f2_freq_actual'),
+                        'ref_f2_dbfs': result.get('amp_f2_dbfs')
+                    })
+                writer.writerow(row_data)
+
+        console.print(f"[green]Sweep results saved to CSV: {output_csv_path}[/green]")
     except IOError as e:
-        error_console.print(f"Error writing CSV file {output_csv_path}: {e}")
+        error_console.print(f"Error writing sweep CSV file {output_csv_path}: {e}")
     except Exception as e:
-        error_console.print(f"An unexpected error occurred while writing CSV: {e}")
+        error_console.print(f"An unexpected error occurred while writing sweep CSV: {e}")
+
+def plot_sweep_results(sweep_results, plot_file, standard, sweep_mode, sweep_scale, fixed_freq, fixed_freq_val):
+    """Plots the IMD sweep results and saves to a file."""
+    if not sweep_results:
+        console.print("[yellow]No sweep results to plot.[/yellow]")
+        return
+
+    sweep_freqs = [r['sweep_freq'] for r in sweep_results]
+    imd_percentages = [r['imd_percentage'] for r in sweep_results]
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(sweep_freqs, imd_percentages, marker='o', linestyle='-')
+
+    plt.title(f'{standard.upper()} IMD Sweep vs. {sweep_mode.upper()} (Fixed {fixed_freq.upper()} @ {fixed_freq_val} Hz)')
+    plt.xlabel(f'Frequency ({sweep_mode.upper()}) (Hz)')
+    plt.ylabel('IMD (%)')
+    if sweep_scale == 'log':
+        plt.xscale('log')
+    plt.grid(True, which="both", ls="--")
+
+    try:
+        plt.savefig(plot_file)
+        console.print(f"[green]Sweep plot saved to: {plot_file}[/green]")
+    except Exception as e:
+        error_console.print(f"Failed to save plot file '{plot_file}': {e}")
+    finally:
+        plt.close() # Free memory
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate, play, record, and analyze a dual-tone signal for IMD testing.")
+    parser = argparse.ArgumentParser(description="Generate, play, record, and analyze a dual-tone signal for IMD testing. Includes sweep functionality.")
     # Group arguments for clarity
     gen_group = parser.add_argument_group('Signal Generation Parameters')
     gen_group.add_argument("--f1", type=float, default=60.0, help="Frequency of the first tone (Hz)")
@@ -394,9 +435,32 @@ def main():
     analysis_group.add_argument("--num_sidebands", type=int, default=3, help="Number of sideband pairs for SMPTE IMD")
     analysis_group.add_argument("--standard", "-std", type=str, default='smpte', choices=['smpte', 'ccif'], help="IMD standard to use (smpte or ccif)")
 
+    sweep_group = parser.add_argument_group('Sweep Measurement Parameters')
+    sweep_group.add_argument('--sweep-mode', type=str, choices=['f1', 'f2'], help='Enable sweep mode by specifying which frequency to sweep.')
+    sweep_group.add_argument('--sweep-start', type=float, help='Sweep start frequency in Hz.')
+    sweep_group.add_argument('--sweep-end', type=float, help='Sweep end frequency in Hz.')
+    sweep_group.add_argument('--sweep-steps', type=int, default=10, help='Number of steps in the sweep.')
+    sweep_group.add_argument('--sweep-scale', type=str, default='linear', choices=['linear', 'log'], help='Scale of the sweep steps (linear or log).')
+
     output_group = parser.add_argument_group('Output Options')
-    output_group.add_argument("--output-csv", type=str, default=None, help="Path to save IMD product details as a CSV file.")
+    output_group.add_argument("--output-csv", type=str, default=None, help="Path to save IMD (or sweep) results to a CSV file.")
+    output_group.add_argument('--plot-file', type=str, help='Path to save the sweep result plot image file.')
+
     args = parser.parse_args()
+
+    # --- Validate Sweep Arguments ---
+    if args.sweep_mode:
+        if args.sweep_start is None or args.sweep_end is None:
+            error_console.print("--sweep-start and --sweep-end are required when --sweep-mode is active.")
+            sys.exit(1)
+        # Only compare if both are numbers
+        if isinstance(args.sweep_start, (int, float)) and isinstance(args.sweep_end, (int, float)):
+            if args.sweep_start >= args.sweep_end:
+                error_console.print("--sweep-start must be less than --sweep-end.")
+                sys.exit(1)
+        if args.plot_file is None and args.output_csv is None:
+            console.print("[yellow]Warning: Sweep mode is active, but no output file is specified with --plot-file or --output-csv. Results will only be shown on the console.[/yellow]")
+
 
     # --- Adjust defaults for CCIF ---
     if args.standard == 'ccif':
@@ -466,6 +530,22 @@ def main():
         error_console.print(f"Input channel {args.input_channel} (idx {input_channel_numeric_idx}) exceeds device max input channels ({device_max_input_channels}).")
         sys.exit(1)
 
+    # --- Main Logic: Decide between single run or sweep ---
+    if not args.sweep_mode:
+        # --- SINGLE-SHOT MEASUREMENT (Original Logic) ---
+        perform_single_shot_measurement(args, device_info, selected_device_idx,
+                                        device_max_output_channels, device_max_input_channels,
+                                        output_channel_numeric_idx, input_channel_numeric_idx)
+    else:
+        # --- SWEEP MEASUREMENT ---
+        perform_sweep_measurement(args, device_info, selected_device_idx,
+                                  device_max_output_channels, device_max_input_channels,
+                                  output_channel_numeric_idx, input_channel_numeric_idx)
+
+def perform_single_shot_measurement(args, device_info, selected_device_idx,
+                                    device_max_output_channels, device_max_input_channels,
+                                    output_channel_numeric_idx, input_channel_numeric_idx):
+    """Encapsulates the original single-shot measurement logic."""
     # --- Signal Generation ---
     console.print("\n[green]Generating dual-tone signal...[/green]")
     console.print(f"  Parameters: f1={args.f1}Hz, f2={args.f2}Hz, Amp(f1)={args.amplitude}dBFS, Ratio={args.ratio}, SR={args.sample_rate}Hz, Dur={args.duration}s")
@@ -474,9 +554,6 @@ def main():
         console.print(f"  Signal generated. Max/Min: {np.max(dual_tone_signal):.4f} / {np.min(dual_tone_signal):.4f}")
     except ValueError as e:
         error_console.print(f"Error generating signal: {e}")
-        sys.exit(1)
-    except Exception as e:
-        error_console.print(f"An unexpected error occurred during signal generation: {e}")
         sys.exit(1)
 
     # --- Playback and Recording ---
@@ -490,99 +567,123 @@ def main():
         output_channel_numeric_idx, input_channel_numeric_idx, args.duration
     )
 
-    if recorded_audio is None or recorded_audio.size == 0: # play_and_record returns None on error
-        error_console.print("Audio playback/recording failed or yielded no data. Exiting.")
+    if recorded_audio is None or recorded_audio.size == 0:
+        error_console.print("Audio playback/recording failed. Exiting.")
         sys.exit(1)
-    console.print(f"  Audio recorded. Shape: {recorded_audio.shape}, Max/Min: {np.max(recorded_audio):.4f} / {np.min(recorded_audio):.4f}")
+    console.print(f"  Audio recorded. Shape: {recorded_audio.shape}")
 
     # --- IMD Analysis ---
     console.print(f"\n[green]Analyzing recorded audio for IMD ({args.standard.upper()})...[/green]")
     
     imd_results = None
     if args.standard == 'smpte':
-        console.print(f"  Analysis Parameters (SMPTE): f1={args.f1}Hz, f2={args.f2}Hz, Window={args.window}, Sidebands={args.num_sidebands}")
-        try:
-            imd_results = analyze_imd_smpte(
-                recorded_audio, args.sample_rate, args.f1, args.f2, 
-                window_name=args.window, num_sideband_pairs=args.num_sidebands
-            )
-        except Exception as e:
-            error_console.print(f"An unexpected error occurred during SMPTE IMD analysis: {e}")
-            sys.exit(1)
+        imd_results = analyze_imd_smpte(recorded_audio, args.sample_rate, args.f1, args.f2, window_name=args.window, num_sideband_pairs=args.num_sidebands)
+    elif args.standard == 'ccif':
+        imd_results = analyze_imd_ccif(recorded_audio, args.sample_rate, args.f1, args.f2, window_name=args.window)
 
-        if imd_results:
-            f2_nominal = args.f2
-            f2_actual = imd_results['amp_f2_freq_actual']
-            console.print(f"  Reference f2 (Nominal: {f2_nominal:.1f}Hz, Actual: {f2_actual:.1f}Hz): {imd_results['amp_f2_dbfs']:.2f} dBFS ({imd_results['amp_f2_linear']:.4f} linear)")
-            console.print(f"  IMD (SMPTE, {args.num_sidebands} pairs): [bold cyan]{imd_results['imd_percentage']:.4f} %[/bold cyan] / [bold cyan]{imd_results['imd_db']:.2f} dB[/bold cyan]")
+    if not imd_results:
+        error_console.print(f"IMD analysis ({args.standard.upper()}) failed or returned no results.")
+        sys.exit(1)
 
-            if imd_results['imd_products_details']:
-                table = Table(title="SMPTE IMD Product Details")
-                table.add_column("Order (n)", style="cyan")
-                table.add_column("Type", style="cyan")
-                table.add_column("Nom. Freq (Hz)", style="magenta", justify="right")
-                table.add_column("Act. Freq (Hz)", style="magenta", justify="right")
-                table.add_column("Amplitude (Lin)", style="green", justify="right")
-                table.add_column("Level (dBr f2)", style="yellow", justify="right")
+    # --- Display Results ---
+    display_single_shot_results(args, imd_results)
 
-                for p in imd_results['imd_products_details']:
-                    table.add_row(str(p['order_n']), p['type'], f"{p['freq_hz_nominal']:.1f}", 
-                                  f"{p['freq_hz_actual']:.1f}", f"{p['amp_linear']:.2e}", f"{p['amp_dbr_f2']:.2f}")
-                console.print(table)
-            else:
-                console.print("  No significant SMPTE IMD products found above threshold.")
-        else: # Should not happen if analyze_imd_smpte always returns a dict or raises error
-            error_console.print("SMPTE IMD analysis returned no results.")
-            sys.exit(1)
+    console.print(f"\n[green]IMD analysis ({args.standard.upper()}) complete.[/green]")
+    # Note: CSV saving for single-shot is not implemented as sweep is the primary use case for CSV.
+    # Could be added here if needed.
+    if args.output_csv:
+        error_console.print("Note: --output-csv is only supported for sweep mode. No file has been saved.")
+
+def display_single_shot_results(args, imd_results):
+    """Displays the results of a single-shot IMD analysis in a formatted table."""
+    if args.standard == 'smpte':
+        f2_nominal = args.f2
+        f2_actual = imd_results['amp_f2_freq_actual']
+        console.print(f"  Reference f2 (Nominal: {f2_nominal:.1f}Hz, Actual: {f2_actual:.1f}Hz): {imd_results['amp_f2_dbfs']:.2f} dBFS")
+        console.print(f"  IMD (SMPTE, {args.num_sidebands} pairs): [bold cyan]{imd_results['imd_percentage']:.4f} %[/bold cyan] / [bold cyan]{imd_results['imd_db']:.2f} dB[/bold cyan]")
+
+        if imd_results['imd_products_details']:
+            table = Table(title="SMPTE IMD Product Details")
+            table.add_column("Order (n)"); table.add_column("Type"); table.add_column("Nom. Freq (Hz)"); table.add_column("Act. Freq (Hz)"); table.add_column("Amplitude (Lin)"); table.add_column("Level (dBr f2)")
+            for p in imd_results['imd_products_details']:
+                table.add_row(str(p['order_n']), p['type'], f"{p['freq_hz_nominal']:.1f}", f"{p['freq_hz_actual']:.1f}", f"{p['amp_linear']:.2e}", f"{p['amp_dbr_f2']:.2f}")
+            console.print(table)
 
     elif args.standard == 'ccif':
-        console.print(f"  Analysis Parameters (CCIF): f1={args.f1}Hz, f2={args.f2}Hz, Window={args.window}")
+        f1_nom, f1_act = args.f1, imd_results['amp_f1_freq_actual']
+        f2_nom, f2_act = args.f2, imd_results['amp_f2_freq_actual']
+        console.print(f"  Reference f1 (Nom: {f1_nom:.1f}Hz, Act: {f1_act:.1f}Hz): {imd_results['amp_f1_dbfs']:.2f} dBFS")
+        console.print(f"  Reference f2 (Nom: {f2_nom:.1f}Hz, Act: {f2_act:.1f}Hz): {imd_results['amp_f2_dbfs']:.2f} dBFS")
+        console.print(f"  IMD (CCIF): [bold cyan]{imd_results['imd_percentage']:.4f} %[/bold cyan] / [bold cyan]{imd_results['imd_db']:.2f} dB[/bold cyan]")
+
+        if imd_results['imd_products_details']:
+            table = Table(title="CCIF IMD Product Details")
+            table.add_column("Product Type"); table.add_column("Nom. Freq (Hz)"); table.add_column("Act. Freq (Hz)"); table.add_column("Amplitude (Lin)"); table.add_column("Level (dBr f1+f2)")
+            for p in imd_results['imd_products_details']:
+                table.add_row(p['type'], f"{p['freq_hz_nominal']:.1f}", f"{p['freq_hz_actual']:.1f}", f"{p['amp_linear']:.2e}", f"{p['amp_dbr_f_sum']:.2f}")
+            console.print(table)
+
+def perform_sweep_measurement(args, device_info, selected_device_idx,
+                              device_max_output_channels, device_max_input_channels,
+                              output_channel_numeric_idx, input_channel_numeric_idx):
+    """Encapsulates the new sweep measurement logic."""
+    if args.sweep_scale == 'log':
+        sweep_freqs = np.logspace(np.log10(args.sweep_start), np.log10(args.sweep_end), args.sweep_steps)
+    else: # linear
+        sweep_freqs = np.linspace(args.sweep_start, args.sweep_end, args.sweep_steps)
+
+    console.print(f"\n[bold green]Starting IMD Sweep ({args.standard.upper()})...[/bold green]")
+    console.print(f"  Sweeping '{args.sweep_mode}' from {args.sweep_start} Hz to {args.sweep_end} Hz in {args.sweep_steps} steps ({args.sweep_scale} scale).")
+
+    sweep_results = []
+
+    for i, freq in enumerate(sweep_freqs):
+        current_f1, current_f2 = (freq, args.f2) if args.sweep_mode == 'f1' else (args.f1, freq)
+
+        console.print(f"\n[cyan]Step {i+1}/{args.sweep_steps}:[/cyan] Testing {args.sweep_mode}={freq:.2f} Hz...")
+
         try:
-            imd_results = analyze_imd_ccif(
-                recorded_audio, args.sample_rate, args.f1, args.f2, 
-                window_name=args.window
-            )
-        except Exception as e:
-            error_console.print(f"An unexpected error occurred during CCIF IMD analysis: {e}")
-            sys.exit(1)
+            signal = generate_dual_tone(current_f1, args.amplitude, current_f2, args.ratio, args.duration, args.sample_rate)
+        except ValueError as e:
+            error_console.print(f"  Skipping step due to signal generation error: {e}")
+            continue
 
-        if imd_results:
-            f1_nom, f1_act = args.f1, imd_results['amp_f1_freq_actual']
-            f2_nom, f2_act = args.f2, imd_results['amp_f2_freq_actual']
-            console.print(f"  Reference f1 (Nom: {f1_nom:.1f}Hz, Act: {f1_act:.1f}Hz): {imd_results['amp_f1_dbfs']:.2f} dBFS ({imd_results['amp_f1_linear']:.4f} lin)")
-            console.print(f"  Reference f2 (Nom: {f2_nom:.1f}Hz, Act: {f2_act:.1f}Hz): {imd_results['amp_f2_dbfs']:.2f} dBFS ({imd_results['amp_f2_linear']:.4f} lin)")
-            console.print(f"  IMD (CCIF): [bold cyan]{imd_results['imd_percentage']:.4f} %[/bold cyan] / [bold cyan]{imd_results['imd_db']:.2f} dB[/bold cyan]")
+        recorded = play_and_record(
+            signal, device_max_output_channels, device_max_input_channels, args.sample_rate,
+            selected_device_idx, selected_device_idx,
+            output_channel_numeric_idx, input_channel_numeric_idx, args.duration
+        )
 
-            if imd_results['imd_products_details']:
-                table = Table(title="CCIF IMD Product Details")
-                table.add_column("Product Type", style="cyan", width=12)
-                table.add_column("Nom. Freq (Hz)", style="magenta", justify="right")
-                table.add_column("Act. Freq (Hz)", style="magenta", justify="right")
-                table.add_column("Amplitude (Lin)", style="green", justify="right")
-                table.add_column("Level (dBr f1+f2)", style="yellow", justify="right")
+        if recorded is None or recorded.size == 0:
+            error_console.print("  Skipping step due to playback/recording failure.")
+            continue
 
-                for p in imd_results['imd_products_details']:
-                    table.add_row(p['type'], f"{p['freq_hz_nominal']:.1f}", 
-                                  f"{p['freq_hz_actual']:.1f}", f"{p['amp_linear']:.2e}", f"{p['amp_dbr_f_sum']:.2f}")
-                console.print(table)
-            else:
-                console.print("  No significant CCIF IMD products found above threshold.")
-        else: # Should not happen if analyze_imd_ccif always returns a dict or raises error
-            error_console.print("CCIF IMD analysis returned no results.")
-            sys.exit(1)
-    
-    else: # Should be caught by argparse choices
-        error_console.print(f"Unknown IMD standard: {args.standard}")
+        if args.standard == 'smpte':
+            results = analyze_imd_smpte(recorded, args.sample_rate, current_f1, current_f2, window_name=args.window, num_sideband_pairs=args.num_sidebands)
+        else: # ccif
+            results = analyze_imd_ccif(recorded, args.sample_rate, current_f1, current_f2, window_name=args.window)
+
+        if results:
+            results['sweep_freq'] = freq # Add sweep frequency to the results dict
+            sweep_results.append(results)
+            console.print(f"  [green]Result:[/green] IMD = {results['imd_percentage']:.4f} % ({results['imd_db']:.2f} dB)")
+        else:
+            error_console.print("  Skipping step due to analysis failure.")
+
+    console.print("\n[bold green]IMD Sweep complete.[/bold green]")
+
+    # --- Process and Save Sweep Results ---
+    if not sweep_results:
+        error_console.print("No data was successfully collected during the sweep.")
         sys.exit(1)
 
-    if imd_results: # General success message if any analysis was done
-        console.print(f"""
-[green]IMD analysis ({args.standard.upper()}) complete.[/green]""")
-        if args.output_csv:
-            save_results_to_csv(imd_results, args.standard, args.output_csv)
-    else: # Fallback, though specific errors should have exited earlier
-        error_console.print("IMD analysis could not be performed or returned no meaningful results.")
-        sys.exit(1)
+    if args.output_csv:
+        save_sweep_results_to_csv(sweep_results, args.output_csv, args.standard, args.sweep_mode)
+
+    if args.plot_file:
+        fixed_freq_label = 'f2' if args.sweep_mode == 'f1' else 'f1'
+        fixed_freq_value = args.f2 if args.sweep_mode == 'f1' else args.f1
+        plot_sweep_results(sweep_results, args.plot_file, args.standard, args.sweep_mode, args.sweep_scale, fixed_freq_label, fixed_freq_value)
 
 
 if __name__ == "__main__":

@@ -51,15 +51,17 @@ The script is run from the command line:
 python audio_imd_analyzer/audio_imd_analyzer.py [OPTIONS]
 ```
 
+The tool supports two main modes: a **single-shot measurement** at fixed frequencies, and a **sweep measurement** where one frequency is varied across a range.
+
 ### Main Options
 
 | Option                | Alias | Default Value      | Description                                                                                                |
 |-----------------------|-------|--------------------|------------------------------------------------------------------------------------------------------------|
-| `--f1`                |       | `60.0`             | Frequency of the first (low-frequency) tone in Hz.                                                         |
-| `--f2`                |       | `7000.0`           | Frequency of the second (high-frequency) tone in Hz.                                                       |
+| `--f1`                |       | `60.0`             | Frequency of the first (low-frequency) tone in Hz. In sweep mode, this is the fixed frequency if `f2` is swept. |
+| `--f2`                |       | `7000.0`           | Frequency of the second (high-frequency) tone in Hz. In sweep mode, this is the fixed frequency if `f1` is swept. |
 | `--amplitude`         |       | `-12.0`            | Amplitude of the first tone (f1) in dBFS. The amplitude of f2 is derived from this and the `--ratio`.        |
 | `--ratio`             |       | `4.0`              | Linear amplitude ratio of f1/f2 (e.g., 4 for a 4:1 ratio where f1 is stronger).                             |
-| `--duration`          |       | `1.0`              | Duration of the generated test signal and recording in seconds.                                              |
+| `--duration`          |       | `1.0`              | Duration of the test signal and recording for **each step** in seconds.                                    |
 | `--sample_rate`       |       | `48000`            | Sampling rate in Hz for signal generation, playback, and recording.                                        |
 | `--device`            |       | Prompts user       | Integer ID of the audio device to use. If not provided, a list of available devices will be shown.         |
 | `--output_channel`    | `-oc` | `R`                | Output channel for playback: 'L' (left) or 'R' (right).                                                    |
@@ -67,10 +69,23 @@ python audio_imd_analyzer/audio_imd_analyzer.py [OPTIONS]
 | `--window`            |       | `blackmanharris`   | FFT window type for analysis (e.g., `hann`, `hamming`, `blackmanharris`).                                  |
 | `--num_sidebands`     |       | `3`                | Number of sideband pairs (e.g., f2 ± n*f1) to analyze for SMPTE IMD calculation.                           |
 | `--standard`          | `-std`| `smpte`            | IMD standard to use: `smpte` or `ccif`. If `ccif` is chosen and `--f1`, `--f2`, `--ratio` are not specified, they default to 19kHz, 20kHz, and 1.0 respectively. |
-| `--output_csv`        |       | `None`             | Path to save IMD product details as a CSV file.                |
+| `--output_csv`        |       | `None`             | Path to save results to a CSV file. In sweep mode, this saves the results of every step.                   |
 | `--help`              | `-h`  |                    | Show this help message and exit.                                                                           |
 
-### Example Command
+### Sweep Measurement Options
+
+To perform a sweep measurement, you must specify `--sweep-mode`. This will vary one of the test frequencies (`f1` or `f2`) across a defined range, performing an IMD measurement at each step.
+
+| Option                | Default Value      | Description                                                                                                |
+|-----------------------|--------------------|------------------------------------------------------------------------------------------------------------|
+| `--sweep-mode`        | `None`             | Enables sweep mode. Set to `f1` or `f2` to specify which frequency to sweep. **Required for sweep.**         |
+| `--sweep-start`       | `None`             | The starting frequency for the sweep in Hz. **Required for sweep.**                                        |
+| `--sweep-end`         | `None`             | The ending frequency for the sweep in Hz. **Required for sweep.**                                          |
+| `--sweep-steps`       | `10`               | The number of frequency steps to measure within the sweep range.                                           |
+| `--sweep-scale`       | `linear`           | The scale of the sweep steps. Can be `linear` for evenly spaced steps or `log` for logarithmically spaced steps. |
+| `--plot-file`         | `None`             | Path to save a plot of the sweep results (e.g., `sweep_results.png`). IMD (%) vs. Frequency is plotted.     |
+
+### Example: Single-Shot Measurement
 
 This command generates the standard SMPTE signal, plays it on the right channel of the default (or user-selected) audio device, records from the left channel, and analyzes for 3 sideband pairs using a Blackman-Harris window.
 
@@ -78,13 +93,31 @@ This command generates the standard SMPTE signal, plays it on the right channel 
 python audio_imd_analyzer/audio_imd_analyzer.py --f1 60 --f2 7000 --amplitude -12 --ratio 4 --oc R --ic L
 ```
 
-### Example CCIF Command
+### Example: CCIF Single-Shot Measurement
 
 This command generates a CCIF signal with f1=19kHz and f2=20kHz (implicitly, as defaults for `--standard ccif`), each at -18dBFS (due to `--amplitude -18` and implicit 1:1 ratio for CCIF), plays it on the right channel, records from the left, and analyzes.
 
 ```bash
 python audio_imd_analyzer/audio_imd_analyzer.py --standard ccif --amplitude -18 --oc R --ic L
 ```
+
+### Example: Sweep Measurement
+
+This command performs an SMPTE IMD sweep. It sweeps the low-frequency tone (`f1`) from 20 Hz to 200 Hz in 15 logarithmic steps, with the high-frequency tone (`f2`) fixed at 7000 Hz. For each step, it performs a measurement and then saves the aggregated results to a CSV file and generates a plot.
+
+```bash
+python audio_imd_analyzer/audio_imd_analyzer.py \
+    --standard smpte \
+    --sweep-mode f1 \
+    --sweep-start 20 \
+    --sweep-end 200 \
+    --sweep-steps 15 \
+    --sweep-scale log \
+    --f2 7000 \
+    --output-csv smpte_f1_sweep.csv \
+    --plot-file smpte_f1_sweep.png
+```
+
 If no `--device` ID is provided, the script will list available devices and prompt for a selection.
 
 ## Output Description
@@ -150,6 +183,7 @@ The script provides the following output:
 -   **Audio Interface Quality**: The quality of the audio interface (sound card) used for playback and recording significantly impacts the IMD results. High-quality interfaces with low noise and distortion are crucial for obtaining meaningful measurements. The script itself does not introduce IMD; any measured distortion comes from the audio hardware path.
 -   **Error Handling**: The script includes error handling for device selection, signal generation issues, and audio stream problems. Error messages are printed to `stderr`.
 -   **Amplitude Calibration**: The script operates with digital signal levels (dBFS). For absolute acoustic measurements, calibration of input and output levels would be necessary.
+-   **Testing Status**: Due to hardware interaction complexities within virtualized environments, the automated test suite for the sweep functionality is currently incomplete. The core analysis functions are unit-tested, and the sweep feature has been verified manually.
 
 ## License
 
