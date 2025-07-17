@@ -1,145 +1,137 @@
-# Audio Analyzer v1.4.5
+# Audio Analyzer
 
-実験やプログラムの参考程度にお使い下さい。断り無く自由に使って下さい。
+**Version:** 1.4.5  
+**Authors:** ChatGPT, vach, Jules, Gemini  
+**Date:** 2024-10-16
 
----
-
-## 概要
-
-このスクリプトは、音声信号の高調波解析を行うツールです。主な機能には、THD（全高調波歪）、THD+N、SNRの測定、音声信号のゲイン表示、周波数スイープや振幅スイープによる連続測定、テストトーンの出力、および新機能としてマッピング測定が含まれます。
-
-- **作成者**: ChatGPT, vach, Jules, Gemini
-- **日付**: 2024年10月16日  
-- **Copyright**: pass  
+This tool is provided for experimental and educational purposes. Feel free to use it without restriction.
 
 ---
 
-## 特徴
+## Overview
 
-- ピーク検出と高調波解析  
-- THD（全高調波歪）および THD+N の測定  
-- SINAD (Signal-to-Noise and Distortion Ratio) の測定 (THD+NのdB値の符号を反転させたものとして計算: `-(THD+N in dB)`)
-- SNR（信号対雑音比）の測定  
-- 入力振幅と測定振幅の比較によるゲイン表示  
-- 各測定終了時に高調波解析結果を表示  
-- 複数回の測定から得た平均結果と標準偏差を表示  
-- 周波数スイープや振幅スイープによる連続測定  
-- テストトーンの出力機能  
-- 新機能: `--map` オプションによる周波数・振幅のマッピング測定  
+This script is a command-line tool for harmonic analysis of audio signals. It can measure Total Harmonic Distortion (THD), THD + Noise (THD+N), and Signal-to-Noise Ratio (SNR). The tool also supports continuous measurements with frequency and amplitude sweeps, test tone generation, and a mapping feature to visualize distortion across a range of frequencies and amplitudes.
+
+It is a useful utility for evaluating the performance of audio equipment and for initial investigations in acoustic analysis.
+
+Part of the [Audio Tools collection](../README.md).
 
 ---
 
-## ファイル構成
+## Features
 
-- `audio_analyzer.py`: メインプログラム。音声信号の解析と測定を行います。  
-- `distorsion_visualizer.py`: 歪みデータを視覚化します。  
-- `aligner.py`: 信号のタイミング整列を行うユーティリティ。  
-- `audiocalc.py`: オーディオ関連の計算処理を担当。   
-- `requirement.txt`: 必要な Python パッケージを記載したファイル。  
+-   Peak detection and harmonic analysis of audio signals.
+-   Measurement of **THD** (Total Harmonic Distortion) and **THD+N** (Total Harmonic Distortion plus Noise).
+-   Measurement of **SINAD** (Signal-to-Noise and Distortion Ratio), calculated as the inverse of THD+N in dB (`-(THD+N in dB)`).
+-   Measurement of **SNR** (Signal-to-Noise Ratio).
+-   Calculation and display of **gain** by comparing input and measured amplitudes.
+-   Continuous measurement capabilities using **frequency sweeps** or **amplitude sweeps**.
+-   A **mapping mode** (`--map`) to measure and visualize distortion across a 2D grid of frequencies and amplitudes.
+-   A **test tone** output function for simple signal generation.
+-   Displays harmonic analysis results after each measurement.
+-   Calculates and displays the **average and standard deviation** from multiple measurements.
 
 ---
 
-## 必要な環境
+## File Structure
 
-- Python 3.8以降が必要です。  
-- 必要なパッケージは `requirement.txt` に記載されています。インストールには以下を使用します:
+-   `audio_analyzer.py`: The main program for signal analysis and measurement.
+-   `distorsion_visualizer.py`: A tool to visualize distortion data from CSV files.
+-   `aligner.py`: A utility for signal timing alignment.
+-   `audiocalc.py`: Handles audio-related calculations.
+-   `requirement.txt`: Lists the required Python packages.
 
+---
+
+## Requirements
+
+-   Python 3.8 or later.
+-   The required Python packages are listed in `requirement.txt`.
+
+Install the dependencies using pip:
 ```bash
 pip install -r requirement.txt
 ```
 
 ---
 
-## 使用方法
+## Usage
 
-### メインプログラム `audio_analyzer.py`
+### Main Program: `audio_analyzer.py`
 
-音声信号の測定および高調波解析を行います。周波数や振幅の設定を指定し、測定結果を取得できます。
+This is the primary script for performing measurements and harmonic analysis.
 
-#### 基本コマンド
+#### Basic Command
 
 ```bash
 python audio_analyzer.py --frequency 1000 --amplitude -6 --duration 5.0
 ```
 
-#### 主なオプション
+#### Main Options
 
-| オプション | 説明 |
-|-----------|------|
-| `-f, --frequency` | 測定する基本周波数（デフォルト: 1000 Hz） |
-| `-a, --amplitude` | トーンの振幅（デフォルト: -6 dBFS） |
-| `-w, --window` | 窓関数の種類（デフォルト: blackmanharris） |
-| `--duration` | 測定時間（デフォルト: 5秒） |
-| `--bandpass` | バンドパスフィルターの適用 |
-| `-sr, --sample-rate` | サンプリングレート（デフォルト: 48000 Hz） |
-| `-oc, --output-channel` | 出力チャンネル（LまたはR、デフォルト: R） |
-| `-ic, --input-channel` | 入力チャンネル（LまたはR、デフォルト: 出力チャンネルの反対） |
-| `-oc, --output-channel` | 出力チャンネル（LまたはR、デフォルト: R） |
-| `-d, --device` | 音声デバイスの番号 |
-| `-n, --num_measurements` | 測定回数（デフォルト: 2回） |
+| Option                 | Alias | Default         | Description                                                                 |
+|------------------------|-------|-----------------|-----------------------------------------------------------------------------|
+| `--frequency HZ`       | `-f`  | `1000`          | The fundamental frequency for the measurement (in Hz).                      |
+| `--amplitude DBFS`     | `-a`  | `-6`            | The amplitude of the test tone (in dBFS).                                   |
+| `--duration SECS`      |       | `5.0`           | The duration of the measurement (in seconds).                               |
+| `--window {name}`      | `-w`  | `blackmanharris`| The window function to use for FFT analysis.                                |
+| `--bandpass`           |       | `False`         | Apply a bandpass filter around the fundamental frequency.                   |
+| `--sample-rate HZ`     | `-sr` | `48000`         | The sampling rate for playback and recording (in Hz).                       |
+| `--output-channel CH`  | `-oc` | `R`             | The output channel to use ('L' or 'R').                                     |
+| `--input-channel CH`   | `-ic` | (Opposite of oc)| The input channel to use ('L' or 'R').                                      |
+| `--device ID`          | `-d`  | (User prompt)   | The numeric ID of the audio device to use.                                  |
+| `--num-measurements N` | `-n`  | `2`             | The number of measurements to perform and average.                          |
+| `--output-csv FILE`    |       | `None`          | The filename for saving measurement results to a CSV file.                  |
 
-### モードオプション（いずれか一つを選択）
+#### Mode Options (choose one)
 
-- `--sweep-amplitude` 振幅スイープモード  
-- `--sweep-frequency` 周波数スイープモード  
-- `--map` マッピング測定モード  
-- `--test` テストトーンの出力  
-- `--calib` キャリブレーションモード（現在テスト中）
-
-### 追加オプション
-
-- `--output-csv`: 測定結果をCSVファイルに保存するファイル名  
+| Option                | Description                                                              |
+|-----------------------|--------------------------------------------------------------------------|
+| `--sweep-amplitude`   | Enables amplitude sweep mode.                                            |
+| `--sweep-frequency`   | Enables frequency sweep mode.                                            |
+| `--map`               | Enables mapping mode to test across a grid of frequencies and amplitudes.|
+| `--test`              | Enables test tone output mode.                                           |
+| `--calib`             | Enables calibration mode (currently in testing).                         |
 
 ---
 
-## ビジュアライザ `distorsion_visualizer.py`
+### Visualizer: `distorsion_visualizer.py`
 
-CSVファイルから歪みデータを読み取り、視覚化します。
+This script reads distortion data from a CSV file (generated by `audio_analyzer.py` with the `--map` option) and creates a 2D or 3D plot.
 
-#### 基本コマンド
+#### Options
 
-```bash
-python distorsion_visualizer.py sample.csv --device_name "Test Device"
-```
-
-#### オプション
-
-| オプション | 説明 |
-|-----------|------|
-| `csv_file` | 歪みデータを含むCSVファイルのパス |
-| `-d, --device_name` | タイトルに含めるデバイス名（任意） |
-| `-a, --amplitude_type` | Output(dBFS) または Input(dBFS) を選択（デフォルト: Output） |
-| `-c, --convert_to_dBVrms` | 振幅をdBVrmsに変換するオプション |
-| `-p, --plot_type` | グラフの種類を選択: "contour" (等高線) または "3d" (3Dサーフェス)。デフォルトは等高線。 |
-| `--color` | 等高線プロットで色を表示する（白黒の代わりにカラーマップを使用）。 |
-| `--rotate` | 3Dプロットを自動で回転させる（アニメーション）。 |
+| Option                    | Alias | Default     | Description                                                                                             |
+|---------------------------|-------|-------------|---------------------------------------------------------------------------------------------------------|
+| `csv_file`                |       | (Required)  | Path to the CSV file containing distortion data.                                                        |
+| `--device_name NAME`      | `-d`  | `None`      | An optional device name to include in the plot title.                                                   |
+| `--amplitude_type {type}` | `-a`  | `Output`    | The amplitude data to use for the axis: 'Output(dBFS)' or 'Input(dBFS)'.                                |
+| `--convert_to_dBVrms`     | `-c`  | `False`     | Convert the amplitude axis from dBFS to dBVrms.                                                         |
+| `--plot_type {type}`      | `-p`  | `contour`   | The type of plot to generate: `contour` or `3d` (surface).                                              |
+| `--color`                 |       | `False`     | Use a color map for the contour plot instead of monochrome.                                             |
+| `--rotate`                |       | `False`     | Automatically rotate the 3D plot (creates an animation).                                                |
 
 ---
 
-## Audio Analyzer の主な関数と役割
+## Example Output
 
-- **generate_tone**: 指定されたパラメータで正弦波テストトーンを生成  
-- **test_tone**: テストトーンを再生（エンターで停止）  
-- **select_device**: 使用可能な音声デバイスの一覧表示と選択  
-- **print_harmonic_analysis**: 高調波解析結果を表形式で表示  
-- **measure**: 単一のトーンに対する測定を実施  
-- **measure_noise**: 環境ノイズの測定とRMSレベル計算  
-- **display_measurements** / **display_statics**: 測定値と統計結果を表示  
-- **perform_measurements**: 周波数・振幅スイープの連続測定とCSV出力  
-
----
-
-## 出力例
-
-測定結果は以下のようなテーブルで表示されます（一部抜粋）:
+The measurement results are displayed in a table format in the console:
 
 ```
-=== 測定結果一覧 ===
+=== Measurement Results ===
 ┏━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┓
-┃ 測定  ┃ 周波数(Hz) ┃ 振幅(dBFS) ┃ 出力(dBFS)  ┃ 入力(dBFS)  ┃ THD(%)   ┃ THD+N(%)    ┃ SINAD(dB)   ┃ SNR(dB)   ┃ ゲイン(dB) ┃
+┃ Index ┃ Freq (Hz) ┃ Ampl (dBFS)┃ Out (dBFS)  ┃ In (dBFS)   ┃ THD (%)  ┃ THD+N (%)   ┃ SINAD (dB)  ┃ SNR (dB)  ┃ Gain (dB) ┃
 ┡━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━┩
 │ 1     │ 1000.0    │ -6.00      │ -6.00       │ -6.05       │ 0.0012   │ 0.0100      │ 80.00       │ 80.05     │ -0.05     │
 └───────┴───────────┴────────────┴─────────────┴─────────────┴──────────┴─────────────┴─────────────┴───────────┴───────────┘
 ```
 
 ---
+
+## License
+
+This is free and unencumbered software released into the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or distribute this software, either in source code form or as a compiled binary, for any purpose, commercial or non-commercial, and by any means.
+
+See the [UNLICENSE](https://unlicense.org/) for more details.
