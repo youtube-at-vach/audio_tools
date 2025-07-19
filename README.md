@@ -4,6 +4,7 @@
 
 - オーディオアナライザー ([`audio_analyzer`](./audio_analyzer/README.md)): 音声信号の基本的な特性（レベル、周波数スペクトル、波形など）を分析し、歪み（THD、THD+N、SINAD）を測定するツールです。オーディオ機器の性能評価や音響解析の初期調査に適しています。
 - オーディオシグナルジェネレーター ([`audio_signal_generator`](./audio_signal_generator/README.md)): 正弦波、矩形波、のこぎり波、三角波、ホワイトノイズ、ピンクノイズなど、様々な種類のテストトーンや任意波形を生成するツールです。オーディオ機器のテストや音響測定の信号源として利用できます。
+- ノイズジェネレーター ([`noise_generator`](./noise_generator/README.md)): ホワイトノイズ、ピンクノイズ、ブラウンノイズ、ガウスノイズ、バイオレットノイズ、周期性ノイズ、MLS（最大長シーケンス）ノイズなど、多様な種類のノイズを生成するツールです。オーディオ機器のテストや音響測定、マスキング信号など、幅広い用途に利用できます。
 - 相互変調歪アナライザー ([`audio_imd_analyzer`](./audio_imd_analyzer/README.md)): オーディオ信号の相互変調歪（IMD）を測定するツールです。SMPTE (RP120-1994) および CCIF (ITU-R) 規格に基づいた測定に対応しており、アンプやスピーカーなどの非線形歪の評価に役立ちます。(詳細は [`audio_imd_analyzer/README.md`](./audio_imd_analyzer/README.md) を参照)
 - 周波数応答アナライザー ([`audio_freq_response_analyzer`](./audio_freq_response_analyzer/README.md)): オーディオデバイスの周波数応答（振幅特性および位相特性）を測定し、グラフとしてプロットするツールです。スピーカー、マイク、アンプなどの周波数特性評価やイコライザー調整の参考に利用できます。(詳細は [`audio_freq_response_analyzer/README.md`](./audio_freq_response_analyzer/README.md) を参照)
 - クロストークアナライザー ([`audio_crosstalk_analyzer`](./audio_crosstalk_analyzer/README.md)): ステレオオーディオチャンネル間のクロストーク（信号漏れ）の量を測定するツールです。オーディオケーブルやミキサー、インターフェースなどのチャンネルセパレーション性能の評価に使用します。(詳細は [`audio_crosstalk_analyzer/README.md`](./audio_crosstalk_analyzer/README.md) を参照)
