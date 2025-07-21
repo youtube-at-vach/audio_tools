@@ -67,3 +67,9 @@ This document lists potential ideas for future audio measurement programs. These
     5.  Iteratively adjusting the anti-harmonic signal to minimize the detected harmonics in the recorded signal, effectively "nulling out" the loopback distortion.
     6.  The remaining distortion would then represent the true distortion of the DUT.
     This is a technically challenging feature requiring precise real-time audio processing, low-latency audio I/O, and robust adaptive filtering algorithms. Implementation should be considered once the technical feasibility and required computational resources are thoroughly assessed.
+
+-   **Advanced SNR Analyzer with Noise Breakdown**:
+    Extend the existing `snr_analyzer` or create a new tool that not only measures the overall SNR but also provides a breakdown of the noise floor composition. Using the curve-fitting techniques developed for the `noise_spectrum_analyzer`, it could classify and quantify the contributions of different noise types (e.g., 1/f noise, white noise, power line hum) to the total noise figure. This would provide deeper insights into the noise sources limiting the system's performance.
+
+-   **Advanced SNR Analyzer with Noise Breakdown**:
+    Extend the existing `snr_analyzer` or create a new tool that not only measures the overall SNR but also provides a breakdown of the noise floor composition. Using the curve-fitting techniques developed for the `noise_spectrum_analyzer`, it could classify and quantify the contributions of different noise types (e.g., 1/f noise, white noise, power line hum) to the total noise figure. This would provide deeper insights into the noise sources limiting the system's performance.
