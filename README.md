@@ -1,12 +1,17 @@
-# Audio Tools
+# 🚀 Welcome to the All-in-One Audio Toolkit! 🎶
 
-現在、このプロジェクトは、個別の測定ツールを単一の統合ツールにまとめる新しい段階にあります。
+やあ、音の冒険家の皆さん！ピカピカの新しいプロジェクトへようこそ。私たちは今、過去の散らばった遺物から、ただ一つの壮大なオーディオ測定ツールを鍛造するために、ハンマーを振るい、はんだ付けをし、そしておそらくコーヒーをこぼしながら忙しく働いています。
 
-**このプロジェクトは現在工事中です。**
+**ご注意！** この場所全体が工事現場です。ヘルメットを着用し、落下してくるコードに気をつけてください！ 👷‍♀️🚧
 
-## Legacy Tools
+> オーディオエンジニアがスタジオにハシゴを持ってきたのはなぜ？
+> ... 高音に手が届くようにさ！ (なんちゃって！)
 
-すべての古いプログラム資産は `legacy` ディレクトリに移動されました。これらのツールは、今後の開発の参考として利用できます。
+---
+
+## 🏛️ 殿堂入り：私たちのレガシーツール
+
+この壮大な統一の前には、多くの小さくて専門的なツールがありました。私たちは敬意を表して、それらを `legacy` ディレクトリに移動しました。クラシックなオーディオガジェットの博物館のようなものだとお考えください。どうぞご自由に閲覧し、インスピレーションを得てください！
 
 以下は `legacy` ディレクトリにあるツールの一覧です。
 
@@ -31,14 +36,11 @@
 
 ---
 
-## ライセンスについて
+## 📜 ご自由にどうぞ！すべてあなたのものです。
 
-ここに置かれたプログラムは著作権を放棄していますので、**誰でも自由に使用・改変・再配布・商用利用**することができます。
-これはインターネット上の「情報」として提供されるものであり、**誰のものでもありません**。
+本気です。ここにあるものはすべてパブリックドメインに解放されています。
 
----
-
-## The Unlicense
+### The Unlicense
 
 This is free and unencumbered software released into the public domain.
 
@@ -47,3 +49,7 @@ Anyone is free to copy, modify, publish, use, compile, sell, or distribute this 
 In jurisdictions that recognize copyright laws, the author has dedicated any and all copyright interest in the software to the public domain.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
+
+---
+
+さあ、ノイズを立てましょう！（もちろん、良い意味でね。）
