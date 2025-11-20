@@ -1,0 +1,8 @@
+numpy
+scipy
+sounddevice
+rich
+matplotlib
+soundfile
+PyQt6
+pyqtgraph
