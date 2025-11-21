@@ -12,8 +12,9 @@ class LoopbackWorker(QThread):
     error = pyqtSignal(str)
     finished_testing = pyqtSignal()
 
-    def __init__(self, device_id, sample_rate=48000):
+    def __init__(self, module, device_id, sample_rate=48000):
         super().__init__()
+        self.module = module
         self.device_id = device_id
         self.sample_rate = sample_rate
         self.is_running = True
@@ -189,7 +190,7 @@ class LoopbackFinderWidget(QWidget):
         # If they are different, we pass (input, output) tuple to playrec
         device_arg = (input_device, output_device)
         
-        self.module.worker = LoopbackWorker(device_arg, self.module.audio_engine.sample_rate)
+        self.module.worker = LoopbackWorker(self.module, device_arg, self.module.audio_engine.sample_rate)
         self.module.worker.progress.connect(self.update_progress)
         self.module.worker.result.connect(self.show_results)
         self.module.worker.error.connect(self.show_error)
