@@ -7,6 +7,8 @@ from src.gui.widgets.spectrum_analyzer import SpectrumAnalyzer
 from src.gui.widgets.lufs_meter import LufsMeter
 from src.gui.widgets.loopback_finder import LoopbackFinder
 from src.gui.widgets.freq_response import FreqResponseAnalyzer
+from src.gui.widgets.imd_analyzer import IMDAnalyzer
+from src.gui.widgets.network_analyzer import NetworkAnalyzer
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -26,7 +28,9 @@ class MainWindow(QMainWindow):
             SpectrumAnalyzer(self.audio_engine),
             LufsMeter(self.audio_engine),
             LoopbackFinder(self.audio_engine),
-            FreqResponseAnalyzer(self.audio_engine)
+            FreqResponseAnalyzer(self.audio_engine),
+            IMDAnalyzer(self.audio_engine),
+            NetworkAnalyzer(self.audio_engine)
         ]
         
         # Main layout container

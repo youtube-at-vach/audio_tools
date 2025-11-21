@@ -27,6 +27,14 @@ class SignalGenerator(MeasurementModule):
         self._sweep_time = 0
         self._noise_buffer = None
         self._noise_index = 0
+        self._buffer = None
+        self._buffer_index = 0
+        
+        # Advanced Signal Parameters
+        self.multitone_count = 10
+        self.mls_order = 15
+        self.burst_on_cycles = 10
+        self.burst_off_cycles = 90
 
     @property
     def name(self) -> str:
@@ -73,6 +81,118 @@ class SignalGenerator(MeasurementModule):
             
         return noise
 
+    def _generate_multitone(self, sample_rate):
+        """Generates a Crest-Factor optimized Multitone signal."""
+        # Logarithmic spacing
+        if self.start_freq >= self.end_freq:
+            freqs = np.array([self.start_freq])
+        else:
+            # num_tones points from start to end
+            freqs = np.logspace(np.log10(self.start_freq), np.log10(self.end_freq), self.multitone_count)
+        
+        # Snap frequencies to FFT bins for perfect looping if we wanted to be strict,
+        # but for general playback, exact frequencies are fine.
+        # However, to make it loop perfectly without clicks, we should ensure integer cycles in the buffer.
+        # Let's define a buffer length, say 1 second (or closest power of 2).
+        N = int(sample_rate) # 1 second buffer
+        
+        # Adjust frequencies to be integer multiples of fs/N (bin centers)
+        bin_width = sample_rate / N
+        freqs = np.round(freqs / bin_width) * bin_width
+        
+        # Newman Phase for Crest Factor Minimization
+        # phi_k = pi * k^2 / N_tones
+        phases = np.pi * (np.arange(len(freqs))**2) / len(freqs)
+        
+        t = np.arange(N) / sample_rate
+        signal = np.zeros(N)
+        
+        for f, p in zip(freqs, phases):
+            signal += np.sin(2 * np.pi * f * t + p)
+            
+        # Normalize
+        max_val = np.max(np.abs(signal))
+        if max_val > 0:
+            signal /= max_val
+            
+        return signal
+
+    def _generate_mls(self, sample_rate):
+        """Generates a Maximum Length Sequence (MLS)."""
+        # MLS generation using Linear Feedback Shift Register (LFSR)
+        # Polynomials for common orders
+        taps = {
+            10: [10, 7],
+            11: [11, 9],
+            12: [12, 11, 10, 4],
+            13: [13, 12, 10, 9],
+            14: [14, 13, 12, 2],
+            15: [15, 14],
+            16: [16, 15, 13, 4],
+            17: [17, 14],
+            18: [18, 11]
+        }
+        
+        if self.mls_order not in taps:
+            self.mls_order = 15 # Fallback
+            
+        tap_indices = [x - 1 for x in taps[self.mls_order]] # 0-indexed
+        N = 2**self.mls_order - 1
+        
+        # Python implementation of LFSR might be slow for large N.
+        # For N=18, len=262143. It's okay.
+        
+        # Faster approach: use scipy.signal.max_len_seq if available, but it's not standard in all versions.
+        # Let's try to use scipy.signal.max_len_seq
+        try:
+            import scipy.signal
+            seq, state = scipy.signal.max_len_seq(self.mls_order)
+            # seq is 0/1. Convert to -1/1
+            signal = seq.astype(float) * 2 - 1
+            return signal
+        except:
+            # Fallback manual implementation (slow)
+            print("scipy.signal.max_len_seq not found/failed, using slow fallback")
+            state = np.ones(self.mls_order, dtype=int)
+            signal = np.zeros(N)
+            
+            for i in range(N):
+                # Feedback
+                feedback = 0
+                for tap in tap_indices:
+                    feedback ^= state[tap]
+                
+                output = state[-1]
+                signal[i] = float(output * 2 - 1)
+                
+                # Shift
+                state = np.roll(state, 1)
+                state[0] = feedback
+                
+            return signal
+
+    def _generate_burst(self, sample_rate):
+        """Generates a Tone Burst."""
+        # Total cycle length = On + Off
+        total_cycles = self.burst_on_cycles + self.burst_off_cycles
+        cycle_duration = 1.0 / self.frequency
+        total_duration = total_cycles * cycle_duration
+        
+        num_samples = int(total_duration * sample_rate)
+        t = np.arange(num_samples) / sample_rate
+        
+        # Continuous sine
+        sine = np.sin(2 * np.pi * self.frequency * t)
+        
+        # Envelope
+        on_duration = self.burst_on_cycles * cycle_duration
+        on_samples = int(on_duration * sample_rate)
+        
+        envelope = np.zeros(num_samples)
+        envelope[:on_samples] = 1.0
+        
+        return sine * envelope
+
     def start_generation(self):
         if self.is_playing:
             return
@@ -82,10 +202,18 @@ class SignalGenerator(MeasurementModule):
         self._sweep_time = 0
         sample_rate = self.audio_engine.sample_rate
         
-        # Pre-generate noise if needed
+        # Pre-generate buffer for buffer-based signals
+        self._buffer = None
+        self._buffer_index = 0
+        
         if self.waveform == 'noise':
-            self._noise_buffer = self._generate_noise_buffer(sample_rate)
-            self._noise_index = 0
+            self._buffer = self._generate_noise_buffer(sample_rate)
+        elif self.waveform == 'multitone':
+            self._buffer = self._generate_multitone(sample_rate)
+        elif self.waveform == 'mls':
+            self._buffer = self._generate_mls(sample_rate)
+        elif self.waveform == 'burst':
+            self._buffer = self._generate_burst(sample_rate)
         
         def callback(indata, outdata, frames, time, status):
             if status:
@@ -93,20 +221,32 @@ class SignalGenerator(MeasurementModule):
                 
             t = np.arange(frames) / sample_rate
             
-            if self.waveform == 'noise':
+            if self._buffer is not None:
                 # Loop through pre-generated buffer
                 chunk_size = frames
-                if self._noise_index + chunk_size > len(self._noise_buffer):
-                    # Wrap around
-                    remainder = len(self._noise_buffer) - self._noise_index
-                    outdata[:remainder, 0] = self._noise_buffer[self._noise_index:] * self.amplitude
-                    outdata[remainder:, 0] = self._noise_buffer[:chunk_size-remainder] * self.amplitude
-                    self._noise_index = chunk_size - remainder
-                else:
-                    outdata[:, 0] = self._noise_buffer[self._noise_index:self._noise_index+chunk_size] * self.amplitude
-                    self._noise_index += chunk_size
+                buf_len = len(self._buffer)
+                
+                # If buffer is shorter than chunk (unlikely for reasonable settings but possible for burst)
+                # We need to tile it or handle it.
+                # Simplified: assume buffer is long enough or we loop carefully.
+                
+                out_chunk = np.zeros(chunk_size)
+                current_idx = 0
+                
+                while current_idx < chunk_size:
+                    remaining = chunk_size - current_idx
+                    available = buf_len - self._buffer_index
                     
-                # Copy to second channel if available
+                    to_copy = min(remaining, available)
+                    out_chunk[current_idx:current_idx+to_copy] = self._buffer[self._buffer_index:self._buffer_index+to_copy]
+                    
+                    self._buffer_index += to_copy
+                    current_idx += to_copy
+                    
+                    if self._buffer_index >= buf_len:
+                        self._buffer_index = 0
+                
+                outdata[:, 0] = out_chunk * self.amplitude
                 if outdata.shape[1] > 1:
                     outdata[:, 1] = outdata[:, 0]
                 return
@@ -125,11 +265,6 @@ class SignalGenerator(MeasurementModule):
                     freqs = self.start_freq * (self.end_freq / self.start_freq) ** (current_times / self.sweep_duration)
                 else:
                     freqs = self.start_freq + (self.end_freq - self.start_freq) * (current_times / self.sweep_duration)
-                
-                # Phase integration is tricky for variable frequency in blocks.
-                # Simplified approach: use instantaneous phase accumulation
-                # This might have discontinuities at block boundaries if not careful.
-                # Better: Calculate phase directly from integral of frequency function.
                 
                 if self.log_sweep:
                     # Integral of A * B^t is A * B^t / ln(B)
@@ -162,7 +297,6 @@ class SignalGenerator(MeasurementModule):
                     signal = np.zeros(frames)
 
             # Output
-            # Check how many channels we have in outdata
             num_channels = outdata.shape[1]
             
             if num_channels >= 1:
@@ -170,11 +304,6 @@ class SignalGenerator(MeasurementModule):
             
             if num_channels >= 2:
                 outdata[:, 1] = signal
-                
-            # If more channels, we could replicate or leave silence. 
-            # For now, just filling 1 and 2 is enough for Mono/Stereo/Left/Right mappings.
-            # If mapping is 'Left' only, num_channels will be 1.
-            # If mapping is 'Stereo', num_channels will be 2.
 
         self.audio_engine.start_stream(callback, channels=2) # Request 2, but engine might map fewer
 
@@ -198,17 +327,65 @@ class SignalGeneratorWidget(QWidget):
         
         # Waveform
         self.wave_combo = QComboBox()
-        self.wave_combo.addItems(['sine', 'square', 'triangle', 'sawtooth', 'noise'])
+        self.wave_combo.addItems(['sine', 'square', 'triangle', 'sawtooth', 'noise', 'multitone', 'mls', 'burst'])
         self.wave_combo.currentTextChanged.connect(self.on_wave_changed)
         basic_layout.addRow("Waveform:", self.wave_combo)
         
-        # Noise Color (Visible only when noise is selected)
+        # Dynamic Parameters Stack
+        self.param_stack = QWidget()
+        self.param_layout = QVBoxLayout(self.param_stack)
+        self.param_layout.setContentsMargins(0,0,0,0)
+        
+        # 1. Noise Params
+        self.noise_widget = QWidget()
+        noise_form = QFormLayout(self.noise_widget)
         self.noise_combo = QComboBox()
         self.noise_combo.addItems(['white', 'pink', 'brown'])
-        self.noise_combo.currentTextChanged.connect(self.on_noise_changed)
-        basic_layout.addRow("Noise Color:", self.noise_combo)
+        self.noise_combo.currentTextChanged.connect(lambda v: setattr(self.module, 'noise_color', v))
+        noise_form.addRow("Color:", self.noise_combo)
         
-        # Frequency
+        # 2. Multitone Params
+        self.multitone_widget = QWidget()
+        mt_form = QFormLayout(self.multitone_widget)
+        self.mt_count_spin = QDoubleSpinBox()
+        self.mt_count_spin.setDecimals(0); self.mt_count_spin.setRange(2, 1000); self.mt_count_spin.setValue(10)
+        self.mt_count_spin.valueChanged.connect(lambda v: setattr(self.module, 'multitone_count', int(v)))
+        mt_form.addRow("Tone Count:", self.mt_count_spin)
+        
+        # 3. MLS Params
+        self.mls_widget = QWidget()
+        mls_form = QFormLayout(self.mls_widget)
+        self.mls_order_combo = QComboBox()
+        self.mls_order_combo.addItems([str(i) for i in range(10, 19)])
+        self.mls_order_combo.setCurrentText("15")
+        self.mls_order_combo.currentTextChanged.connect(lambda v: setattr(self.module, 'mls_order', int(v)))
+        mls_form.addRow("Order (N):", self.mls_order_combo)
+        
+        # 4. Burst Params
+        self.burst_widget = QWidget()
+        burst_form = QFormLayout(self.burst_widget)
+        self.burst_on_spin = QDoubleSpinBox()
+        self.burst_on_spin.setDecimals(0); self.burst_on_spin.setRange(1, 1000); self.burst_on_spin.setValue(10)
+        self.burst_on_spin.valueChanged.connect(lambda v: setattr(self.module, 'burst_on_cycles', int(v)))
+        burst_form.addRow("On Cycles:", self.burst_on_spin)
+        self.burst_off_spin = QDoubleSpinBox()
+        self.burst_off_spin.setDecimals(0); self.burst_off_spin.setRange(1, 10000); self.burst_off_spin.setValue(90)
+        self.burst_off_spin.valueChanged.connect(lambda v: setattr(self.module, 'burst_off_cycles', int(v)))
+        burst_form.addRow("Off Cycles:", self.burst_off_spin)
+        
+        # Add all to layout but hide initially
+        self.param_layout.addWidget(self.noise_widget)
+        self.param_layout.addWidget(self.multitone_widget)
+        self.param_layout.addWidget(self.mls_widget)
+        self.param_layout.addWidget(self.burst_widget)
+        self.noise_widget.hide()
+        self.multitone_widget.hide()
+        self.mls_widget.hide()
+        self.burst_widget.hide()
+        
+        basic_layout.addRow(self.param_stack)
+        
+        # Frequency (Shared)
         freq_layout = QHBoxLayout()
         self.freq_spin = QDoubleSpinBox()
         self.freq_spin.setRange(20, 20000)
@@ -245,7 +422,7 @@ class SignalGeneratorWidget(QWidget):
         layout.addWidget(basic_group)
         
         # --- Sweep Controls ---
-        sweep_group = QGroupBox("Frequency Sweep")
+        sweep_group = QGroupBox("Frequency Sweep (Sine Only)")
         sweep_group.setCheckable(True)
         sweep_group.setChecked(False)
         sweep_group.toggled.connect(self.on_sweep_toggled)
@@ -327,19 +504,33 @@ class SignalGeneratorWidget(QWidget):
 
     def on_wave_changed(self, val):
         self.module.waveform = val
-        # Enable/Disable frequency control based on noise
-        is_noise = val == 'noise'
-        self.freq_spin.setEnabled(not is_noise)
-        self.freq_slider.setEnabled(not is_noise)
-        self.noise_combo.setEnabled(is_noise)
-
-    def on_noise_changed(self, val):
-        self.module.noise_color = val
+        
+        # Hide all specific params
+        self.noise_widget.hide()
+        self.multitone_widget.hide()
+        self.mls_widget.hide()
+        self.burst_widget.hide()
+        
+        # Show relevant params
+        if val == 'noise':
+            self.noise_widget.show()
+        elif val == 'multitone':
+            self.multitone_widget.show()
+        elif val == 'mls':
+            self.mls_widget.show()
+        elif val == 'burst':
+            self.burst_widget.show()
+            
+        # Enable/Disable frequency control
+        # Noise and MLS don't use single frequency
+        use_freq = val not in ['noise', 'mls']
+        self.freq_spin.setEnabled(use_freq)
+        self.freq_slider.setEnabled(use_freq)
 
     def on_sweep_toggled(self, checked):
         self.module.sweep_enabled = checked
         # Disable fixed frequency if sweep is on
-        enabled = not checked and self.module.waveform != 'noise'
+        enabled = not checked and self.module.waveform not in ['noise', 'mls']
         self.freq_spin.setEnabled(enabled)
         self.freq_slider.setEnabled(enabled)
 
