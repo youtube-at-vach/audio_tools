@@ -12,16 +12,19 @@ class SpectrumAnalyzer(MeasurementModule):
         self.audio_engine = audio_engine
         self.is_running = False
         self.buffer_size = 4096
-        self.input_data = np.zeros(self.buffer_size)
+        # Store stereo data: (frames, 2)
+        self.input_data = np.zeros((self.buffer_size, 2))
         
         # Analysis parameters
         self.window_type = 'hanning'
         self.averaging = 0.0 # 0.0 to 0.95
         self.peak_hold = False
         self.octave_smoothing = 'None' # None, 1/1, 1/3, 1/6, 1/12, 1/24
+        self.analysis_mode = 'Spectrum' # 'Spectrum', 'Cross Spectrum'
         
         # State
         self._avg_magnitude = None
+        self._avg_cross_spectrum = None # Complex average for Cross Spectrum
         self._peak_magnitude = None
         self.overall_rms = 0.0
 
@@ -41,8 +44,9 @@ class SpectrumAnalyzer(MeasurementModule):
 
     def set_buffer_size(self, size):
         self.buffer_size = size
-        self.input_data = np.zeros(self.buffer_size)
+        self.input_data = np.zeros((self.buffer_size, 2))
         self._avg_magnitude = None
+        self._avg_cross_spectrum = None
         self._peak_magnitude = None
 
     def start_analysis(self):
@@ -51,28 +55,28 @@ class SpectrumAnalyzer(MeasurementModule):
 
         self.is_running = True
         self._avg_magnitude = None
+        self._avg_cross_spectrum = None
         self._peak_magnitude = None
         self.overall_rms = 0.0
-        self.input_data = np.zeros(self.buffer_size)
+        self.input_data = np.zeros((self.buffer_size, 2))
         
         def callback(indata, outdata, frames, time, status):
             if status:
                 print(status)
             
             # Shift buffer and append new data
-            # Check channels
+            # We always capture 2 channels now if available
             if indata.shape[1] >= 2:
-                # Average stereo to mono for analysis
-                new_data = np.mean(indata, axis=1)
+                new_data = indata[:, :2]
             else:
-                # Mono
-                new_data = indata[:, 0]
+                # If mono, duplicate to stereo for simplicity or handle gracefully
+                new_data = np.column_stack((indata[:, 0], indata[:, 0]))
             
             # Efficient ring buffer or just roll
             if len(new_data) > self.buffer_size:
                 self.input_data[:] = new_data[-self.buffer_size:]
             else:
-                self.input_data = np.roll(self.input_data, -len(new_data))
+                self.input_data = np.roll(self.input_data, -len(new_data), axis=0)
                 self.input_data[-len(new_data):] = new_data
             
             outdata.fill(0)
@@ -111,6 +115,13 @@ class SpectrumAnalyzerWidget(QWidget):
         self.toggle_btn.setStyleSheet("QPushButton:checked { background-color: #ccffcc; }")
         row1_layout.addWidget(self.toggle_btn)
         
+        # Mode Selection
+        row1_layout.addWidget(QLabel("Mode:"))
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(['Spectrum', 'Cross Spectrum'])
+        self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
+        row1_layout.addWidget(self.mode_combo)
+
         # FFT Size
         row1_layout.addWidget(QLabel("FFT Size:"))
         self.fft_combo = QComboBox()
@@ -142,7 +153,7 @@ class SpectrumAnalyzerWidget(QWidget):
         self.avg_label = QLabel("Avg: 0%")
         row2_layout.addWidget(self.avg_label)
         self.avg_slider = QSlider(Qt.Orientation.Horizontal)
-        self.avg_slider.setRange(0, 95)
+        self.avg_slider.setRange(0, 99) # Allow up to 99% for heavy averaging
         self.avg_slider.setValue(0)
         self.avg_slider.setFixedWidth(100)
         self.avg_slider.valueChanged.connect(self.on_avg_changed)
@@ -207,27 +218,6 @@ class SpectrumAnalyzerWidget(QWidget):
         pos = evt[0]
         if self.plot_widget.sceneBoundingRect().contains(pos):
             mouse_point = self.plot_widget.plotItem.vb.mapSceneToView(pos)
-            # Log mode x-axis handling
-            # If log mode is True, x is log10(freq)
-            # But pyqtgraph's mapSceneToView handles the log mapping if setLogMode is used?
-            # Actually, setLogMode(x=True) means the view expects log10 values for X.
-            # But the data we plot is linear frequency? No, if we use setLogMode(x=True), 
-            # we usually pass x values as log10(x) OR we pass linear x and pyqtgraph handles it?
-            # Wait, pyqtgraph setLogMode documentation says:
-            # "If True, the axis will be logarithmic. The data plotted must be logarithmic."
-            # So if I plotted linear frequencies, I might have been doing it wrong or pyqtgraph is smart.
-            # Let's check update_plot. 
-            # freqs = np.fft.rfftfreq... (linear)
-            # self.plot_curve.setData(freqs[1:], magnitude[1:])
-            # If setLogMode(x=True) is on, pyqtgraph expects log10(x).
-            # Ah, actually, if I pass linear data to a log plot, it might not show correctly unless I convert it.
-            # Let's verify. If I see the plot working, maybe I am passing linear and it's just squashed?
-            # Standard pyqtgraph usage for log plot is to pass log10(x).
-            # However, PlotWidget might handle it if I didn't convert.
-            # Let's assume for now I need to handle the coordinate conversion for the label.
-            
-            # Actually, let's fix the plotting to be correct for log mode if it isn't.
-            # But first, the cursor.
             
             x = mouse_point.x()
             y = mouse_point.y()
@@ -248,6 +238,14 @@ class SpectrumAnalyzerWidget(QWidget):
             self.module.stop_analysis()
             self.timer.stop()
             self.toggle_btn.setText("Start Analysis")
+
+    def on_mode_changed(self, val):
+        self.module.analysis_mode = val
+        # Reset averages when mode changes
+        self.module._avg_magnitude = None
+        self.module._avg_cross_spectrum = None
+        self.module._peak_magnitude = None
+        self.peak_curve.setData([], [])
 
     def on_fft_size_changed(self, val):
         self.module.set_buffer_size(int(val))
@@ -313,9 +311,9 @@ class SpectrumAnalyzerWidget(QWidget):
             return
             
         data = self.module.input_data
+        # data shape is (buffer_size, 2)
         
         # Calculate Overall RMS (dBFS)
-        # RMS = sqrt(mean(data^2))
         rms = np.sqrt(np.mean(data**2))
         overall_db = 20 * np.log10(rms + 1e-12)
         self.overall_label.setText(f"Overall: {overall_db:.1f} dB")
@@ -325,33 +323,72 @@ class SpectrumAnalyzerWidget(QWidget):
             window = np.ones(len(data))
         else:
             window = getattr(np, self.module.window_type)(len(data))
-        windowed_data = data * window
+        
+        # Broadcast window to stereo
+        windowed_data = data * window[:, np.newaxis]
         
         # FFT
-        fft_data = np.fft.rfft(windowed_data)
-        magnitude = np.abs(fft_data)
+        # rfft on axis 0
+        fft_data = np.fft.rfft(windowed_data, axis=0)
         
-        # Convert to dB
-        magnitude = 20 * np.log10(magnitude / len(data) + 1e-12)
+        # Frequency axis
+        sample_rate = self.module.audio_engine.sample_rate
+        freqs = np.fft.rfftfreq(len(data), 1/sample_rate)
         
-        # Averaging
-        if self.module._avg_magnitude is None or len(self.module._avg_magnitude) != len(magnitude):
-            self.module._avg_magnitude = magnitude
-        else:
-            alpha = self.module.averaging
-            self.module._avg_magnitude = alpha * self.module._avg_magnitude + (1 - alpha) * magnitude
-            magnitude = self.module._avg_magnitude
+        magnitude = None
+        
+        if self.module.analysis_mode == 'Spectrum':
+            # Standard Spectrum: Average magnitude of channels (or just mix them)
+            # Let's take magnitude of each channel then average
+            mag_stereo = np.abs(fft_data)
+            mag_mono = np.mean(mag_stereo, axis=1)
             
+            # Convert to dB
+            # Normalize by length
+            mag_mono = mag_mono / len(data)
+            
+            # Averaging (Magnitude)
+            if self.module._avg_magnitude is None or len(self.module._avg_magnitude) != len(mag_mono):
+                self.module._avg_magnitude = mag_mono
+            else:
+                alpha = self.module.averaging
+                self.module._avg_magnitude = alpha * self.module._avg_magnitude + (1 - alpha) * mag_mono
+            
+            magnitude_linear = self.module._avg_magnitude
+            magnitude = 20 * np.log10(magnitude_linear + 1e-12)
+            
+        elif self.module.analysis_mode == 'Cross Spectrum':
+            # Cross Spectrum: Sxy = F1 * conj(F2)
+            F1 = fft_data[:, 0]
+            F2 = fft_data[:, 1]
+            Sxy = F1 * np.conj(F2)
+            
+            # Normalize
+            Sxy = Sxy / (len(data)**2) # Usually normalized by N^2 or similar for power
+            # Actually for magnitude consistency with spectrum, let's normalize by len(data)^2?
+            # Spectrum: |F|/N. Cross: (F/N) * (F/N) = |F|^2 / N^2.
+            # So sqrt(|Sxy|) would be comparable to linear magnitude.
+            
+            # Complex Averaging
+            if self.module._avg_cross_spectrum is None or len(self.module._avg_cross_spectrum) != len(Sxy):
+                self.module._avg_cross_spectrum = Sxy
+            else:
+                alpha = self.module.averaging
+                self.module._avg_cross_spectrum = alpha * self.module._avg_cross_spectrum + (1 - alpha) * Sxy
+            
+            # Calculate Magnitude of the average Cross Spectrum
+            # We take sqrt to be comparable to linear amplitude spectrum
+            avg_Sxy = self.module._avg_cross_spectrum
+            magnitude_linear = np.sqrt(np.abs(avg_Sxy))
+            
+            magnitude = 20 * np.log10(magnitude_linear + 1e-12)
+
         # Peak Hold
         if self.module.peak_hold:
             if self.module._peak_magnitude is None or len(self.module._peak_magnitude) != len(magnitude):
                 self.module._peak_magnitude = magnitude
             else:
                 self.module._peak_magnitude = np.maximum(self.module._peak_magnitude, magnitude)
-        
-        # Frequency axis
-        sample_rate = self.module.audio_engine.sample_rate
-        freqs = np.fft.rfftfreq(len(data), 1/sample_rate)
         
         # Smoothing
         fraction_map = {
@@ -378,15 +415,6 @@ class SpectrumAnalyzerWidget(QWidget):
                 peak_mags = None
         
         # Update curves
-        # IMPORTANT: For LogMode(x=True), we must pass log10(x) to setData?
-        # Or does pyqtgraph handle it? 
-        # "When log mode is enabled, the value of the axis is calculated as log10(value). 
-        #  The data provided to the plot must be pre-transformed."
-        # So I need to take log10 of freqs.
-        
-        # Filter out zero frequency if present (already done with [1:])
-        # But smoothed_freqs might start at 20, which is fine.
-        
         log_freqs = np.log10(plot_freqs + 1e-12)
         self.plot_curve.setData(log_freqs, plot_mags)
         
