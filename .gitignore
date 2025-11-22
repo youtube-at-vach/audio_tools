@@ -46,3 +46,10 @@ ehthumbs.db
 
 # Calibration settings
 calibration_settings.ini
+
+# AppImage / Packaging
+AppDir/
+*.AppImage
+libs/
+venv_build/
+!app_icon.png

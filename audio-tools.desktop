@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Audio Measurement Tools
+Comment=Unified Audio Measurement and Analysis Tools
+Exec=main_gui
+Icon=app_icon
+Categories=AudioVideo;Audio;Engineering;
+Terminal=false
