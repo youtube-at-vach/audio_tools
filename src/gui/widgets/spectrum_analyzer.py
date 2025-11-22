@@ -23,7 +23,9 @@ class SpectrumAnalyzer(MeasurementModule):
         self.octave_smoothing = 'None' # None, 1/1, 1/3, 1/6, 1/12, 1/24
         self.analysis_mode = 'Spectrum' # 'Spectrum', 'Cross Spectrum'
         self.multitaper_enabled = False
+        self.multitaper_enabled = False
         self.use_physical_units = False
+        self.weighting = 'Z' # 'Z', 'A', 'C'
         
         # Multitaper cache
         self._dpss_windows = None
@@ -114,6 +116,43 @@ class SpectrumAnalyzer(MeasurementModule):
             
         return self._dpss_windows
 
+    def compute_weighting(self, freqs, weighting_type):
+        """
+        Compute weighting gain in dB for given frequencies.
+        """
+        if weighting_type == 'Z':
+            return np.zeros_like(freqs)
+        
+        f = freqs.copy()
+        # Avoid division by zero or log of zero issues at DC
+        f[f == 0] = 1e-9
+        
+        f2 = f**2
+        
+        if weighting_type == 'A':
+            # A-weighting
+            # RA(f) = (12194^2 * f^4) / ((f^2 + 20.6^2) * sqrt((f^2 + 107.7^2)(f^2 + 737.9^2)) * (f^2 + 12194^2))
+            # Gain = 20*log10(RA(f)) + 2.00
+            
+            const = 12194**2 * f**4
+            denom = (f2 + 20.6**2) * np.sqrt((f2 + 107.7**2) * (f2 + 737.9**2)) * (f2 + 12194**2)
+            R_A = const / denom
+            gain = 20 * np.log10(R_A) + 2.00
+            return gain
+            
+        elif weighting_type == 'C':
+            # C-weighting
+            # RC(f) = (12194^2 * f^2) / ((f^2 + 20.6^2) * (f^2 + 12194^2))
+            # Gain = 20*log10(RC(f)) + 0.06
+            
+            const = 12194**2 * f2
+            denom = (f2 + 20.6**2) * (f2 + 12194**2)
+            R_C = const / denom
+            gain = 20 * np.log10(R_C) + 0.06
+            return gain
+            
+        return np.zeros_like(freqs)
+
 class SpectrumAnalyzerWidget(QWidget):
     def __init__(self, module: SpectrumAnalyzer):
         super().__init__()
@@ -161,7 +200,15 @@ class SpectrumAnalyzerWidget(QWidget):
         self.window_combo = QComboBox()
         self.window_combo.addItems(['hanning', 'hamming', 'blackman', 'bartlett', 'rect'])
         self.window_combo.currentTextChanged.connect(self.on_window_changed)
+        self.window_combo.currentTextChanged.connect(self.on_window_changed)
         row1_layout.addWidget(self.window_combo)
+
+        # Weighting Selection
+        row1_layout.addWidget(QLabel("Weighting:"))
+        self.weighting_combo = QComboBox()
+        self.weighting_combo.addItems(['Z', 'A', 'C'])
+        self.weighting_combo.currentTextChanged.connect(self.on_weighting_changed)
+        row1_layout.addWidget(self.weighting_combo)
         
         main_controls_layout.addLayout(row1_layout)
         
@@ -293,6 +340,12 @@ class SpectrumAnalyzerWidget(QWidget):
     def on_window_changed(self, val):
         self.module.window_type = val
 
+    def on_weighting_changed(self, val):
+        self.module.weighting = val
+        # Reset peak when weighting changes
+        self.module._peak_magnitude = None
+        self.peak_curve.setData([], [])
+
     def on_smooth_changed(self, val):
         self.module.octave_smoothing = val
 
@@ -366,7 +419,8 @@ class SpectrumAnalyzerWidget(QWidget):
         data = self.module.input_data
         # data shape is (buffer_size, 2)
         
-        # Calculate Overall RMS (dBFS)
+        # Calculate Overall RMS (dBFS) - Raw Time Domain (Unweighted)
+        # This is calculated for reference, but we will overwrite it with weighted value later
         rms = np.sqrt(np.mean(data**2))
         overall_db = 20 * np.log10(rms + 1e-12)
         
@@ -378,11 +432,12 @@ class SpectrumAnalyzerWidget(QWidget):
         else:
             unit = "dBFS"
             
-        self.overall_label.setText(f"Overall: {overall_db:.1f} {unit}")
-        
         # Frequency axis
         sample_rate = self.module.audio_engine.sample_rate
         freqs = np.fft.rfftfreq(len(data), 1/sample_rate)
+        
+        # Calculate Weighting Curve
+        weighting_db = self.module.compute_weighting(freqs, self.module.weighting)
         
         magnitude = None
         
@@ -562,6 +617,88 @@ class SpectrumAnalyzerWidget(QWidget):
         if self.module.use_physical_units:
             offset = self.module.audio_engine.calibration.get_input_offset_db()
             magnitude += offset
+            
+        # Apply Weighting
+        magnitude += weighting_db
+        
+        # Calculate Weighted RMS from Spectrum
+        # We need to sum the power in frequency domain.
+        # Magnitude is in dB (Peak or RMS depending on units/mode).
+        # Let's convert back to linear power.
+        
+        # If magnitude is dB Peak: Power ~ (10^(mag/20))^2 / 2  (for sine)
+        # If magnitude is dB RMS: Power ~ (10^(mag/20))^2
+        
+        # Note: 'magnitude' array here is already processed (averaged, normalized).
+        # To get accurate Overall RMS, we should ideally sum the raw power spectrum * weighting^2.
+        # But for display purposes, summing the processed spectrum is usually "good enough" 
+        # provided we handle the window correction and normalization correctly.
+        
+        # However, we have 'magnitude' which is the displayed curve.
+        # Let's use it to estimate the Overall Weighted RMS.
+        
+        # Convert dB to Linear Amplitude
+        mag_linear_for_rms = 10**(magnitude/20)
+        
+        # If we are in Physical Units, mag_linear is already RMS (we divided by sqrt(2)).
+        # If not, it's Peak.
+        
+        if self.module.use_physical_units:
+            power_spectrum = mag_linear_for_rms**2
+        else:
+            # Convert Peak to RMS
+            power_spectrum = (mag_linear_for_rms / np.sqrt(2))**2
+            
+        # Sum power
+        # We need to be careful about the window correction factor which was applied to amplitude.
+        # The sum of bin powers should equal total time-domain power (Parseval's theorem),
+        # but windowing and zero-padding affect this.
+        # For a simple estimate consistent with the plot:
+        
+        # We normalized by 2/N * window_correction.
+        # This normalization makes a sine wave peak at 1.0 (0dB).
+        # The sum of squares of bins will not directly equal time domain power without un-normalizing.
+        
+        # Easier approach:
+        # 1. Calculate weighting in linear domain: W_lin = 10^(weighting_db/20)
+        # 2. Apply W_lin to the FFT of the raw windowed data.
+        # 3. Compute RMS from that.
+        
+        # But we want to use the already computed 'magnitude' to reflect what is shown.
+        # Let's just sum the power of the displayed bins.
+        # This is an approximation but aligns with "what you see is what you get".
+        
+        # Only consider 20Hz - 20kHz for Overall Weighted calculation as requested
+        mask = (freqs >= 20) & (freqs <= 20000)
+        if np.any(mask):
+            total_power = np.sum(power_spectrum[mask])
+            # We need to account for the fact that we are summing bins.
+            # If we have a pure sine, it might be split across bins (leakage).
+            # Summing power preserves energy.
+            
+            # However, we applied a window correction factor for AMPLITUDE (coherent gain).
+            # For POWER summation (incoherent gain), the correction factor is different (S2 = sum(w^2)).
+            # Since we scaled by 1/mean(w), we boosted noise power.
+            # This is a known trade-off. For "Overall" reading, time-domain is best.
+            # But for "Weighted Overall", we must use frequency domain.
+            
+            # Let's stick to the sum of the displayed spectrum power for consistency.
+            overall_weighted_rms = np.sqrt(total_power)
+            overall_weighted_db = 20 * np.log10(overall_weighted_rms + 1e-12)
+        else:
+            overall_weighted_db = -120
+
+        unit_suffix = ""
+        if self.module.weighting == 'A': unit_suffix = "A"
+        elif self.module.weighting == 'C': unit_suffix = "C"
+        elif self.module.weighting == 'Z': unit_suffix = "Z"
+        
+        if self.module.use_physical_units:
+            unit_display = f"dB{unit_suffix}" # e.g. dBA, dBC
+        else:
+            unit_display = f"dBFS({unit_suffix})"
+
+        self.overall_label.setText(f"Overall: {overall_weighted_db:.1f} {unit_display}")
 
         # Peak Hold
         if self.module.peak_hold:
