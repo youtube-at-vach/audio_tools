@@ -79,6 +79,10 @@ class NetworkAnalyzer(MeasurementModule):
         
         self.worker = None
         self.calibration_worker = None
+        
+        # Calibration (Reference Trace)
+        # Format: {'freqs': np.array, 'mags': np.array, 'phases': np.array}
+        self.reference_trace = None
 
     @property
     def name(self) -> str:
@@ -493,6 +497,24 @@ class NetworkAnalyzerWidget(QWidget):
         
         controls_group.setLayout(form)
         
+        # Calibration Group
+        cal_group = QGroupBox("Calibration")
+        cal_layout = QFormLayout()
+        
+        self.store_ref_btn = QPushButton("Store Reference")
+        self.store_ref_btn.clicked.connect(self.on_store_reference)
+        cal_layout.addRow(self.store_ref_btn)
+        
+        self.clear_ref_btn = QPushButton("Clear Reference")
+        self.clear_ref_btn.clicked.connect(self.on_clear_reference)
+        cal_layout.addRow(self.clear_ref_btn)
+        
+        self.apply_ref_check = QCheckBox("Apply Reference")
+        self.apply_ref_check.toggled.connect(self.on_apply_reference_changed)
+        cal_layout.addRow(self.apply_ref_check)
+        
+        cal_group.setLayout(cal_layout)
+        
         # Buttons
         btn_layout = QVBoxLayout()
         self.start_btn = QPushButton("Start Sweep")
@@ -507,6 +529,7 @@ class NetworkAnalyzerWidget(QWidget):
         
         left_layout = QVBoxLayout()
         left_layout.addWidget(controls_group)
+        left_layout.addWidget(cal_group)
         left_layout.addLayout(btn_layout)
         layout.addLayout(left_layout)
         
@@ -550,6 +573,25 @@ class NetworkAnalyzerWidget(QWidget):
         self.lat_label.setText(f"Latency: {lat*1000:.2f} ms")
         self.lat_btn.setEnabled(True)
 
+    def on_store_reference(self):
+        if not self.freqs:
+            return
+        
+        self.module.reference_trace = {
+            'freqs': np.array(self.freqs),
+            'mags': np.array(self.mags),
+            'phases': np.array(self.phases)
+        }
+        print("Reference trace stored.")
+
+    def on_clear_reference(self):
+        self.module.reference_trace = None
+        self.refresh_plots()
+        print("Reference trace cleared.")
+
+    def on_apply_reference_changed(self, checked):
+        self.refresh_plots()
+
     def on_start_stop(self, checked):
         if checked:
             self.freqs = []
@@ -584,9 +626,36 @@ class NetworkAnalyzerWidget(QWidget):
             if smooth_mode == "Heavy": window_size = 9
             
             # Simple moving average
-            mags_to_plot = scipy.signal.savgol_filter(self.mags, min(len(self.mags), window_size), 1) if len(self.mags) >= window_size else self.mags
-            phases_to_plot = scipy.signal.savgol_filter(self.phases, min(len(self.phases), window_size), 1) if len(self.phases) >= window_size else self.phases
+            mags_to_plot = scipy.signal.savgol_filter(mags_to_plot, min(len(mags_to_plot), window_size), 1) if len(mags_to_plot) >= window_size else mags_to_plot
+            phases_to_plot = scipy.signal.savgol_filter(phases_to_plot, min(len(phases_to_plot), window_size), 1) if len(phases_to_plot) >= window_size else phases_to_plot
             
+        # Apply Reference if enabled
+        if self.apply_ref_check.isChecked() and self.module.reference_trace is not None:
+            ref = self.module.reference_trace
+            ref_freqs = ref['freqs']
+            ref_mags = ref['mags']
+            ref_phases = ref['phases']
+            
+            # Interpolate reference to current frequencies
+            # We assume freqs are sorted
+            if len(ref_freqs) > 1:
+                interp_mags = np.interp(self.freqs, ref_freqs, ref_mags)
+                interp_phases = np.interp(self.freqs, ref_freqs, ref_phases)
+                
+                # Normalize: Measured - Reference
+                # Mag (dB): M_norm = M_meas - M_ref
+                # Phase (deg): P_norm = P_meas - P_ref
+                
+                # Ensure lists are numpy arrays for subtraction
+                current_mags = np.array(mags_to_plot)
+                current_phases = np.array(phases_to_plot)
+                
+                mags_to_plot = current_mags - interp_mags
+                phases_to_plot = current_phases - interp_phases
+                
+                # Wrap phase
+                phases_to_plot = (phases_to_plot + 180) % 360 - 180
+
         self.mag_curve.setData(self.freqs, mags_to_plot)
         self.phase_curve.setData(self.freqs, phases_to_plot)
 
