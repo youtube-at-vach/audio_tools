@@ -1,0 +1,49 @@
+name: Build AppImage
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libasound2-dev libxcb-cursor0
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build standalone binary with PyInstaller
+      run: |
+        # Create libs directory if it doesn't exist (though not strictly needed for system-wide pyinstaller)
+        mkdir -p libs
+        # Run PyInstaller
+        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.png --add-data "src:src" --add-data "legacy:legacy" main_gui.py
+
+    - name: Build AppImage
+      run: |
+        chmod +x build_appimage.sh
+        ./build_appimage.sh
+
+    - name: Upload AppImage
+      uses: actions/upload-artifact@v3
+      with:
+        name: Audio_Measurement_Tools-AppImage
+        path: Audio_Measurement_Tools-*.AppImage
