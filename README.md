@@ -11,9 +11,8 @@ PythonとPyQt6を使用して構築されており、オーディオ信号の生
 *   **Spectrum Analyzer**: リアルタイムで周波数スペクトルを表示します。
 *   **LUFS Meter**: ラウドネス（LUFS）を測定します。
 *   **Loopback Finder**: オーディオインターフェースのループバック遅延を測定・補正します。
-*   **Frequency Response Analyzer**: スイープ信号を用いて周波数特性を測定します。
 *   **IMD Analyzer**: 相互変調歪み（IMD）を測定します。
-*   **Network Analyzer**: ゲインと位相を含む詳細なネットワーク解析を行います（開発中）。
+*   **Network Analyzer**: ゲインと位相を含む詳細なネットワーク解析を行います（周波数特性測定を含む）。
 *   **Distortion Analyzer**: THD, THD+N, SINAD などの歪み率を測定します。
 
 ## 🚀 クイックスタート (Quick Start)
