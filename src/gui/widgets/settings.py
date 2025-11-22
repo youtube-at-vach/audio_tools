@@ -1,6 +1,248 @@
+import numpy as np
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, QPushButton, 
-                             QFormLayout, QGroupBox, QMessageBox, QLineEdit)
+                             QFormLayout, QGroupBox, QMessageBox, QLineEdit, QDialog,
+                             QDialogButtonBox, QDoubleSpinBox, QHBoxLayout)
+from PyQt6.QtCore import QTimer, Qt
 from src.core.audio_engine import AudioEngine
+
+class OutputCalibrationDialog(QDialog):
+    def __init__(self, audio_engine: AudioEngine, parent=None):
+        super().__init__(parent)
+        self.audio_engine = audio_engine
+        self.setWindowTitle("Output Calibration Wizard")
+        self.resize(400, 300)
+        self.init_ui()
+        self.is_playing = False
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+        
+        # Step 1
+        layout.addWidget(QLabel("<b>Step 1:</b> Connect a voltmeter to the output."))
+        
+        # Step 2
+        layout.addWidget(QLabel("<b>Step 2:</b> Set Test Tone."))
+        form = QFormLayout()
+        self.freq_spin = QDoubleSpinBox()
+        self.freq_spin.setRange(20, 20000); self.freq_spin.setValue(1000)
+        form.addRow("Frequency (Hz):", self.freq_spin)
+        
+        self.level_spin = QDoubleSpinBox()
+        self.level_spin.setRange(-60, 0); self.level_spin.setValue(-12)
+        form.addRow("Level (dBFS):", self.level_spin)
+        layout.addLayout(form)
+        
+        # Step 3
+        layout.addWidget(QLabel("<b>Step 3:</b> Play Tone."))
+        self.play_btn = QPushButton("Start Tone")
+        self.play_btn.setCheckable(True)
+        self.play_btn.clicked.connect(self.on_play_toggle)
+        layout.addWidget(self.play_btn)
+        
+        # Step 4
+        layout.addWidget(QLabel("<b>Step 4:</b> Enter measured voltage."))
+        meas_layout = QHBoxLayout()
+        self.meas_spin = QDoubleSpinBox()
+        self.meas_spin.setRange(-200, 1000); self.meas_spin.setDecimals(4)
+        meas_layout.addWidget(self.meas_spin)
+        
+        self.unit_combo = QComboBox()
+        self.unit_combo.addItems(["Vrms", "dBV", "dBu"])
+        meas_layout.addWidget(self.unit_combo)
+        layout.addLayout(meas_layout)
+        
+        # Step 5
+        layout.addWidget(QLabel("<b>Step 5:</b> Save."))
+        self.save_btn = QPushButton("Calculate & Save")
+        self.save_btn.clicked.connect(self.on_save)
+        layout.addWidget(self.save_btn)
+        
+        self.setLayout(layout)
+
+    def on_play_toggle(self, checked):
+        if checked:
+            self.start_tone()
+            self.play_btn.setText("Stop Tone")
+        else:
+            self.stop_tone()
+            self.play_btn.setText("Start Tone")
+
+    def start_tone(self):
+        freq = self.freq_spin.value()
+        dbfs = self.level_spin.value()
+        amp = 10**(dbfs/20)
+        sr = self.audio_engine.sample_rate
+        
+        def callback(indata, outdata, frames, time, status):
+            t = (np.arange(frames) + callback.t_start) / sr
+            callback.t_start += frames
+            tone = amp * np.sin(2 * np.pi * freq * t)
+            # Stereo output
+            if outdata.shape[1] >= 2:
+                outdata[:, 0] = tone
+                outdata[:, 1] = tone
+            else:
+                outdata[:, 0] = tone
+        
+        callback.t_start = 0
+        self.audio_engine.start_stream(callback)
+        self.is_playing = True
+
+    def stop_tone(self):
+        if self.is_playing:
+            self.audio_engine.stop_stream()
+            self.is_playing = False
+
+    def on_save(self):
+        try:
+            val = self.meas_spin.value()
+            unit = self.unit_combo.currentText()
+            dbfs = self.level_spin.value()
+            
+            # Convert to Vpeak
+            if unit == "Vrms":
+                v_peak = val * np.sqrt(2)
+            elif unit == "dBV":
+                v_rms = 10**(val/20)
+                v_peak = v_rms * np.sqrt(2)
+            elif unit == "dBu":
+                v_rms = 10**((val - 2.218)/20) # 0dBu = 0.7746V
+                v_peak = v_rms * np.sqrt(2)
+            
+            # Calculate Gain (V/FS)
+            # V_out_peak = Gain * 10^(dBFS/20)
+            # Gain = V_out_peak / 10^(dBFS/20)
+            gain = v_peak / (10**(dbfs/20))
+            
+            self.audio_engine.calibration.set_output_gain(gain)
+            QMessageBox.information(self, "Success", f"Output Gain calibrated to {gain:.4f} V/FS")
+            self.accept()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
+
+    def closeEvent(self, event):
+        self.stop_tone()
+        super().closeEvent(event)
+
+class InputCalibrationDialog(QDialog):
+    def __init__(self, audio_engine: AudioEngine, parent=None):
+        super().__init__(parent)
+        self.audio_engine = audio_engine
+        self.setWindowTitle("Input Calibration Wizard")
+        self.resize(400, 300)
+        self.init_ui()
+        self.is_measuring = False
+        self.current_rms_dbfs = -100.0
+        
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_level)
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+        
+        # Step 1
+        layout.addWidget(QLabel("<b>Step 1:</b> Connect a known signal source to the input."))
+        
+        # Step 2
+        layout.addWidget(QLabel("<b>Step 2:</b> Measure Input Level."))
+        self.measure_btn = QPushButton("Start Measurement")
+        self.measure_btn.setCheckable(True)
+        self.measure_btn.clicked.connect(self.on_measure_toggle)
+        layout.addWidget(self.measure_btn)
+        
+        self.level_label = QLabel("Current Level: -- dBFS")
+        self.level_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        layout.addWidget(self.level_label)
+        
+        # Step 3
+        layout.addWidget(QLabel("<b>Step 3:</b> Enter known source voltage."))
+        meas_layout = QHBoxLayout()
+        self.meas_spin = QDoubleSpinBox()
+        self.meas_spin.setRange(-200, 1000); self.meas_spin.setDecimals(4)
+        meas_layout.addWidget(self.meas_spin)
+        
+        self.unit_combo = QComboBox()
+        self.unit_combo.addItems(["Vrms", "dBV", "dBu"])
+        meas_layout.addWidget(self.unit_combo)
+        layout.addLayout(meas_layout)
+        
+        # Step 4
+        layout.addWidget(QLabel("<b>Step 4:</b> Save."))
+        self.save_btn = QPushButton("Calculate & Save")
+        self.save_btn.clicked.connect(self.on_save)
+        layout.addWidget(self.save_btn)
+        
+        self.setLayout(layout)
+
+    def on_measure_toggle(self, checked):
+        if checked:
+            self.start_measurement()
+            self.measure_btn.setText("Stop Measurement")
+            self.timer.start(100)
+        else:
+            self.stop_measurement()
+            self.measure_btn.setText("Start Measurement")
+            self.timer.stop()
+
+    def start_measurement(self):
+        def callback(indata, outdata, frames, time, status):
+            # Calculate RMS of first channel
+            if indata.shape[1] > 0:
+                rms = np.sqrt(np.mean(indata[:, 0]**2))
+                db = 20 * np.log10(rms + 1e-12)
+                self.current_rms_dbfs = db
+            outdata.fill(0)
+            
+        self.audio_engine.start_stream(callback)
+        self.is_measuring = True
+
+    def stop_measurement(self):
+        if self.is_measuring:
+            self.audio_engine.stop_stream()
+            self.is_measuring = False
+
+    def update_level(self):
+        self.level_label.setText(f"Current Level: {self.current_rms_dbfs:.1f} dBFS")
+
+    def on_save(self):
+        try:
+            val = self.meas_spin.value()
+            unit = self.unit_combo.currentText()
+            measured_dbfs = self.current_rms_dbfs
+            
+            if measured_dbfs < -100:
+                raise ValueError("No signal detected. Please check connections.")
+            
+            # Convert Known Voltage to Vpeak
+            if unit == "Vrms":
+                v_peak = val * np.sqrt(2)
+            elif unit == "dBV":
+                v_rms = 10**(val/20)
+                v_peak = v_rms * np.sqrt(2)
+            elif unit == "dBu":
+                v_rms = 10**((val - 2.218)/20)
+                v_peak = v_rms * np.sqrt(2)
+            
+            # Calculate Sensitivity (V/FS)
+            # Measured_FS_Peak = 10^(measured_dbfs/20) * sqrt(2)
+            
+            measured_fs_peak = (10**(measured_dbfs/20)) * np.sqrt(2)
+            
+            # Sensitivity = Volts / FS
+            # We want Measured_FS_Peak * Sensitivity = V_peak
+            sensitivity = v_peak / measured_fs_peak
+            
+            self.audio_engine.calibration.set_input_sensitivity(sensitivity)
+            QMessageBox.information(self, "Success", f"Input Sensitivity calibrated to {sensitivity:.4f} V/FS")
+            self.accept()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
+
+    def closeEvent(self, event):
+        self.stop_measurement()
+        super().closeEvent(event)
 
 class SettingsWidget(QWidget):
     def __init__(self, audio_engine: AudioEngine):
@@ -73,7 +315,6 @@ class SettingsWidget(QWidget):
         conf_layout.addRow("Output Channels:", self.out_ch_combo)
         
         conf_group.setLayout(conf_layout)
-        conf_group.setLayout(conf_layout)
         layout.addWidget(conf_group)
         
         # Calibration Group
@@ -84,19 +325,43 @@ class SettingsWidget(QWidget):
         self.in_sens_edit = QLineEdit()
         self.in_sens_edit.setText(str(self.audio_engine.calibration.input_sensitivity))
         self.in_sens_edit.editingFinished.connect(self.on_in_sens_changed)
-        cal_layout.addRow("Input Sensitivity (V/FS):", self.in_sens_edit)
+        
+        in_cal_btn = QPushButton("Wizard")
+        in_cal_btn.clicked.connect(self.open_input_calibration)
+        in_cal_layout = QHBoxLayout()
+        in_cal_layout.addWidget(self.in_sens_edit)
+        in_cal_layout.addWidget(in_cal_btn)
+        
+        cal_layout.addRow("Input Sensitivity (V/FS):", in_cal_layout)
         
         # Output Gain
         self.out_gain_edit = QLineEdit()
         self.out_gain_edit.setText(str(self.audio_engine.calibration.output_gain))
         self.out_gain_edit.editingFinished.connect(self.on_out_gain_changed)
-        cal_layout.addRow("Output Gain (V/FS):", self.out_gain_edit)
+        
+        out_cal_btn = QPushButton("Wizard")
+        out_cal_btn.clicked.connect(self.open_output_calibration)
+        out_cal_layout = QHBoxLayout()
+        out_cal_layout.addWidget(self.out_gain_edit)
+        out_cal_layout.addWidget(out_cal_btn)
+        
+        cal_layout.addRow("Output Gain (V/FS):", out_cal_layout)
         
         cal_group.setLayout(cal_layout)
         layout.addWidget(cal_group)
         
         layout.addStretch()
         self.setLayout(layout)
+
+    def open_input_calibration(self):
+        dlg = InputCalibrationDialog(self.audio_engine, self)
+        if dlg.exec():
+            self.in_sens_edit.setText(str(self.audio_engine.calibration.input_sensitivity))
+
+    def open_output_calibration(self):
+        dlg = OutputCalibrationDialog(self.audio_engine, self)
+        if dlg.exec():
+            self.out_gain_edit.setText(str(self.audio_engine.calibration.output_gain))
 
     def on_in_sens_changed(self):
         try:
