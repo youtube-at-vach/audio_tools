@@ -482,6 +482,11 @@ class SpectrumAnalyzerWidget(QWidget):
             else:
                 window = getattr(np, self.module.window_type)(len(data))
             
+            # Calculate Window Correction Factor (Amplitude Correction)
+            # Factor = 1 / mean(window)
+            # This compensates for the coherent gain loss due to windowing
+            window_correction = 1.0 / np.mean(window)
+            
             # Broadcast window to stereo
             windowed_data = data * window[:, np.newaxis]
             
@@ -489,13 +494,24 @@ class SpectrumAnalyzerWidget(QWidget):
             # rfft on axis 0
             fft_data = np.fft.rfft(windowed_data, axis=0)
             
+            # Normalization Factor for Peak Amplitude
+            # 2/N for one-sided spectrum (DC and Nyquist need special handling but usually ignored for general audio display)
+            # * window_correction
+            norm_factor = (2.0 / len(data)) * window_correction
+            
             if self.module.analysis_mode == 'Spectrum':
                 # Standard Spectrum
                 mag_stereo = np.abs(fft_data)
                 mag_mono = np.mean(mag_stereo, axis=1)
                 
-                # Normalize
-                mag_mono = mag_mono / len(data)
+                # Normalize to Peak Amplitude
+                mag_mono = mag_mono * norm_factor
+                
+                # If Physical Units (dBV) are used, we want RMS reading for sine waves
+                # to match the "Overall" RMS reading.
+                # Peak to RMS for sine is 1/sqrt(2)
+                if self.module.use_physical_units:
+                    mag_mono /= np.sqrt(2)
                 
                 # Averaging
                 if self.module._avg_magnitude is None or len(self.module._avg_magnitude) != len(mag_mono):
@@ -514,7 +530,17 @@ class SpectrumAnalyzerWidget(QWidget):
                 Sxy = F1 * np.conj(F2)
                 
                 # Normalize
-                Sxy = Sxy / (len(data)**2)
+                # For Power/Cross Spectrum, normalization is usually (1/N)^2 or similar.
+                # But we want Magnitude of Cross Spectrum to be comparable to Spectrum.
+                # Let's normalize components first or result.
+                # |Sxy| = |F1|*|F2|. If |F1| and |F2| are Peak Amplitudes (unnormalized FFT),
+                # then |Sxy| is proportional to Peak^2 * (N/2)^2 / window_gain^2 ?
+                
+                # Let's apply normalization to the magnitude of Sxy
+                # If we normalized F1 and F2 with norm_factor, then |Sxy_norm| = |F1_norm| * |F2_norm|
+                # So we can multiply Sxy by norm_factor^2
+                
+                Sxy = Sxy * (norm_factor**2)
                 
                 # Complex Averaging
                 if self.module._avg_cross_spectrum is None or len(self.module._avg_cross_spectrum) != len(Sxy):
@@ -526,6 +552,9 @@ class SpectrumAnalyzerWidget(QWidget):
                 # Magnitude
                 avg_Sxy = self.module._avg_cross_spectrum
                 magnitude_linear = np.sqrt(np.abs(avg_Sxy))
+                
+                if self.module.use_physical_units:
+                    magnitude_linear /= np.sqrt(2)
                 
                 magnitude = 20 * np.log10(magnitude_linear + 1e-12)
 
