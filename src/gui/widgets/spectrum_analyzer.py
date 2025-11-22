@@ -4,6 +4,7 @@ import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
                              QComboBox, QCheckBox, QSlider, QGroupBox, QFormLayout)
 from PyQt6.QtCore import QTimer, Qt
+from scipy.signal.windows import dpss
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 
@@ -21,6 +22,12 @@ class SpectrumAnalyzer(MeasurementModule):
         self.peak_hold = False
         self.octave_smoothing = 'None' # None, 1/1, 1/3, 1/6, 1/12, 1/24
         self.analysis_mode = 'Spectrum' # 'Spectrum', 'Cross Spectrum'
+        self.multitaper_enabled = False
+        self.use_physical_units = False
+        
+        # Multitaper cache
+        self._dpss_windows = None
+        self._dpss_cache_key = None # (N, NW, K)
         
         # State
         self._avg_magnitude = None
@@ -48,6 +55,9 @@ class SpectrumAnalyzer(MeasurementModule):
         self._avg_magnitude = None
         self._avg_cross_spectrum = None
         self._peak_magnitude = None
+        # Reset DPSS cache as N changed
+        self._dpss_windows = None
+        self._dpss_cache_key = None
 
     def start_analysis(self):
         if self.is_running:
@@ -87,6 +97,22 @@ class SpectrumAnalyzer(MeasurementModule):
         if self.is_running:
             self.audio_engine.stop_stream()
             self.is_running = False
+
+    def _get_dpss_windows(self, N, NW=3, Kmax=None):
+        """
+        Get DPSS windows, caching them for performance.
+        """
+        if Kmax is None:
+            Kmax = 2 * NW - 1
+        
+        key = (N, NW, Kmax)
+        if self._dpss_windows is None or self._dpss_cache_key != key:
+            # Generate windows
+            # dpss returns (K, N) array
+            self._dpss_windows = dpss(N, NW, int(Kmax))
+            self._dpss_cache_key = key
+            
+        return self._dpss_windows
 
 class SpectrumAnalyzerWidget(QWidget):
     def __init__(self, module: SpectrumAnalyzer):
@@ -159,6 +185,11 @@ class SpectrumAnalyzerWidget(QWidget):
         self.avg_slider.valueChanged.connect(self.on_avg_changed)
         row2_layout.addWidget(self.avg_slider)
         
+        # Multitaper
+        self.multitaper_check = QCheckBox("Multitaper")
+        self.multitaper_check.toggled.connect(self.on_multitaper_changed)
+        row2_layout.addWidget(self.multitaper_check)
+
         # Peak Hold
         self.peak_check = QCheckBox("Peak Hold")
         self.peak_check.toggled.connect(self.on_peak_changed)
@@ -170,6 +201,14 @@ class SpectrumAnalyzerWidget(QWidget):
         row2_layout.addWidget(self.clear_peak_btn)
         
         main_controls_layout.addLayout(row2_layout)
+        
+        # Row 3: Calibration
+        row3_layout = QHBoxLayout()
+        self.physical_units_check = QCheckBox("Physical Units (dBV)")
+        self.physical_units_check.toggled.connect(self.on_physical_units_changed)
+        row3_layout.addWidget(self.physical_units_check)
+        row3_layout.addStretch()
+        main_controls_layout.addLayout(row3_layout)
         
         controls_group.setLayout(main_controls_layout)
         layout.addWidget(controls_group)
@@ -225,7 +264,8 @@ class SpectrumAnalyzerWidget(QWidget):
             # If x is log scale, convert back to linear for display
             freq = 10**x
             
-            self.cursor_label.setText(f"Cursor: {freq:.1f} Hz, {y:.1f} dB")
+            unit = "dBV" if self.module.use_physical_units else "dBFS"
+            self.cursor_label.setText(f"Cursor: {freq:.1f} Hz, {y:.1f} {unit}")
             self.v_line.setPos(x)
             self.h_line.setPos(y)
 
@@ -260,6 +300,11 @@ class SpectrumAnalyzerWidget(QWidget):
         self.module.averaging = val / 100.0
         self.avg_label.setText(f"Avg: {val}%")
 
+    def on_multitaper_changed(self, checked):
+        self.module.multitaper_enabled = checked
+        # Disable window selection if multitaper is on (it uses its own windows)
+        self.window_combo.setEnabled(not checked)
+
     def on_peak_changed(self, checked):
         self.module.peak_hold = checked
         if not checked:
@@ -267,6 +312,14 @@ class SpectrumAnalyzerWidget(QWidget):
             self.peak_curve.setData([], [])
 
     def on_clear_peak(self):
+        self.module._peak_magnitude = None
+        self.peak_curve.setData([], [])
+
+    def on_physical_units_changed(self, checked):
+        self.module.use_physical_units = checked
+        unit = "dBV" if checked else "dBFS"
+        self.plot_widget.setLabel('left', 'Magnitude', units=unit)
+        # Reset peak to avoid mixing units
         self.module._peak_magnitude = None
         self.peak_curve.setData([], [])
 
@@ -316,20 +369,16 @@ class SpectrumAnalyzerWidget(QWidget):
         # Calculate Overall RMS (dBFS)
         rms = np.sqrt(np.mean(data**2))
         overall_db = 20 * np.log10(rms + 1e-12)
-        self.overall_label.setText(f"Overall: {overall_db:.1f} dB")
         
-        # Apply window
-        if self.module.window_type == 'rect':
-            window = np.ones(len(data))
+        if self.module.use_physical_units:
+            # Convert to dBV
+            offset = self.module.audio_engine.calibration.get_input_offset_db()
+            overall_db += offset
+            unit = "dBV"
         else:
-            window = getattr(np, self.module.window_type)(len(data))
-        
-        # Broadcast window to stereo
-        windowed_data = data * window[:, np.newaxis]
-        
-        # FFT
-        # rfft on axis 0
-        fft_data = np.fft.rfft(windowed_data, axis=0)
+            unit = "dBFS"
+            
+        self.overall_label.setText(f"Overall: {overall_db:.1f} {unit}")
         
         # Frequency axis
         sample_rate = self.module.audio_engine.sample_rate
@@ -337,51 +386,153 @@ class SpectrumAnalyzerWidget(QWidget):
         
         magnitude = None
         
-        if self.module.analysis_mode == 'Spectrum':
-            # Standard Spectrum: Average magnitude of channels (or just mix them)
-            # Let's take magnitude of each channel then average
-            mag_stereo = np.abs(fft_data)
-            mag_mono = np.mean(mag_stereo, axis=1)
+        if self.module.multitaper_enabled:
+            # --- Multitaper Method ---
+            # Get DPSS windows
+            windows = self.module._get_dpss_windows(len(data)) # (K, N)
+            K = windows.shape[0]
             
-            # Convert to dB
-            # Normalize by length
-            mag_mono = mag_mono / len(data)
-            
-            # Averaging (Magnitude)
-            if self.module._avg_magnitude is None or len(self.module._avg_magnitude) != len(mag_mono):
-                self.module._avg_magnitude = mag_mono
+            if self.module.analysis_mode == 'Spectrum':
+                # Average PSD over K windows
+                # We need to compute PSD for each channel and each window
+                
+                # data: (N, 2)
+                # windows: (K, N)
+                
+                # We can process each channel
+                # Channel 0
+                psd_accum_0 = np.zeros(len(freqs))
+                psd_accum_1 = np.zeros(len(freqs))
+                
+                for k in range(K):
+                    w = windows[k]
+                    
+                    # Apply window
+                    # Channel 0
+                    fft_0 = np.fft.rfft(data[:, 0] * w)
+                    psd_accum_0 += np.abs(fft_0)**2
+                    
+                    # Channel 1
+                    fft_1 = np.fft.rfft(data[:, 1] * w)
+                    psd_accum_1 += np.abs(fft_1)**2
+                
+                # Average over K windows
+                psd_avg_0 = psd_accum_0 / K
+                psd_avg_1 = psd_accum_1 / K
+                
+                # Combine channels (average)
+                psd_total = (psd_avg_0 + psd_avg_1) / 2
+                
+                # Convert to Magnitude (Amplitude Spectrum)
+                mag_linear = np.sqrt(psd_total)
+                
+                # Normalize
+                mag_linear = mag_linear / np.sqrt(len(data))
+                
+                # Convert to dB
+                magnitude = 20 * np.log10(mag_linear + 1e-12)
+                
+            elif self.module.analysis_mode == 'Cross Spectrum':
+                # Average Cross Spectrum over K windows
+                cs_accum = np.zeros(len(freqs), dtype=complex)
+                
+                for k in range(K):
+                    w = windows[k]
+                    fft_0 = np.fft.rfft(data[:, 0] * w)
+                    fft_1 = np.fft.rfft(data[:, 1] * w)
+                    cs_accum += fft_0 * np.conj(fft_1)
+                
+                cs_avg = cs_accum / K
+                
+                # Magnitude
+                mag_linear = np.sqrt(np.abs(cs_avg))
+                
+                # Normalize
+                mag_linear = mag_linear / np.sqrt(len(data))
+                
+                magnitude = 20 * np.log10(mag_linear + 1e-12)
+                
+                # Update average cross spectrum state for smoothing if needed
+                if self.module._avg_cross_spectrum is None:
+                    self.module._avg_cross_spectrum = cs_avg
+                else:
+                    alpha = self.module.averaging
+                    self.module._avg_cross_spectrum = alpha * self.module._avg_cross_spectrum + (1 - alpha) * cs_avg
+                    
+                # Re-calculate magnitude from temporally averaged CS
+                avg_cs = self.module._avg_cross_spectrum
+                mag_linear = np.sqrt(np.abs(avg_cs)) / np.sqrt(len(data))
+                magnitude = 20 * np.log10(mag_linear + 1e-12)
+
+            # Temporal Averaging for Spectrum Mode
+            if self.module.analysis_mode == 'Spectrum':
+                if self.module._avg_magnitude is None:
+                    self.module._avg_magnitude = mag_linear
+                else:
+                    alpha = self.module.averaging
+                    self.module._avg_magnitude = alpha * self.module._avg_magnitude + (1 - alpha) * mag_linear
+                
+                magnitude = 20 * np.log10(self.module._avg_magnitude + 1e-12)
+
+        else:
+            # --- Standard Method ---
+            # Apply window
+            if self.module.window_type == 'rect':
+                window = np.ones(len(data))
             else:
-                alpha = self.module.averaging
-                self.module._avg_magnitude = alpha * self.module._avg_magnitude + (1 - alpha) * mag_mono
+                window = getattr(np, self.module.window_type)(len(data))
             
-            magnitude_linear = self.module._avg_magnitude
-            magnitude = 20 * np.log10(magnitude_linear + 1e-12)
+            # Broadcast window to stereo
+            windowed_data = data * window[:, np.newaxis]
             
-        elif self.module.analysis_mode == 'Cross Spectrum':
-            # Cross Spectrum: Sxy = F1 * conj(F2)
-            F1 = fft_data[:, 0]
-            F2 = fft_data[:, 1]
-            Sxy = F1 * np.conj(F2)
+            # FFT
+            # rfft on axis 0
+            fft_data = np.fft.rfft(windowed_data, axis=0)
             
-            # Normalize
-            Sxy = Sxy / (len(data)**2) # Usually normalized by N^2 or similar for power
-            # Actually for magnitude consistency with spectrum, let's normalize by len(data)^2?
-            # Spectrum: |F|/N. Cross: (F/N) * (F/N) = |F|^2 / N^2.
-            # So sqrt(|Sxy|) would be comparable to linear magnitude.
-            
-            # Complex Averaging
-            if self.module._avg_cross_spectrum is None or len(self.module._avg_cross_spectrum) != len(Sxy):
-                self.module._avg_cross_spectrum = Sxy
-            else:
-                alpha = self.module.averaging
-                self.module._avg_cross_spectrum = alpha * self.module._avg_cross_spectrum + (1 - alpha) * Sxy
-            
-            # Calculate Magnitude of the average Cross Spectrum
-            # We take sqrt to be comparable to linear amplitude spectrum
-            avg_Sxy = self.module._avg_cross_spectrum
-            magnitude_linear = np.sqrt(np.abs(avg_Sxy))
-            
-            magnitude = 20 * np.log10(magnitude_linear + 1e-12)
+            if self.module.analysis_mode == 'Spectrum':
+                # Standard Spectrum
+                mag_stereo = np.abs(fft_data)
+                mag_mono = np.mean(mag_stereo, axis=1)
+                
+                # Normalize
+                mag_mono = mag_mono / len(data)
+                
+                # Averaging
+                if self.module._avg_magnitude is None or len(self.module._avg_magnitude) != len(mag_mono):
+                    self.module._avg_magnitude = mag_mono
+                else:
+                    alpha = self.module.averaging
+                    self.module._avg_magnitude = alpha * self.module._avg_magnitude + (1 - alpha) * mag_mono
+                
+                magnitude_linear = self.module._avg_magnitude
+                magnitude = 20 * np.log10(magnitude_linear + 1e-12)
+                
+            elif self.module.analysis_mode == 'Cross Spectrum':
+                # Cross Spectrum
+                F1 = fft_data[:, 0]
+                F2 = fft_data[:, 1]
+                Sxy = F1 * np.conj(F2)
+                
+                # Normalize
+                Sxy = Sxy / (len(data)**2)
+                
+                # Complex Averaging
+                if self.module._avg_cross_spectrum is None or len(self.module._avg_cross_spectrum) != len(Sxy):
+                    self.module._avg_cross_spectrum = Sxy
+                else:
+                    alpha = self.module.averaging
+                    self.module._avg_cross_spectrum = alpha * self.module._avg_cross_spectrum + (1 - alpha) * Sxy
+                
+                # Magnitude
+                avg_Sxy = self.module._avg_cross_spectrum
+                magnitude_linear = np.sqrt(np.abs(avg_Sxy))
+                
+                magnitude = 20 * np.log10(magnitude_linear + 1e-12)
+
+        # Apply Calibration if enabled
+        if self.module.use_physical_units:
+            offset = self.module.audio_engine.calibration.get_input_offset_db()
+            magnitude += offset
 
         # Peak Hold
         if self.module.peak_hold:

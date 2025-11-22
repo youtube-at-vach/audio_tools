@@ -1,6 +1,7 @@
 import sounddevice as sd
 import numpy as np
 import logging
+from src.core.calibration import CalibrationManager
 
 class AudioEngine:
     """
@@ -13,6 +14,9 @@ class AudioEngine:
         self.block_size = 1024
         self.stream = None
         self.logger = logging.getLogger(__name__)
+        
+        # Calibration
+        self.calibration = CalibrationManager()
         
         # Channel Configuration
         # 'stereo', 'left', 'right'
