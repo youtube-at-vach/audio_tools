@@ -409,14 +409,19 @@ class SignalGeneratorWidget(QWidget):
         self.amp_spin.setValue(self.module.amplitude)
         self.amp_spin.valueChanged.connect(self.on_amp_spin_changed)
         
+        self.unit_combo = QComboBox()
+        self.unit_combo.addItems(['Linear (0-1)', 'dBFS', 'dBV', 'dBu', 'Vrms', 'Vpeak'])
+        self.unit_combo.currentTextChanged.connect(self.on_unit_changed)
+        
         self.amp_slider = QSlider(Qt.Orientation.Horizontal)
         self.amp_slider.setRange(0, 100)
         self.amp_slider.setValue(int(self.module.amplitude * 100))
         self.amp_slider.valueChanged.connect(self.on_amp_slider_changed)
         
         amp_layout.addWidget(self.amp_spin)
+        amp_layout.addWidget(self.unit_combo)
         amp_layout.addWidget(self.amp_slider)
-        basic_layout.addRow("Amplitude (0-1):", amp_layout)
+        basic_layout.addRow("Amplitude:", amp_layout)
         
         basic_group.setLayout(basic_layout)
         layout.addWidget(basic_group)
@@ -489,18 +494,113 @@ class SignalGeneratorWidget(QWidget):
         self.freq_spin.setValue(freq)
         self.freq_spin.blockSignals(False)
 
+    def on_unit_changed(self, unit):
+        # Update spin box range and value based on current amplitude
+        self.update_amp_display()
+
+    def update_amp_display(self):
+        unit = self.unit_combo.currentText()
+        amp_0_1 = self.module.amplitude
+        gain = self.module.audio_engine.calibration.output_gain
+        
+        self.amp_spin.blockSignals(True)
+        
+        if unit == 'Linear (0-1)':
+            self.amp_spin.setRange(0, 1.0)
+            self.amp_spin.setSingleStep(0.1)
+            self.amp_spin.setValue(amp_0_1)
+        elif unit == 'dBFS':
+            self.amp_spin.setRange(-120, 0)
+            self.amp_spin.setSingleStep(1.0)
+            val = 20 * np.log10(amp_0_1 + 1e-12)
+            self.amp_spin.setValue(val)
+        elif unit == 'dBV':
+            # Vpeak = amp_0_1 * gain
+            # Vrms = Vpeak / sqrt(2)
+            # dBV = 20 * log10(Vrms)
+            # Wait, dBV is usually defined as 20*log10(Vrms).
+            # But let's stick to the definition in CalibrationManager if it exists. 
+            # CalibrationManager.dbfs_to_dbv uses input_sensitivity.
+            # Here we use output_gain.
+            
+            v_peak = amp_0_1 * gain
+            v_rms = v_peak / np.sqrt(2)
+            val = 20 * np.log10(v_rms + 1e-12)
+            
+            self.amp_spin.setRange(-120, 20) # Arbitrary upper limit
+            self.amp_spin.setSingleStep(1.0)
+            self.amp_spin.setValue(val)
+            
+        elif unit == 'dBu':
+            # dBu = 20 * log10(Vrms / 0.7746)
+            v_peak = amp_0_1 * gain
+            v_rms = v_peak / np.sqrt(2)
+            val = 20 * np.log10((v_rms + 1e-12) / 0.7746)
+            
+            self.amp_spin.setRange(-120, 20)
+            self.amp_spin.setSingleStep(1.0)
+            self.amp_spin.setValue(val)
+            
+        elif unit == 'Vrms':
+            v_peak = amp_0_1 * gain
+            v_rms = v_peak / np.sqrt(2)
+            
+            self.amp_spin.setRange(0, 100)
+            self.amp_spin.setSingleStep(0.1)
+            self.amp_spin.setValue(v_rms)
+            
+        elif unit == 'Vpeak':
+            v_peak = amp_0_1 * gain
+            
+            self.amp_spin.setRange(0, 100)
+            self.amp_spin.setSingleStep(0.1)
+            self.amp_spin.setValue(v_peak)
+            
+        self.amp_spin.blockSignals(False)
+
     def on_amp_spin_changed(self, val):
-        self.module.amplitude = val
+        unit = self.unit_combo.currentText()
+        gain = self.module.audio_engine.calibration.output_gain
+        amp_0_1 = 0.0
+        
+        if unit == 'Linear (0-1)':
+            amp_0_1 = val
+        elif unit == 'dBFS':
+            amp_0_1 = 10**(val/20)
+        elif unit == 'dBV':
+            # val = 20 * log10(Vrms)
+            v_rms = 10**(val/20)
+            v_peak = v_rms * np.sqrt(2)
+            amp_0_1 = v_peak / gain
+        elif unit == 'dBu':
+            # val = 20 * log10(Vrms / 0.7746)
+            v_rms = 0.7746 * 10**(val/20)
+            v_peak = v_rms * np.sqrt(2)
+            amp_0_1 = v_peak / gain
+        elif unit == 'Vrms':
+            v_peak = val * np.sqrt(2)
+            amp_0_1 = v_peak / gain
+        elif unit == 'Vpeak':
+            amp_0_1 = val / gain
+            
+        # Clamp
+        if amp_0_1 > 1.0:
+            amp_0_1 = 1.0
+            # Optionally warn or update spin to max possible
+        elif amp_0_1 < 0.0:
+            amp_0_1 = 0.0
+            
+        self.module.amplitude = amp_0_1
+        
+        # Update slider
         self.amp_slider.blockSignals(True)
-        self.amp_slider.setValue(int(val * 100))
+        self.amp_slider.setValue(int(amp_0_1 * 100))
         self.amp_slider.blockSignals(False)
 
     def on_amp_slider_changed(self, val):
         amp = val / 100.0
         self.module.amplitude = amp
-        self.amp_spin.blockSignals(True)
-        self.amp_spin.setValue(amp)
-        self.amp_spin.blockSignals(False)
+        self.update_amp_display()
 
     def on_wave_changed(self, val):
         self.module.waveform = val
@@ -541,4 +641,3 @@ class SignalGeneratorWidget(QWidget):
         else:
             self.module.stop_generation()
             self.toggle_btn.setText("Start")
-
