@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, QPushButton, 
-                             QFormLayout, QGroupBox, QMessageBox)
+                             QFormLayout, QGroupBox, QMessageBox, QLineEdit)
 from src.core.audio_engine import AudioEngine
 
 class SettingsWidget(QWidget):
@@ -73,10 +73,45 @@ class SettingsWidget(QWidget):
         conf_layout.addRow("Output Channels:", self.out_ch_combo)
         
         conf_group.setLayout(conf_layout)
+        conf_group.setLayout(conf_layout)
         layout.addWidget(conf_group)
+        
+        # Calibration Group
+        cal_group = QGroupBox("Calibration")
+        cal_layout = QFormLayout()
+        
+        # Input Sensitivity
+        self.in_sens_edit = QLineEdit()
+        self.in_sens_edit.setText(str(self.audio_engine.calibration.input_sensitivity))
+        self.in_sens_edit.editingFinished.connect(self.on_in_sens_changed)
+        cal_layout.addRow("Input Sensitivity (V/FS):", self.in_sens_edit)
+        
+        # Output Gain
+        self.out_gain_edit = QLineEdit()
+        self.out_gain_edit.setText(str(self.audio_engine.calibration.output_gain))
+        self.out_gain_edit.editingFinished.connect(self.on_out_gain_changed)
+        cal_layout.addRow("Output Gain (V/FS):", self.out_gain_edit)
+        
+        cal_group.setLayout(cal_layout)
+        layout.addWidget(cal_group)
         
         layout.addStretch()
         self.setLayout(layout)
+
+    def on_in_sens_changed(self):
+        try:
+            val = float(self.in_sens_edit.text())
+            self.audio_engine.calibration.set_input_sensitivity(val)
+        except ValueError:
+            # Revert if invalid
+            self.in_sens_edit.setText(str(self.audio_engine.calibration.input_sensitivity))
+
+    def on_out_gain_changed(self):
+        try:
+            val = float(self.out_gain_edit.text())
+            self.audio_engine.calibration.set_output_gain(val)
+        except ValueError:
+            self.out_gain_edit.setText(str(self.audio_engine.calibration.output_gain))
 
     def refresh_devices(self):
         devices = self.audio_engine.list_devices()
