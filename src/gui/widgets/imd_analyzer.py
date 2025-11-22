@@ -1,6 +1,9 @@
 import argparse
 import numpy as np
 import scipy.signal
+import queue
+import threading
+import time
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, 
                              QPushButton, QComboBox, QGroupBox, QFormLayout)
 from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer
@@ -12,6 +15,119 @@ from src.core.audio_engine import AudioEngine
 class IMDAnalyzerSignals(QObject):
     update_results = pyqtSignal(dict)
     update_plot = pyqtSignal(object, object) # freqs, magnitude
+
+class AnalysisWorker(threading.Thread):
+    def __init__(self, input_queue, signals, module_params):
+        super().__init__()
+        self.input_queue = input_queue
+        self.signals = signals
+        self.params = module_params # Reference to module to read params safely
+        self.running = True
+        self.daemon = True
+
+    def run(self):
+        while self.running:
+            try:
+                # Get data with timeout to allow checking self.running
+                data, sample_rate = self.input_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            try:
+                self._analyze_chunk(data, sample_rate)
+            except Exception as e:
+                print(f"Error in analysis worker: {e}")
+            finally:
+                self.input_queue.task_done()
+
+    def stop(self):
+        self.running = False
+
+    def _analyze_chunk(self, recorded, sample_rate):
+        # Perform FFT
+        N = len(recorded)
+        # Read params safely (assuming atomic reads or acceptable race for UI params)
+        window_name = self.params.window_name
+        standard = self.params.standard
+        f1 = self.params.f1
+        f2 = self.params.f2
+        num_sidebands = self.params.num_sidebands
+
+        window = scipy.signal.get_window(window_name, N)
+        windowed = recorded * window
+        fft_res = np.fft.rfft(windowed)
+        mag = np.abs(fft_res) * (2 / np.sum(window))
+        freqs = np.fft.rfftfreq(N, d=1/sample_rate)
+        
+        # Emit for plotting
+        self.signals.update_plot.emit(freqs, mag)
+        
+        # Calculate IMD
+        if standard == 'smpte':
+            results = self._calc_imd_smpte(mag, freqs, f1, f2, num_sidebands)
+        else:
+            results = self._calc_imd_ccif(mag, freqs, f1, f2)
+            
+        self.signals.update_results.emit(results)
+
+    def _find_peak(self, mag, freqs, target_freq, width=20.0):
+        mask = (freqs >= target_freq - width) & (freqs <= target_freq + width)
+        if not np.any(mask):
+            return 0.0
+        return np.max(mag[mask])
+
+    def _calc_imd_smpte(self, mag, freqs, f1, f2, num_sidebands):
+        # SMPTE: f1 (low), f2 (high). IMD products at f2 +/- n*f1
+        amp_f2 = self._find_peak(mag, freqs, f2, width=max(50.0, f1*0.1))
+        
+        if amp_f2 < 1e-6:
+            return {'imd': 0.0, 'imd_db': -100.0}
+            
+        sum_sq_sidebands = 0.0
+        for n in range(1, num_sidebands + 1):
+            sb_upper = f2 + n * f1
+            sb_lower = f2 - n * f1
+            
+            amp_upper = self._find_peak(mag, freqs, sb_upper)
+            amp_lower = self._find_peak(mag, freqs, sb_lower)
+            
+            sum_sq_sidebands += amp_upper**2 + amp_lower**2
+            
+        imd = np.sqrt(sum_sq_sidebands) / amp_f2
+        return {
+            'imd': imd * 100,
+            'imd_db': 20 * np.log10(imd) if imd > 1e-9 else -100.0
+        }
+
+    def _calc_imd_ccif(self, mag, freqs, f1, f2):
+        # CCIF: f1, f2 close (e.g. 19k, 20k). 
+        # d2 = f2 - f1
+        # d3 = 2f1 - f2, 2f2 - f1
+        
+        amp_f1 = self._find_peak(mag, freqs, f1)
+        amp_f2 = self._find_peak(mag, freqs, f2)
+        total_amp = amp_f1 + amp_f2
+        
+        if total_amp < 1e-6:
+            return {'imd': 0.0, 'imd_db': -100.0}
+            
+        # d2
+        d2_freq = abs(f2 - f1)
+        amp_d2 = self._find_peak(mag, freqs, d2_freq)
+        
+        # d3
+        d3_low = 2*f1 - f2
+        d3_high = 2*f2 - f1
+        amp_d3_low = self._find_peak(mag, freqs, d3_low) if d3_low > 0 else 0
+        amp_d3_high = self._find_peak(mag, freqs, d3_high)
+        
+        distortion_sum_sq = amp_d2**2 + amp_d3_low**2 + amp_d3_high**2
+        imd = np.sqrt(distortion_sum_sq) / total_amp
+        
+        return {
+            'imd': imd * 100,
+            'imd_db': 20 * np.log10(imd) if imd > 1e-9 else -100.0
+        }
 
 class IMDAnalyzer(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -33,6 +149,10 @@ class IMDAnalyzer(MeasurementModule):
         # Playback state
         self._phase_f1 = 0.0
         self._phase_f2 = 0.0
+
+        # Threading
+        self.analysis_queue = queue.Queue(maxsize=2) # Small buffer to drop old frames if slow
+        self.worker = None
 
     @property
     def name(self) -> str:
@@ -56,6 +176,17 @@ class IMDAnalyzer(MeasurementModule):
         self._phase_f1 = 0.0
         self._phase_f2 = 0.0
         
+        # Clear queue
+        while not self.analysis_queue.empty():
+            try:
+                self.analysis_queue.get_nowait()
+            except queue.Empty:
+                break
+
+        # Start worker
+        self.worker = AnalysisWorker(self.analysis_queue, self.signals, self)
+        self.worker.start()
+        
         self.audio_engine.start_stream(self._audio_callback)
 
     def stop_analysis(self):
@@ -64,6 +195,11 @@ class IMDAnalyzer(MeasurementModule):
             
         self.audio_engine.stop_stream()
         self.is_running = False
+        
+        if self.worker:
+            self.worker.stop()
+            self.worker.join(timeout=1.0)
+            self.worker = None
 
     def _generate_dual_tone(self, num_frames, sample_rate):
         t = np.arange(num_frames) / sample_rate
@@ -114,90 +250,15 @@ class IMDAnalyzer(MeasurementModule):
         if outdata.shape[1] >= 2:
             outdata[:, 1] = signal
             
-        # 2. Analyze Input
+        # 2. Analyze Input (Push to queue)
         # Use the first input channel
         if indata.shape[1] > 0:
-            recorded = indata[:, 0]
-            self._analyze_chunk(recorded, sample_rate)
-
-    def _analyze_chunk(self, recorded, sample_rate):
-        # Perform FFT
-        N = len(recorded)
-        window = scipy.signal.get_window(self.window_name, N)
-        windowed = recorded * window
-        fft_res = np.fft.rfft(windowed)
-        mag = np.abs(fft_res) * (2 / np.sum(window))
-        freqs = np.fft.rfftfreq(N, d=1/sample_rate)
-        
-        # Emit for plotting (downsample if needed for performance, but N is small here usually)
-        self.signals.update_plot.emit(freqs, mag)
-        
-        # Calculate IMD
-        if self.standard == 'smpte':
-            results = self._calc_imd_smpte(mag, freqs)
-        else:
-            results = self._calc_imd_ccif(mag, freqs)
-            
-        self.signals.update_results.emit(results)
-
-    def _find_peak(self, mag, freqs, target_freq, width=20.0):
-        mask = (freqs >= target_freq - width) & (freqs <= target_freq + width)
-        if not np.any(mask):
-            return 0.0
-        return np.max(mag[mask])
-
-    def _calc_imd_smpte(self, mag, freqs):
-        # SMPTE: f1 (low), f2 (high). IMD products at f2 +/- n*f1
-        amp_f2 = self._find_peak(mag, freqs, self.f2, width=max(50.0, self.f1*0.1))
-        
-        if amp_f2 < 1e-6:
-            return {'imd': 0.0, 'imd_db': -100.0}
-            
-        sum_sq_sidebands = 0.0
-        for n in range(1, self.num_sidebands + 1):
-            sb_upper = self.f2 + n * self.f1
-            sb_lower = self.f2 - n * self.f1
-            
-            amp_upper = self._find_peak(mag, freqs, sb_upper)
-            amp_lower = self._find_peak(mag, freqs, sb_lower)
-            
-            sum_sq_sidebands += amp_upper**2 + amp_lower**2
-            
-        imd = np.sqrt(sum_sq_sidebands) / amp_f2
-        return {
-            'imd': imd * 100,
-            'imd_db': 20 * np.log10(imd) if imd > 1e-9 else -100.0
-        }
-
-    def _calc_imd_ccif(self, mag, freqs):
-        # CCIF: f1, f2 close (e.g. 19k, 20k). 
-        # d2 = f2 - f1
-        # d3 = 2f1 - f2, 2f2 - f1
-        
-        amp_f1 = self._find_peak(mag, freqs, self.f1)
-        amp_f2 = self._find_peak(mag, freqs, self.f2)
-        total_amp = amp_f1 + amp_f2
-        
-        if total_amp < 1e-6:
-            return {'imd': 0.0, 'imd_db': -100.0}
-            
-        # d2
-        d2_freq = abs(self.f2 - self.f1)
-        amp_d2 = self._find_peak(mag, freqs, d2_freq)
-        
-        # d3
-        d3_low = 2*self.f1 - self.f2
-        d3_high = 2*self.f2 - self.f1
-        amp_d3_low = self._find_peak(mag, freqs, d3_low) if d3_low > 0 else 0
-        amp_d3_high = self._find_peak(mag, freqs, d3_high)
-        
-        distortion_sum_sq = amp_d2**2 + amp_d3_low**2 + amp_d3_high**2
-        imd = np.sqrt(distortion_sum_sq) / total_amp
-        
-        return {
-            'imd': imd * 100,
-            'imd_db': 20 * np.log10(imd) if imd > 1e-9 else -100.0
-        }
+            recorded = indata[:, 0].copy() # Copy is essential for threading
+            try:
+                self.analysis_queue.put_nowait((recorded, sample_rate))
+            except queue.Full:
+                # Drop frame if worker is too slow
+                pass
 
 class IMDAnalyzerWidget(QWidget):
     def __init__(self, module: IMDAnalyzer):
