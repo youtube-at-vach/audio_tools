@@ -29,7 +29,6 @@ class MainWindow(QMainWindow):
             SpectrumAnalyzer(self.audio_engine),
             LufsMeter(self.audio_engine),
             LoopbackFinder(self.audio_engine),
-            LoopbackFinder(self.audio_engine),
             IMDAnalyzer(self.audio_engine),
             NetworkAnalyzer(self.audio_engine),
             DistortionAnalyzer(self.audio_engine)
