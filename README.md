@@ -39,6 +39,12 @@ pip install -r requirements.txt
 python main_gui.py
 ```
 
+または、ビルド済みの **AppImage** を使用することもできます（Linuxのみ）：
+
+1.  `Audio_Measurement_Tools-x86_64.AppImage` をダウンロードします。
+2.  実行権限を付与します：`chmod +x Audio_Measurement_Tools-x86_64.AppImage`
+3.  実行します：`./Audio_Measurement_Tools-x86_64.AppImage`
+
 ---
 
 ## 🏛️ 殿堂入り：Legacy Tools
