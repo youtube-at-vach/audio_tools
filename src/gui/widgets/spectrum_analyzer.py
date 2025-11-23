@@ -22,6 +22,7 @@ class SpectrumAnalyzer(MeasurementModule):
         self.peak_hold = False
         self.octave_smoothing = 'None' # None, 1/1, 1/3, 1/6, 1/12, 1/24
         self.analysis_mode = 'Spectrum' # 'Spectrum', 'Cross Spectrum'
+        self.channel_mode = 'Average' # 'Left', 'Right', 'Average', 'Dual'
         self.multitaper_enabled = False
         self.multitaper_enabled = False
         self.use_physical_units = False
@@ -35,7 +36,10 @@ class SpectrumAnalyzer(MeasurementModule):
         self._avg_magnitude = None
         self._avg_cross_spectrum = None # Complex average for Cross Spectrum
         self._peak_magnitude = None
+        self._peak_magnitude = None
         self.overall_rms = 0.0
+        
+        self.callback_id = None
 
     @property
     def name(self) -> str:
@@ -93,11 +97,13 @@ class SpectrumAnalyzer(MeasurementModule):
             
             outdata.fill(0)
 
-        self.audio_engine.start_stream(callback, channels=2)
+        self.callback_id = self.audio_engine.register_callback(callback)
 
     def stop_analysis(self):
         if self.is_running:
-            self.audio_engine.stop_stream()
+            if self.callback_id is not None:
+                self.audio_engine.unregister_callback(self.callback_id)
+                self.callback_id = None
             self.is_running = False
 
     def _get_dpss_windows(self, N, NW=3, Kmax=None):
@@ -187,6 +193,14 @@ class SpectrumAnalyzerWidget(QWidget):
         self.mode_combo.addItems(['Spectrum', 'Cross Spectrum'])
         self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
         row1_layout.addWidget(self.mode_combo)
+
+        # Channel Selection
+        row1_layout.addWidget(QLabel("Channel:"))
+        self.channel_combo = QComboBox()
+        self.channel_combo.addItems(['Left', 'Right', 'Average', 'Dual'])
+        self.channel_combo.setCurrentText(self.module.channel_mode)
+        self.channel_combo.currentTextChanged.connect(self.on_channel_changed)
+        row1_layout.addWidget(self.channel_combo)
 
         # FFT Size
         row1_layout.addWidget(QLabel("FFT Size:"))
@@ -309,7 +323,11 @@ class SpectrumAnalyzerWidget(QWidget):
         
         # Curves
         self.peak_curve = self.plot_widget.plot(pen=pg.mkPen('r', width=1, style=Qt.PenStyle.DashLine))
-        self.plot_curve = self.plot_widget.plot(pen='y')
+        self.plot_curve = self.plot_widget.plot(pen='y', name='Main')
+        self.plot_curve_2 = self.plot_widget.plot(pen='g', name='Secondary') # For Dual mode (Left=Green, Right=Red usually, but let's stick to standard)
+        # Let's use: Main (Yellow) for single/avg. 
+        # For Dual: Left (Green), Right (Red).
+        # So we might need to change pen colors dynamically.
         
         layout.addWidget(self.plot_widget)
         self.setLayout(layout)
@@ -351,6 +369,18 @@ class SpectrumAnalyzerWidget(QWidget):
         self.module._avg_magnitude = None
         self.module._avg_cross_spectrum = None
         self.module._peak_magnitude = None
+        self.peak_curve.setData([], [])
+        
+        # Disable channel selection in Cross Spectrum mode?
+        # Cross Spectrum inherently uses L and R.
+        if val == 'Cross Spectrum':
+            self.channel_combo.setEnabled(False)
+        else:
+            self.channel_combo.setEnabled(True)
+
+    def on_channel_changed(self, val):
+        self.module.channel_mode = val
+        self.module._avg_magnitude = None # Reset average
         self.peak_curve.setData([], [])
 
     def on_fft_size_changed(self, val):
@@ -421,7 +451,8 @@ class SpectrumAnalyzerWidget(QWidget):
             
             if len(indices) > 0:
                 linear_mags = 10**(magnitude[indices]/20)
-                avg_linear = np.mean(linear_mags)
+                # Use axis=0 to preserve channel dimension if present (Dual mode)
+                avg_linear = np.mean(linear_mags, axis=0)
                 avg_db = 20 * np.log10(avg_linear + 1e-12)
                 
                 smoothed_freqs.append(current_f)
@@ -576,26 +607,60 @@ class SpectrumAnalyzerWidget(QWidget):
             if self.module.analysis_mode == 'Spectrum':
                 # Standard Spectrum
                 mag_stereo = np.abs(fft_data)
-                mag_mono = np.mean(mag_stereo, axis=1)
+                
+                # Channel Selection Logic
+                if self.module.channel_mode == 'Left':
+                    mag_mono = mag_stereo[:, 0]
+                    mag_second = None
+                elif self.module.channel_mode == 'Right':
+                    mag_mono = mag_stereo[:, 1]
+                    mag_second = None
+                elif self.module.channel_mode == 'Average':
+                    mag_mono = np.mean(mag_stereo, axis=1)
+                    mag_second = None
+                elif self.module.channel_mode == 'Dual':
+                    mag_mono = mag_stereo[:, 0] # Left
+                    mag_second = mag_stereo[:, 1] # Right
+                else:
+                    mag_mono = np.mean(mag_stereo, axis=1)
+                    mag_second = None
                 
                 # Normalize to Peak Amplitude
                 mag_mono = mag_mono * norm_factor
+                if mag_second is not None:
+                    mag_second = mag_second * norm_factor
                 
                 # If Physical Units (dBV) are used, we want RMS reading for sine waves
                 # to match the "Overall" RMS reading.
                 # Peak to RMS for sine is 1/sqrt(2)
                 if self.module.use_physical_units:
                     mag_mono /= np.sqrt(2)
+                    if mag_second is not None:
+                        mag_second /= np.sqrt(2)
                 
                 # Averaging
-                if self.module._avg_magnitude is None or len(self.module._avg_magnitude) != len(mag_mono):
-                    self.module._avg_magnitude = mag_mono
+                # Note: Averaging Dual channels separately might require separate state.
+                # For simplicity, let's apply same averaging factor to both but only store one state if not Dual?
+                # Actually, if we switch modes, we reset.
+                # If Dual, we need two average states.
+                # Current self.module._avg_magnitude is one array.
+                # Let's make it handle (N, 2) if Dual? Or just (N,) and we only average the primary?
+                # To do it properly for Dual, we need to change how _avg_magnitude is stored or use a new variable.
+                # Let's try to store whatever shape we have.
+                
+                current_mag = mag_mono
+                if mag_second is not None:
+                    current_mag = np.column_stack((mag_mono, mag_second))
+                
+                if self.module._avg_magnitude is None or self.module._avg_magnitude.shape != current_mag.shape:
+                    self.module._avg_magnitude = current_mag
                 else:
                     alpha = self.module.averaging
-                    self.module._avg_magnitude = alpha * self.module._avg_magnitude + (1 - alpha) * mag_mono
+                    self.module._avg_magnitude = alpha * self.module._avg_magnitude + (1 - alpha) * current_mag
                 
                 magnitude_linear = self.module._avg_magnitude
                 magnitude = 20 * np.log10(magnitude_linear + 1e-12)
+                
                 
             elif self.module.analysis_mode == 'Cross Spectrum':
                 # Cross Spectrum
@@ -757,9 +822,33 @@ class SpectrumAnalyzerWidget(QWidget):
         
         plot_freqs_linear = plot_freqs + 1e-12 # Avoid exact 0
         
-        self.plot_curve.setData(plot_freqs_linear, plot_mags)
+        # Handle Dual Mode Plotting
+        if self.module.analysis_mode == 'Spectrum' and self.module.channel_mode == 'Dual':
+            # plot_mags should be (N, 2)
+            if plot_mags.ndim == 2 and plot_mags.shape[1] >= 2:
+                # Curve 1 (Left) - Green
+                self.plot_curve.setData(plot_freqs_linear, plot_mags[:, 0], pen='g')
+                # Curve 2 (Right) - Red
+                self.plot_curve_2.setData(plot_freqs_linear, plot_mags[:, 1], pen='r')
+            else:
+                # Fallback
+                self.plot_curve.setData(plot_freqs_linear, plot_mags, pen='y')
+                self.plot_curve_2.setData([], [])
+        else:
+            # Single Curve
+            # Ensure 1D
+            if plot_mags.ndim == 2:
+                plot_mags = plot_mags[:, 0] # Should not happen if logic above is correct for non-Dual
+            
+            self.plot_curve.setData(plot_freqs_linear, plot_mags, pen='y')
+            self.plot_curve_2.setData([], [])
         
         if peak_mags is not None:
+            # Peak hold usually just max of whatever we are displaying.
+            # If Dual, peak hold might be complex. Let's just show peak of primary (Left) or max of both?
+            # For simplicity, if Dual, let's just not show Peak Hold or show it for Left.
+            if peak_mags.ndim == 2:
+                peak_mags = peak_mags[:, 0]
             self.peak_curve.setData(plot_freqs_linear, peak_mags)
         else:
             self.peak_curve.setData([], [])

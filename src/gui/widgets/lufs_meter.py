@@ -36,6 +36,8 @@ class LufsMeter(MeasurementModule):
         self.peak_r = -100.0
         self.peak_hold_l = -100.0
         self.peak_hold_r = -100.0
+        
+        self.callback_id = None
 
     @property
     def name(self) -> str:
@@ -138,11 +140,13 @@ class LufsMeter(MeasurementModule):
             
             outdata.fill(0)
 
-        self.audio_engine.start_stream(callback, channels=2)
+        self.callback_id = self.audio_engine.register_callback(callback)
 
     def stop_meter(self):
         if self.is_running:
-            self.audio_engine.stop_stream()
+            if self.callback_id is not None:
+                self.audio_engine.unregister_callback(self.callback_id)
+                self.callback_id = None
             self.is_running = False
 
     def _to_db(self, value):
