@@ -177,7 +177,8 @@ class SpectrumAnalyzerWidget(QWidget):
         self.toggle_btn = QPushButton("Start Analysis")
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
-        self.toggle_btn.setStyleSheet("QPushButton:checked { background-color: #ccffcc; }")
+        # Default style (Green for Start)
+        self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; } QPushButton:checked { background-color: #ffcccc; }")
         row1_layout.addWidget(self.toggle_btn)
         
         # Mode Selection
@@ -209,6 +210,11 @@ class SpectrumAnalyzerWidget(QWidget):
         self.weighting_combo.addItems(['Z', 'A', 'C'])
         self.weighting_combo.currentTextChanged.connect(self.on_weighting_changed)
         row1_layout.addWidget(self.weighting_combo)
+
+        # Physical Units Checkbox (Moved here)
+        self.physical_units_check = QCheckBox("Physical Units (dBV)")
+        self.physical_units_check.toggled.connect(self.on_physical_units_changed)
+        row1_layout.addWidget(self.physical_units_check)
         
         main_controls_layout.addLayout(row1_layout)
         
@@ -249,13 +255,10 @@ class SpectrumAnalyzerWidget(QWidget):
         
         main_controls_layout.addLayout(row2_layout)
         
-        # Row 3: Calibration
-        row3_layout = QHBoxLayout()
-        self.physical_units_check = QCheckBox("Physical Units (dBV)")
-        self.physical_units_check.toggled.connect(self.on_physical_units_changed)
-        row3_layout.addWidget(self.physical_units_check)
-        row3_layout.addStretch()
-        main_controls_layout.addLayout(row3_layout)
+        # Row 3: Calibration (Removed Physical Units from here)
+        # row3_layout = QHBoxLayout()
+        # row3_layout.addStretch()
+        # main_controls_layout.addLayout(row3_layout)
         
         controls_group.setLayout(main_controls_layout)
         layout.addWidget(controls_group)
@@ -284,6 +287,17 @@ class SpectrumAnalyzerWidget(QWidget):
         self.plot_widget.setYRange(-120, 0)
         self.plot_widget.showGrid(x=True, y=True)
         
+        # Custom Axis Ticks
+        axis = self.plot_widget.getPlotItem().getAxis('bottom')
+        ticks = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+        # Since setLogMode(x=True) is used, the view coordinates are log10(freq).
+        # We need to specify ticks at log positions.
+        ticks_log = [(np.log10(t), str(t) if t < 1000 else f"{t/1000:.0f}k") for t in ticks]
+        axis.setTicks([ticks_log])
+        
+        # Set Range (log domain)
+        self.plot_widget.setXRange(np.log10(20), np.log10(20000))
+        
         # Crosshair
         self.v_line = pg.InfiniteLine(angle=90, movable=False)
         self.h_line = pg.InfiniteLine(angle=0, movable=False)
@@ -309,6 +323,11 @@ class SpectrumAnalyzerWidget(QWidget):
             y = mouse_point.y()
             
             # If x is log scale, convert back to linear for display
+            # pyqtgraph handles the log scaling internally, so 'x' here is already log10(freq) if log mode is on?
+            # Wait, if setLogMode(x=True) is used, the plot expects linear x values, but the ViewBox coordinates might be log?
+            # Actually, when setLogMode(x=True), the underlying view uses log coordinates.
+            # So x is log10(freq).
+            
             freq = 10**x
             
             unit = "dBV" if self.module.use_physical_units else "dBFS"
@@ -732,10 +751,15 @@ class SpectrumAnalyzerWidget(QWidget):
                 peak_mags = None
         
         # Update curves
-        log_freqs = np.log10(plot_freqs + 1e-12)
-        self.plot_curve.setData(log_freqs, plot_mags)
+        # When setLogMode(x=True) is active, we must pass LINEAR x values to setData.
+        # pyqtgraph handles the log conversion.
+        # We should exclude 0Hz to avoid log(0) issues inside pyqtgraph.
+        
+        plot_freqs_linear = plot_freqs + 1e-12 # Avoid exact 0
+        
+        self.plot_curve.setData(plot_freqs_linear, plot_mags)
         
         if peak_mags is not None:
-            self.peak_curve.setData(log_freqs, peak_mags)
+            self.peak_curve.setData(plot_freqs_linear, peak_mags)
         else:
             self.peak_curve.setData([], [])
