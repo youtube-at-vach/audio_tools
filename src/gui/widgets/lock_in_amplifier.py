@@ -41,6 +41,8 @@ class LockInAmplifier(MeasurementModule):
         self.averaging_count = 1
         self.history = deque(maxlen=100)
         
+        self.callback_id = None
+        
     @property
     def name(self) -> str:
         return "Lock-in Amplifier"
@@ -98,11 +100,13 @@ class LockInAmplifier(MeasurementModule):
             elif outdata.shape[1] > self.output_channel:
                 outdata[:, self.output_channel] = signal
 
-        self.audio_engine.start_stream(callback, channels=2)
+        self.callback_id = self.audio_engine.register_callback(callback)
 
     def stop_analysis(self):
         if self.is_running:
-            self.audio_engine.stop_stream()
+            if self.callback_id is not None:
+                self.audio_engine.unregister_callback(self.callback_id)
+                self.callback_id = None
             self.is_running = False
 
     def process_data(self):

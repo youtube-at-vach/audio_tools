@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDoubleS
                              QPushButton, QComboBox, QGroupBox, QFormLayout, QProgressBar, QCheckBox)
 from PyQt6.QtCore import Qt, pyqtSignal, QObject, QThread
 import pyqtgraph as pg
+import threading
 
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
@@ -15,7 +16,72 @@ class NetworkAnalyzerSignals(QObject):
     sweep_finished = pyqtSignal()
     progress = pyqtSignal(int)
     latency_result = pyqtSignal(float)
+    latency_result = pyqtSignal(float)
     error = pyqtSignal(str)
+
+class PlayRecSession:
+    def __init__(self, audio_engine, output_data, input_channels=1):
+        self.audio_engine = audio_engine
+        self.output_data = output_data
+        self.total_frames = len(output_data)
+        self.input_data = np.zeros((self.total_frames, input_channels), dtype=np.float32)
+        self.current_frame = 0
+        self.is_complete = False
+        self.callback_id = None
+        self.lock = threading.Lock()
+        self.completion_event = threading.Event()
+        self.error = None
+
+    def start(self):
+        self.callback_id = self.audio_engine.register_callback(self._callback)
+
+    def stop(self):
+        if self.callback_id is not None:
+            self.audio_engine.unregister_callback(self.callback_id)
+            self.callback_id = None
+
+    def wait(self, timeout=None):
+        return self.completion_event.wait(timeout)
+
+    def _callback(self, indata, outdata, frames, time, status):
+        if status:
+            print(f"Stream status: {status}")
+
+        with self.lock:
+            if self.is_complete:
+                outdata.fill(0)
+                return
+
+            remaining = self.total_frames - self.current_frame
+            chunk = min(frames, remaining)
+            
+            # Output
+            # Handle stereo output mapping
+            # output_data is expected to be (N, 2)
+            outdata[:chunk, :] = self.output_data[self.current_frame:self.current_frame+chunk, :]
+            if chunk < frames:
+                outdata[chunk:, :] = 0
+                
+            # Input
+            # Capture specified input channels (default 1, usually ch 0)
+            # indata is (frames, channels)
+            # We want to store into input_data (total_frames, input_channels)
+            
+            # Determine which input channel to capture. 
+            # For now, let's assume we capture channel 0 (Left) as per original code.
+            # If input_channels > 1, we might need more logic.
+            # Original code: recorded = rec_data[:, 0]
+            
+            if indata.shape[1] > 0:
+                self.input_data[self.current_frame:self.current_frame+chunk, 0] = indata[:chunk, 0]
+            
+            self.current_frame += chunk
+            
+            if self.current_frame >= self.total_frames:
+                self.is_complete = True
+                self.completion_event.set()
+                # We can't unregister here easily without deadlock or complex logic, 
+                # so we rely on the main thread to call stop() after wait() returns.
 
 class SweepWorker(QThread):
     def __init__(self, analyzer):
@@ -98,6 +164,26 @@ class NetworkAnalyzer(MeasurementModule):
     def get_widget(self):
         return NetworkAnalyzerWidget(self)
 
+    def run_play_rec(self, output_data):
+        """
+        Helper to run a play/record session using AudioEngine.
+        output_data: (N, 2) numpy array
+        Returns: (N, 1) numpy array (recorded data)
+        """
+        session = PlayRecSession(self.audio_engine, output_data)
+        session.start()
+        
+        # Wait for completion
+        # We need to handle potential aborts from workers
+        # But here we are blocking the worker thread, which is fine.
+        # However, we should verify if we need to check for worker cancellation?
+        # The session.wait() blocks.
+        
+        session.wait()
+        session.stop()
+        
+        return session.input_data
+
     def calibrate_latency(self):
         """
         Measures loopback latency using a chirp signal.
@@ -110,17 +196,16 @@ class NetworkAnalyzer(MeasurementModule):
         chirp = scipy.signal.chirp(t, f0=20, t1=duration, f1=10000, method='logarithmic')
         chirp *= self.amplitude
         
-        # Play and Record
-        import sounddevice as sd
-        
         try:
             # Prepare stereo output (duplicate mono chirp)
-            out_data = np.zeros((len(chirp), 2))
+            out_data = np.zeros((len(chirp), 2), dtype=np.float32)
             out_data[:, 0] = chirp
             out_data[:, 1] = chirp
             
             print("Playing chirp for latency calibration...")
-            rec_data = sd.playrec(out_data, samplerate=sample_rate, channels=2, blocking=True)
+            
+            # Use AudioEngine
+            rec_data = self.run_play_rec(out_data)
             
             # Analyze
             # Cross-correlate reference (chirp) with recorded signal (channel 0)
@@ -215,13 +300,12 @@ class NetworkAnalyzer(MeasurementModule):
             inv_filter /= norm_factor
         
         # 3. Play and Record
-        import sounddevice as sd
         
         # Padding for latency and decay
         padding_sec = 1.0 # Generous padding
         padding_samples = int(padding_sec * sample_rate)
         
-        out_data = np.zeros((len(chirp) + padding_samples, 2))
+        out_data = np.zeros((len(chirp) + padding_samples, 2), dtype=np.float32)
         out_data[:len(chirp), 0] = chirp
         out_data[:len(chirp), 1] = chirp
         
@@ -229,7 +313,8 @@ class NetworkAnalyzer(MeasurementModule):
         
         if not worker.is_running: return
         
-        rec_data = sd.playrec(out_data, samplerate=sample_rate, channels=2, blocking=True)
+        # Use AudioEngine
+        rec_data = self.run_play_rec(out_data)
         recorded = rec_data[:, 0]
         
         self.signals.progress.emit(50)
@@ -325,12 +410,12 @@ class NetworkAnalyzer(MeasurementModule):
                 padding_samples = int((self.latency_sec + safety_buffer_sec) * sample_rate)
                 
                 # Output: Tone + Silence
-                out_data = np.zeros((len(tone) + padding_samples, 2))
+                out_data = np.zeros((len(tone) + padding_samples, 2), dtype=np.float32)
                 out_data[:len(tone), 0] = tone
                 out_data[:len(tone), 1] = tone
                 
                 # Play/Record
-                rec_data = sd.playrec(out_data, samplerate=sample_rate, channels=2, blocking=True)
+                rec_data = self.run_play_rec(out_data)
                 recorded = rec_data[:, 0]
                 
                 # Extract the relevant segment based on latency

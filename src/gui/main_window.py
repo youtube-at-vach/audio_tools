@@ -1,5 +1,5 @@
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QStackedWidget
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QStackedWidget, QStatusBar
+from PyQt6.QtCore import Qt, QTimer
 from src.core.audio_engine import AudioEngine
 from src.core.config_manager import ConfigManager
 from src.gui.widgets.settings import SettingsWidget
@@ -113,6 +113,55 @@ class MainWindow(QMainWindow):
                 self.content_area.addWidget(widget)
             else:
                 self.content_area.addWidget(QLabel(f"No GUI for {module.name}"))
+        
+        # Status Bar
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+        
+        # Status Labels
+        self.status_label = QLabel("Idle")
+        self.io_label = QLabel("In: - | Out: -")
+        self.sr_label = QLabel("SR: -")
+        self.cpu_label = QLabel("CPU: 0%")
+        self.clients_label = QLabel("Clients: 0")
+        
+        # Add labels to status bar
+        self.status_bar.addPermanentWidget(self.status_label)
+        self.status_bar.addPermanentWidget(self.io_label)
+        self.status_bar.addPermanentWidget(self.sr_label)
+        self.status_bar.addPermanentWidget(self.cpu_label)
+        self.status_bar.addPermanentWidget(self.clients_label)
+        
+        # Timer for status update
+        self.status_timer = QTimer()
+        self.status_timer.timeout.connect(self.update_status)
+        self.status_timer.start(500) # 500ms update rate
+
+    def update_status(self):
+        status = self.audio_engine.get_status()
+        
+        # Active State
+        if status['active']:
+            self.status_label.setText("ACTIVE")
+            self.status_label.setStyleSheet("color: green; font-weight: bold;")
+        else:
+            self.status_label.setText("IDLE")
+            self.status_label.setStyleSheet("color: gray;")
+            
+        # I/O Mode
+        in_mode = status['input_channels'].capitalize()
+        out_mode = status['output_channels'].capitalize()
+        self.io_label.setText(f"In: {in_mode} | Out: {out_mode}")
+        
+        # Sample Rate
+        self.sr_label.setText(f"SR: {status['sample_rate']}")
+        
+        # CPU Load
+        cpu = status['cpu_load'] * 100
+        self.cpu_label.setText(f"CPU: {cpu:.1f}%")
+        
+        # Clients
+        self.clients_label.setText(f"Clients: {status['active_clients']}")
         
     def on_tool_selected(self, index):
         self.content_area.setCurrentIndex(index)
