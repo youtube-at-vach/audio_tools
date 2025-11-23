@@ -126,6 +126,18 @@ class SignalGenerator(MeasurementModule):
             # This is roughly Inverse A-weighting.
             
             scaling = 1.0 / (a_weight + 1e-12)
+            
+            # Clamp the boost to avoid infrasound dominating the signal
+            # Normalize to 1kHz gain first
+            # Find index closest to 1000Hz
+            idx_1k = np.argmin(np.abs(freqs - 1000))
+            if idx_1k < len(scaling):
+                ref_gain = scaling[idx_1k]
+                scaling /= ref_gain
+            
+            # Limit max boost to e.g. 40dB (100x) relative to 1kHz
+            scaling = np.minimum(scaling, 100.0)
+            
             scaling[0] = 0
             
         
