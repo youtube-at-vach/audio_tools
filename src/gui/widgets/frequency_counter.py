@@ -21,6 +21,7 @@ class FrequencyCounter(MeasurementModule):
         self.gate_threshold_db = -60.0
         self.update_interval_ms = 100 # Fast: 100ms, Slow: 500ms
         self.buffer_size = 8192 # Good resolution
+        self.selected_channel = 0 # 0: Ch1, 1: Ch2
         
         # State
         self.input_buffer = np.zeros(self.buffer_size)
@@ -39,6 +40,19 @@ class FrequencyCounter(MeasurementModule):
     def description(self) -> str:
         return "High-precision frequency measurement."
 
+    def run(self, args):
+        print("Frequency Counter running in CLI mode (not fully implemented)")
+        self.start_analysis()
+        try:
+            while True:
+                freq = self.process()
+                if freq:
+                    print(f"Frequency: {freq:.4f} Hz")
+                import time
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            self.stop_analysis()
+
     def get_widget(self):
         return FrequencyCounterWidget(self)
 
@@ -56,8 +70,11 @@ class FrequencyCounter(MeasurementModule):
             if status:
                 print(status)
             
-            # Capture Channel 0
-            if indata.shape[1] > 0:
+            # Capture Selected Channel
+            if indata.shape[1] > self.selected_channel:
+                new_data = indata[:, self.selected_channel]
+            elif indata.shape[1] > 0:
+                 # Fallback to Ch 0 if selected not available
                 new_data = indata[:, 0]
             else:
                 new_data = np.zeros(frames)
@@ -169,6 +186,15 @@ class FrequencyCounterWidget(QWidget):
         self.gate_spin.valueChanged.connect(lambda v: setattr(self.module, 'gate_threshold_db', v))
         gate_layout.addWidget(self.gate_spin)
         controls_layout.addLayout(gate_layout)
+
+        # Channel
+        ch_layout = QHBoxLayout()
+        ch_layout.addWidget(QLabel("Channel:"))
+        self.ch_combo = QComboBox()
+        self.ch_combo.addItems(["Ch 1", "Ch 2"])
+        self.ch_combo.currentIndexChanged.connect(lambda idx: setattr(self.module, 'selected_channel', idx))
+        ch_layout.addWidget(self.ch_combo)
+        controls_layout.addLayout(ch_layout)
         
         # Speed
         speed_layout = QHBoxLayout()

@@ -44,8 +44,13 @@ class AudioCalc:
             residual = signal - fitted
             return np.sqrt(np.mean(residual**2))
 
-        # Search around guess (+/- 5%)
-        bounds = (freq_guess * 0.95, freq_guess * 1.05)
+        # Search around guess
+        # The objective function has local minima spaced by approx sampling_rate/N.
+        # We need to constrain the search to the main lobe, roughly +/- sampling_rate/N.
+        bin_width = sampling_rate / N
+        search_width = 1.5 * bin_width # Slightly more than 1 bin width to be safe
+        
+        bounds = (freq_guess - search_width, freq_guess + search_width)
         res = minimize_scalar(get_residual_rms, bounds=bounds, method='bounded')
         return res.x
 
