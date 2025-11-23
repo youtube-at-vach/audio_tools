@@ -56,23 +56,79 @@ class SignalGenerator(MeasurementModule):
         """Pre-generates a buffer of colored noise."""
         num_samples = int(sample_rate * duration)
         
-        if self.noise_color == 'white':
-            return np.random.uniform(-1, 1, num_samples)
-            
-        # For other colors, use FFT filtering (simplified from legacy)
+        # White noise base
         white = np.random.randn(num_samples)
+        
+        if self.noise_color == 'white':
+            # Normalize
+            max_val = np.max(np.abs(white))
+            if max_val > 0:
+                white /= max_val
+            return white
+            
+        # FFT filtering
         fft = np.fft.rfft(white)
         freqs = np.fft.rfftfreq(num_samples, d=1/sample_rate)
         
+        # Avoid division by zero at DC (index 0)
+        # We'll handle DC separately or just set scaling[0] = 0
+        
+        scaling = np.ones_like(freqs)
+        
         if self.noise_color == 'pink':
-            # 1/f
-            scaling = 1 / np.sqrt(freqs + 1e-10)
+            # 1/f^0.5 (-3dB/oct)
+            # Handle DC: set to 0 or same as first bin
+            scaling[1:] = 1 / np.sqrt(freqs[1:])
+            scaling[0] = 0
         elif self.noise_color == 'brown':
-            # 1/f^2
-            scaling = 1 / (freqs + 1e-10)
-        else:
-            scaling = np.ones_like(freqs)
+            # 1/f (-6dB/oct)
+            scaling[1:] = 1 / freqs[1:]
+            scaling[0] = 0
+        elif self.noise_color == 'blue':
+            # f^0.5 (+3dB/oct)
+            scaling = np.sqrt(freqs)
+        elif self.noise_color == 'violet':
+            # f (+6dB/oct)
+            scaling = freqs
+        elif self.noise_color == 'grey':
+            # Inverted A-weighting curve approximation
+            # A-weighting (approx):
+            # Ra(f) = 12200^2 * f^4 / ((f^2 + 20.6^2) * sqrt((f^2 + 107.7^2)(f^2 + 737.9^2)) * (f^2 + 12200^2))
+            # Grey noise should be 1/Ra(f) roughly? Or just equal loudness contour.
+            # ITU-R 468 is better but complex.
+            # Let's use a simplified inverted A-weighting.
             
+            f = freqs
+            f2 = f**2
+            # Constants
+            c1 = 12194.217**2
+            c2 = 20.6**2
+            c3 = 107.7**2
+            c4 = 737.9**2
+            
+            # A-weighting magnitude squared
+            # Num = c1 * f^4
+            # Denom = (f^2 + c2) * sqrt((f^2 + c3)*(f^2 + c4)) * (f^2 + c1)
+            # We want inverse.
+            
+            # Avoid DC
+            f_safe = f.copy()
+            f_safe[0] = 1.0 # Dummy
+            f2_safe = f_safe**2
+            
+            num = c1 * (f2_safe**2)
+            denom = (f2_safe + c2) * np.sqrt((f2_safe + c3) * (f2_safe + c4)) * (f2_safe + c1)
+            
+            a_weight = num / denom
+            
+            # Grey noise = White / A-weighting ? No, Grey noise sounds "flat" to human ear.
+            # So it should be boosted where ear is insensitive (low/high freq) and cut where sensitive (mid).
+            # This is roughly Inverse A-weighting.
+            
+            scaling = 1.0 / (a_weight + 1e-12)
+            scaling[0] = 0
+            
+        
         fft = fft * scaling
         noise = np.fft.irfft(fft)
         
@@ -344,7 +400,7 @@ class SignalGeneratorWidget(QWidget):
         self.noise_widget = QWidget()
         noise_form = QFormLayout(self.noise_widget)
         self.noise_combo = QComboBox()
-        self.noise_combo.addItems(['white', 'pink', 'brown'])
+        self.noise_combo.addItems(['white', 'pink', 'brown', 'blue', 'violet', 'grey'])
         self.noise_combo.currentTextChanged.connect(lambda v: setattr(self.module, 'noise_color', v))
         noise_form.addRow("Color:", self.noise_combo)
         

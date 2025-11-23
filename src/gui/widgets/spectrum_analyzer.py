@@ -703,7 +703,10 @@ class SpectrumAnalyzerWidget(QWidget):
             magnitude += offset
             
         # Apply Weighting
-        magnitude += weighting_db
+        if magnitude.ndim == 2 and weighting_db.ndim == 1:
+            magnitude += weighting_db[:, np.newaxis]
+        else:
+            magnitude += weighting_db
         
         # Calculate Weighted RMS from Spectrum
         # We need to sum the power in frequency domain.
