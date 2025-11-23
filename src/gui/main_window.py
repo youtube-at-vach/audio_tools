@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QStackedWidget
 from PyQt6.QtCore import Qt
 from src.core.audio_engine import AudioEngine
+from src.core.config_manager import ConfigManager
 from src.gui.widgets.settings import SettingsWidget
 from src.gui.widgets.signal_generator import SignalGenerator
 from src.gui.widgets.spectrum_analyzer import SpectrumAnalyzer
@@ -21,10 +22,44 @@ class MainWindow(QMainWindow):
         self.resize(1000, 700)
         
         # Initialize Core Components
+        # Initialize Core Components
+        self.config_manager = ConfigManager()
         self.audio_engine = AudioEngine()
-        # Set default devices to UAC-232 (ID 3) as per user context
-        # In a real app, this should be configurable via a settings menu
-        self.audio_engine.set_devices(3, 3)
+        
+        # Load saved devices
+        last_in, last_out = self.config_manager.get_last_devices()
+        
+        # Default IDs
+        in_id, out_id = 3, 3 # Fallback to UAC-232 if not found or first run
+        
+        if last_in or last_out:
+            # Find IDs by name
+            devices = self.audio_engine.list_devices()
+            found_in = False
+            found_out = False
+            
+            for i, dev in enumerate(devices):
+                if last_in and dev['name'] == last_in and dev['max_input_channels'] > 0:
+                    in_id = i
+                    found_in = True
+                if last_out and dev['name'] == last_out and dev['max_output_channels'] > 0:
+                    out_id = i
+                    found_out = True
+            
+            if not found_in and last_in:
+                print(f"Saved input device '{last_in}' not found, using default.")
+            if not found_out and last_out:
+                print(f"Saved output device '{last_out}' not found, using default.")
+
+        try:
+            self.audio_engine.set_devices(in_id, out_id)
+        except Exception as e:
+            print(f"Failed to set devices: {e}")
+            # Try default if specific failed
+            try:
+                self.audio_engine.set_devices(None, None)
+            except:
+                pass
         
         # Initialize Modules
         self.modules = [
@@ -68,7 +103,7 @@ class MainWindow(QMainWindow):
         self.content_area.addWidget(welcome_label)
         
         # Add Settings Page (Index 1)
-        self.settings_widget = SettingsWidget(self.audio_engine)
+        self.settings_widget = SettingsWidget(self.audio_engine, self.config_manager)
         self.content_area.addWidget(self.settings_widget)
         
         # Add module widgets (Index 2+)
