@@ -7,15 +7,13 @@ from src.gui.widgets.signal_generator import SignalGenerator
 from src.gui.widgets.spectrum_analyzer import SpectrumAnalyzer
 from src.gui.widgets.lufs_meter import LufsMeter
 from src.gui.widgets.loopback_finder import LoopbackFinder
-from src.gui.widgets.loopback_finder import LoopbackFinder
 from src.gui.widgets.imd_analyzer import IMDAnalyzer
 from src.gui.widgets.network_analyzer import NetworkAnalyzer
 from src.gui.widgets.distortion_analyzer import DistortionAnalyzer
-from src.gui.widgets.distortion_analyzer import DistortionAnalyzer
-from src.gui.widgets.oscilloscope import Oscilloscope
 from src.gui.widgets.oscilloscope import Oscilloscope
 from src.gui.widgets.lock_in_amplifier import LockInAmplifier
 from src.gui.widgets.welcome import WelcomeWidget
+from src.gui.widgets.frequency_counter import FrequencyCounter
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -23,7 +21,6 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Audio Measurement Tools")
         self.resize(1000, 700)
         
-        # Initialize Core Components
         # Initialize Core Components
         self.config_manager = ConfigManager()
         self.audio_engine = AudioEngine()
@@ -73,7 +70,8 @@ class MainWindow(QMainWindow):
             DistortionAnalyzer(self.audio_engine),
             NetworkAnalyzer(self.audio_engine),
             Oscilloscope(self.audio_engine),
-            LockInAmplifier(self.audio_engine)
+            LockInAmplifier(self.audio_engine),
+            # FrequencyCounter(self.audio_engine)
         ]
         
         # Main layout container
