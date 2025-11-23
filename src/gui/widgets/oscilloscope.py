@@ -158,6 +158,8 @@ class OscilloscopeWidget(QWidget):
         # Assuming 10 divisions horizontally. 
         # Options: 1ms, 2ms, 5ms, 10ms, 20ms, 50ms, 100ms
         self.timebase_options = {
+            "10 us": 0.00001, "20 us": 0.00002, "50 us": 0.00005,
+            "100 us": 0.0001, "200 us": 0.0002, "500 us": 0.0005,
             "1 ms": 0.001, "2 ms": 0.002, "5 ms": 0.005, 
             "10 ms": 0.01, "20 ms": 0.02, "50 ms": 0.05, "100 ms": 0.1
         }
@@ -171,12 +173,25 @@ class OscilloscopeWidget(QWidget):
         self.vscale_combo = QComboBox()
         self.vscale_options = {
             "0.1x": 0.1, "0.2x": 0.2, "0.5x": 0.5, 
-            "1.0x": 1.0, "2.0x": 2.0, "5.0x": 5.0, "10.0x": 10.0
+            "1.0x": 1.0, "2.0x": 2.0, "5.0x": 5.0, "10.0x": 10.0,
+            "20.0x": 20.0, "50.0x": 50.0, "100.0x": 100.0, 
+            "200.0x": 200.0, "500.0x": 500.0, "1000.0x": 1000.0
         }
-        self.vscale_combo.addItems(self.vscale_options.keys())
+        self.vscale_keys = list(self.vscale_options.keys())
+        self.vscale_combo.addItems(self.vscale_keys)
         self.vscale_combo.setCurrentText("1.0x")
         self.vscale_combo.currentTextChanged.connect(self.on_vscale_changed)
         controls_layout.addWidget(self.vscale_combo)
+        
+        # Vertical Scale Slider
+        self.vscale_slider = QSlider(Qt.Orientation.Horizontal)
+        self.vscale_slider.setRange(0, len(self.vscale_keys) - 1)
+        self.vscale_slider.setFixedWidth(100)
+        self.vscale_slider.valueChanged.connect(self.on_vscale_slider_changed)
+        # Set initial value
+        if "1.0x" in self.vscale_keys:
+            self.vscale_slider.setValue(self.vscale_keys.index("1.0x"))
+        controls_layout.addWidget(self.vscale_slider)
         
         # Channels
         self.chk_left = QCheckBox("L")
@@ -226,6 +241,22 @@ class OscilloscopeWidget(QWidget):
         controls_group.setLayout(controls_layout)
         layout.addWidget(controls_group)
         
+        # --- Measurements ---
+        meas_group = QGroupBox("Measurements")
+        meas_layout = QHBoxLayout()
+        
+        self.meas_l_label = QLabel("L: Vrms: 0.000 V  Vpp: 0.000 V")
+        self.meas_l_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #00ff00;")
+        meas_layout.addWidget(self.meas_l_label)
+        
+        self.meas_r_label = QLabel("R: Vrms: 0.000 V  Vpp: 0.000 V")
+        self.meas_r_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #ff0000;")
+        meas_layout.addWidget(self.meas_r_label)
+        
+        meas_layout.addStretch()
+        meas_group.setLayout(meas_layout)
+        layout.addWidget(meas_group)
+        
         # --- Plot ---
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setLabel('left', 'Amplitude', units='V')
@@ -261,8 +292,27 @@ class OscilloscopeWidget(QWidget):
         self.module.timebase = val * 10 
         self.plot_widget.setXRange(0, self.module.timebase)
 
+    def on_vscale_slider_changed(self, idx):
+        if 0 <= idx < len(self.vscale_keys):
+            key = self.vscale_keys[idx]
+            # Block signals to prevent feedback loop if needed, 
+            # but usually setCurrentText emits signal which calls on_vscale_changed
+            # which sets slider value again. To avoid loop:
+            if self.vscale_combo.currentText() != key:
+                self.vscale_combo.setCurrentText(key)
+
     def on_vscale_changed(self, text):
+        if text not in self.vscale_options:
+            return
+            
         scale = self.vscale_options[text]
+        
+        # Sync slider
+        if text in self.vscale_keys:
+            idx = self.vscale_keys.index(text)
+            if self.vscale_slider.value() != idx:
+                self.vscale_slider.setValue(idx)
+        
         # Scale 1.0x -> Range -1.1 to 1.1
         # Scale 2.0x -> Range -0.55 to 0.55 (Zoom In)
         # Scale 0.5x -> Range -2.2 to 2.2 (Zoom Out)
@@ -297,6 +347,19 @@ class OscilloscopeWidget(QWidget):
         data = self.module.get_display_data(window_duration)
         
         if data is not None:
+            # Measurements
+            l_data = data[:, 0]
+            r_data = data[:, 1]
+            
+            l_rms = np.sqrt(np.mean(l_data**2))
+            l_vpp = np.max(l_data) - np.min(l_data)
+            
+            r_rms = np.sqrt(np.mean(r_data**2))
+            r_vpp = np.max(r_data) - np.min(r_data)
+            
+            self.meas_l_label.setText(f"L: Vrms: {l_rms:.3f} V  Vpp: {l_vpp:.3f} V")
+            self.meas_r_label.setText(f"R: Vrms: {r_rms:.3f} V  Vpp: {r_vpp:.3f} V")
+
             # Create time axis
             t = np.linspace(0, window_duration, len(data))
             
