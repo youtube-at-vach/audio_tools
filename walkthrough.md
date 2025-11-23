@@ -1,23 +1,32 @@
-# Lock-in Amplifier Phase and Unit Fixes
+# Lock-in Amplifier Fixes
 
 ## Changes Implemented
 
 ### 1. Phase Correction in Lock-in Amplifier
-- **Issue**: The measured phase was offset by -90 degrees in the Lock-in Amplifier compared to manual measurement.
-- **Cause**: The signal generator was producing a Sine wave ($\sin(\omega t)$), while the Lock-in detection uses a Cosine-aligned reference (via Hilbert transform or implicit assumption).
-- **Fix**: Changed the signal generator in `LockInAmplifier.start_analysis` to produce a Cosine wave (`np.cos`). This aligns the generated signal with the analysis reference, resulting in 0 degrees phase for a perfect loopback.
+- **Fix**: Changed signal generator to use Cosine wave (`np.cos`) for 0-degree phase alignment.
 
 ### 2. Y-Axis Unit Selection
-- **Issue**: The FRA plot was fixed to **dBFS**, but the user requested units like **dBV**, **dBu**, etc.
-- **Fix**: Added a "Plot Unit" dropdown to the "Frequency Response" tab in the Lock-in Amplifier widget.
-- **Supported Units**:
-    - **dBFS**: Default (Relative to Digital Full Scale)
-    - **dBV**: Decibels relative to 1 Volt RMS ($20 \log_{10}(V_{rms})$)
-    - **dBu**: Decibels relative to 0.775 Volts RMS ($20 \log_{10}(V_{rms} / 0.7746)$)
-    - **Vrms**: Volts RMS (Linear scale)
-    - **Vpeak**: Volts Peak (Linear scale)
-- **Implementation**: The conversion uses the `input_sensitivity` from the Audio Engine's calibration data.
+- **Fix**: Added "Plot Unit" dropdown to FRA tab. Supports dBFS, dBV, dBu, Vrms, Vpeak.
+
+### 3. Plot Reset & Auto-Range
+- **Fix**: Forced `enableAutoRange()` at the start of each sweep and `autoRange()` at the end.
+
+### 4. Output Settings Unification
+- **Fix**: Removed redundant FRA Amplitude settings. The sweep now uses the Manual Control settings.
+
+### 5. Measurement Loop Reliability (New)
+- **Issue**: Measurements were failing (returning 0 or noise) when the Manual Control timer was not running, because the data processing logic (`process_data`) was tied to the GUI timer.
+- **Fix**: Updated `FRASweepWorker` to explicitly trigger `process_data()` inside the sweep loop.
+- **Logic**:
+    1. Set Frequency.
+    2. Wait `Settling Time`.
+    3. Clear averaging history.
+    4. Loop `Averaging Count` times:
+        - Wait for `Buffer Duration` (e.g. ~0.1s).
+        - Call `process_data()` to analyze the current buffer.
+    5. Record the averaged result.
+- **Benefit**: This ensures reliable measurements even with heavy processing or when the GUI timer is inactive, and guarantees that the data used for the measurement corresponds to the current frequency.
 
 ## Verification
-- **Phase**: The Lock-in Amplifier sweep should now show 0 degrees (flat) for a loopback cable.
-- **Units**: The Y-axis label and values will update according to the selected unit during the sweep.
+- **Reliability**: Run an FRA sweep without starting the Manual Control. The plot should populate with valid data.
+- **Averaging**: Increasing "Averaging" count in Manual settings should slow down the sweep slightly per point but reduce noise.
