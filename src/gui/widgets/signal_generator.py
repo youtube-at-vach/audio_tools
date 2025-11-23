@@ -35,6 +35,8 @@ class SignalGenerator(MeasurementModule):
         self.mls_order = 15
         self.burst_on_cycles = 10
         self.burst_off_cycles = 90
+        
+        self.callback_id = None
 
     @property
     def name(self) -> str:
@@ -305,11 +307,13 @@ class SignalGenerator(MeasurementModule):
             if num_channels >= 2:
                 outdata[:, 1] = signal
 
-        self.audio_engine.start_stream(callback, channels=2) # Request 2, but engine might map fewer
+        self.callback_id = self.audio_engine.register_callback(callback)
 
     def stop_generation(self):
         if self.is_playing:
-            self.audio_engine.stop_stream()
+            if self.callback_id is not None:
+                self.audio_engine.unregister_callback(self.callback_id)
+                self.callback_id = None
             self.is_playing = False
 
 class SignalGeneratorWidget(QWidget):
