@@ -2,10 +2,15 @@ import argparse
 import numpy as np
 import pyqtgraph as pg
 from scipy.signal import hilbert
+from collections import deque
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
                              QComboBox, QCheckBox, QSlider, QGroupBox, QFormLayout, 
-                             QDoubleSpinBox, QProgressBar)
-from PyQt6.QtCore import QTimer, Qt
+                             QDoubleSpinBox, QProgressBar, QSpinBox)
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
+                             QComboBox, QCheckBox, QSlider, QGroupBox, QFormLayout, 
+                             QDoubleSpinBox, QProgressBar, QSpinBox, QTabWidget)
+from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
+import time
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 
@@ -27,8 +32,14 @@ class LockInAmplifier(MeasurementModule):
         # Results
         self.current_magnitude = 0.0
         self.current_phase = 0.0
+        self.current_x = 0.0
+        self.current_y = 0.0
         self.ref_freq = 0.0
         self.ref_level = 0.0
+        
+        # Averaging
+        self.averaging_count = 1
+        self.history = deque(maxlen=100)
         
     @property
     def name(self) -> str:
@@ -77,11 +88,14 @@ class LockInAmplifier(MeasurementModule):
             t = (np.arange(frames) + self._phase) / sample_rate
             self._phase += frames
             
-            signal = self.gen_amplitude * np.sin(2 * np.pi * self.gen_frequency * t)
+            signal = self.gen_amplitude * np.cos(2 * np.pi * self.gen_frequency * t)
             
             # Fill Output Buffer
             outdata.fill(0)
-            if outdata.shape[1] > self.output_channel:
+            if self.output_channel == 2: # Stereo
+                if outdata.shape[1] >= 1: outdata[:, 0] = signal
+                if outdata.shape[1] >= 2: outdata[:, 1] = signal
+            elif outdata.shape[1] > self.output_channel:
                 outdata[:, self.output_channel] = signal
 
         self.audio_engine.start_stream(callback, channels=2)
@@ -107,6 +121,8 @@ class LockInAmplifier(MeasurementModule):
         if ref_rms < 0.001: # -60dB threshold
             self.current_magnitude = 0.0
             self.current_phase = 0.0
+            self.current_x = 0.0
+            self.current_y = 0.0
             self.ref_freq = 0.0
             return
 
@@ -114,11 +130,9 @@ class LockInAmplifier(MeasurementModule):
         # Simple zero crossing for display
         crossings = np.where(np.diff(np.signbit(ref)))[0]
         if len(crossings) > 1:
-            avg_period = (crossings[-1] - crossings[0]) / (len(crossings) - 1) * 2 # *2 because diff signbit counts both edges? No, signbit changes every zero crossing.
-            # Wait, signbit changes + to - and - to +. Distance between changes is half period.
-            # So period = 2 * avg_distance
+            avg_period = (crossings[-1] - crossings[0]) / (len(crossings) - 1) * 2 
             fs = self.audio_engine.sample_rate
-            self.ref_freq = fs / (avg_period * 2) if avg_period > 0 else 0
+            self.ref_freq = fs / avg_period if avg_period > 0 else 0
         
         # 2. Lock-in Detection
         # Hilbert Transform to get analytic signal of Reference
@@ -138,21 +152,73 @@ class LockInAmplifier(MeasurementModule):
         product = sig * np.conj(ref_phasor)
         
         # Low-pass filter (Mean over buffer)
-        # Ensure buffer is integer number of cycles for best accuracy, or use windowing?
-        # For lock-in, long integration time (large buffer) acts as narrow filter.
-        # With 4096 samples at 48k, that's ~85ms. 1kHz has 85 cycles. Error is small.
         result = np.mean(product)
         
-        # Magnitude is 2 * abs(result) because we discarded half power in negative freq?
-        # Let's check: Sig=1*cos(wt), Ref=cos(wt)+j*sin(wt)=exp(jwt)
-        # Product = cos(wt)*exp(-jwt) = cos(wt)*(cos(wt)-j*sin(wt)) = cos^2(wt) - j*sin(wt)cos(wt)
-        # Mean(cos^2) = 0.5. Mean(sin*cos) = 0.
-        # So Mean = 0.5. Magnitude should be 1. So we multiply by 2.
-        self.current_magnitude = 2 * np.abs(result)
+        # Averaging
+        self.history.append(result)
+        while len(self.history) > self.averaging_count:
+            self.history.popleft()
+            
+        avg_result = np.mean(self.history)
+        
+        # Magnitude is 2 * abs(result)
+        self.current_magnitude = 2 * np.abs(avg_result)
         
         # Phase
-        self.current_phase = np.degrees(np.angle(result))
+        self.current_phase = np.degrees(np.angle(avg_result))
+        
+        # X and Y (In-phase and Quadrature)
+        # X = 2 * Real, Y = 2 * Imag
+        self.current_x = 2 * np.real(avg_result)
+        self.current_y = 2 * np.imag(avg_result)
 
+
+
+class FRASweepWorker(QThread):
+    progress = pyqtSignal(int)
+    result = pyqtSignal(float, float, float) # freq, mag, phase
+    finished_sweep = pyqtSignal()
+    
+    def __init__(self, module: LockInAmplifier, start_f, end_f, steps, log_sweep, settle_time):
+        super().__init__()
+        self.module = module
+        self.start_f = start_f
+        self.end_f = end_f
+        self.steps = steps
+        self.log_sweep = log_sweep
+        self.settle_time = settle_time
+        self.is_cancelled = False
+        
+    def run(self):
+        if self.log_sweep:
+            freqs = np.logspace(np.log10(self.start_f), np.log10(self.end_f), self.steps)
+        else:
+            freqs = np.linspace(self.start_f, self.end_f, self.steps)
+            
+        # Ensure module is running
+        if not self.module.is_running:
+            self.module.start_analysis()
+            time.sleep(0.5) # Wait for start
+            
+        for i, f in enumerate(freqs):
+            if self.is_cancelled: break
+            
+            self.module.gen_frequency = f
+            
+            # Wait for settling
+            time.sleep(self.settle_time)
+            
+            # Read measurement
+            mag = self.module.current_magnitude
+            phase = self.module.current_phase
+            
+            self.result.emit(f, mag, phase)
+            self.progress.emit(int((i+1)/self.steps * 100))
+            
+        self.finished_sweep.emit()
+        
+    def cancel(self):
+        self.is_cancelled = True
 
 class LockInAmplifierWidget(QWidget):
     def __init__(self, module: LockInAmplifier):
@@ -165,7 +231,14 @@ class LockInAmplifierWidget(QWidget):
         self.timer.setInterval(100) # 10Hz update
 
     def init_ui(self):
-        layout = QHBoxLayout()
+        main_layout = QVBoxLayout()
+        
+        # Tabs for Modes
+        self.tabs = QTabWidget()
+        
+        # --- Tab 1: Manual Control (Existing) ---
+        manual_widget = QWidget()
+        manual_layout = QHBoxLayout(manual_widget)
         
         # --- Left Panel: Settings ---
         settings_group = QGroupBox("Settings")
@@ -190,12 +263,20 @@ class LockInAmplifierWidget(QWidget):
         self.amp_spin = QDoubleSpinBox()
         self.amp_spin.setRange(-120, 0)
         self.amp_spin.setValue(-6)
-        self.amp_spin.setSuffix(" dBFS")
-        self.amp_spin.valueChanged.connect(self.on_amp_changed)
-        settings_layout.addRow("Amplitude:", self.amp_spin)
+        self.amp_spin.valueChanged.connect(self.on_amp_spin_changed)
+        
+        self.gen_unit_combo = QComboBox()
+        self.gen_unit_combo.addItems(['Linear (0-1)', 'dBFS', 'dBV', 'dBu', 'Vrms', 'Vpeak'])
+        self.gen_unit_combo.setCurrentText('dBFS')
+        self.gen_unit_combo.currentTextChanged.connect(self.on_gen_unit_changed)
+        
+        amp_layout = QHBoxLayout()
+        amp_layout.addWidget(self.amp_spin)
+        amp_layout.addWidget(self.gen_unit_combo)
+        settings_layout.addRow("Amplitude:", amp_layout)
         
         self.out_ch_combo = QComboBox()
-        self.out_ch_combo.addItems(["Left (Ch 1)", "Right (Ch 2)"])
+        self.out_ch_combo.addItems(["Left (Ch 1)", "Right (Ch 2)", "Stereo (Both)"])
         self.out_ch_combo.currentIndexChanged.connect(self.on_out_ch_changed)
         settings_layout.addRow("Output Ch:", self.out_ch_combo)
         
@@ -220,8 +301,14 @@ class LockInAmplifierWidget(QWidget):
         self.time_combo.currentIndexChanged.connect(self.on_time_changed)
         settings_layout.addRow("Integration:", self.time_combo)
         
+        self.avg_spin = QSpinBox()
+        self.avg_spin.setRange(1, 100)
+        self.avg_spin.setValue(1)
+        self.avg_spin.valueChanged.connect(lambda v: setattr(self.module, 'averaging_count', v))
+        settings_layout.addRow("Averaging:", self.avg_spin)
+        
         settings_group.setLayout(settings_layout)
-        layout.addWidget(settings_group, stretch=1)
+        manual_layout.addWidget(settings_group, stretch=1)
         
         # --- Right Panel: Meters ---
         meters_group = QGroupBox("Measurements")
@@ -229,6 +316,14 @@ class LockInAmplifierWidget(QWidget):
         
         # Magnitude
         meters_layout.addWidget(QLabel("Magnitude"))
+        
+        # Unit Selection
+        self.unit_combo = QComboBox()
+        self.unit_combo.addItems(["dBFS", "dBV", "dBu", "V", "mV"])
+        self.unit_combo.setCurrentText("dBFS")
+        self.unit_combo.currentIndexChanged.connect(self.update_ui) # Update immediately
+        meters_layout.addWidget(self.unit_combo)
+        
         self.mag_label = QLabel("0.000 V")
         self.mag_label.setStyleSheet("font-size: 36px; font-weight: bold; color: #00ff00;")
         self.mag_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -250,6 +345,29 @@ class LockInAmplifierWidget(QWidget):
         
         meters_layout.addSpacing(20)
         
+        # X / Y
+        xy_layout = QHBoxLayout()
+        
+        x_group = QVBoxLayout()
+        x_group.addWidget(QLabel("X (In-phase)"))
+        self.x_label = QLabel("0.000 V")
+        self.x_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #ffff00;")
+        self.x_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        x_group.addWidget(self.x_label)
+        xy_layout.addLayout(x_group)
+        
+        y_group = QVBoxLayout()
+        y_group.addWidget(QLabel("Y (Quadrature)"))
+        self.y_label = QLabel("0.000 V")
+        self.y_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #ff00ff;")
+        self.y_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        y_group.addWidget(self.y_label)
+        xy_layout.addLayout(y_group)
+        
+        meters_layout.addLayout(xy_layout)
+        
+        meters_layout.addSpacing(20)
+        
         # Reference Status
         ref_status_layout = QHBoxLayout()
         ref_status_layout.addWidget(QLabel("Reference Status:"))
@@ -260,9 +378,110 @@ class LockInAmplifierWidget(QWidget):
         
         meters_layout.addStretch()
         meters_group.setLayout(meters_layout)
-        layout.addWidget(meters_group, stretch=2)
+        manual_layout.addWidget(meters_group, stretch=2)
         
-        self.setLayout(layout)
+        self.tabs.addTab(manual_widget, "Manual Control")
+        
+        # --- Tab 2: Frequency Response Analyzer (FRA) ---
+        fra_widget = QWidget()
+        fra_layout = QHBoxLayout(fra_widget)
+        
+        # FRA Settings
+        fra_settings_group = QGroupBox("Sweep Settings")
+        fra_form = QFormLayout()
+        
+        self.fra_start_spin = QDoubleSpinBox()
+        self.fra_start_spin.setRange(20, 20000); self.fra_start_spin.setValue(20); self.fra_start_spin.setSuffix(" Hz")
+        fra_form.addRow("Start Freq:", self.fra_start_spin)
+        
+        self.fra_end_spin = QDoubleSpinBox()
+        self.fra_end_spin.setRange(20, 20000); self.fra_end_spin.setValue(20000); self.fra_end_spin.setSuffix(" Hz")
+        fra_form.addRow("End Freq:", self.fra_end_spin)
+        
+        self.fra_steps_spin = QSpinBox()
+        self.fra_steps_spin.setRange(10, 1000); self.fra_steps_spin.setValue(50)
+        fra_form.addRow("Steps:", self.fra_steps_spin)
+        
+        self.fra_log_check = QCheckBox("Log Sweep"); self.fra_log_check.setChecked(True)
+        fra_form.addRow(self.fra_log_check)
+        
+        self.fra_settle_spin = QDoubleSpinBox()
+        self.fra_settle_spin.setRange(0.1, 5.0); self.fra_settle_spin.setValue(0.5); self.fra_settle_spin.setSuffix(" s")
+        fra_form.addRow("Settling Time:", self.fra_settle_spin)
+        
+        # FRA Amplitude
+        self.fra_amp_spin = QDoubleSpinBox()
+        self.fra_amp_spin.setRange(-120, 20)
+        self.fra_amp_spin.setValue(-6)
+        
+        self.fra_amp_unit_combo = QComboBox()
+        self.fra_amp_unit_combo.addItems(['Linear (0-1)', 'dBFS', 'dBV', 'dBu', 'Vrms', 'Vpeak'])
+        self.fra_amp_unit_combo.setCurrentText('dBFS')
+        
+        fra_amp_layout = QHBoxLayout()
+        fra_amp_layout.addWidget(self.fra_amp_spin)
+        fra_amp_layout.addWidget(self.fra_amp_unit_combo)
+        fra_form.addRow("Amplitude:", fra_amp_layout)
+
+        # Plot Unit Selector
+        self.fra_plot_unit_combo = QComboBox()
+        self.fra_plot_unit_combo.addItems(['dBFS', 'dBV', 'dBu', 'Vrms', 'Vpeak'])
+        self.fra_plot_unit_combo.setCurrentText('dBFS')
+        fra_form.addRow("Plot Unit:", self.fra_plot_unit_combo)
+        
+        self.fra_start_btn = QPushButton("Start Sweep")
+        self.fra_start_btn.clicked.connect(self.on_fra_start)
+        fra_form.addRow(self.fra_start_btn)
+        
+        self.fra_progress = QProgressBar()
+        fra_form.addRow(self.fra_progress)
+        
+        fra_settings_group.setLayout(fra_form)
+        fra_layout.addWidget(fra_settings_group, stretch=1)
+        
+        # FRA Plot
+        self.fra_plot = pg.PlotWidget(title="Bode Plot")
+        self.fra_plot.setLabel('bottom', "Frequency", units='Hz')
+        self.fra_plot.setLabel('left', "Magnitude", units='dB')
+        self.fra_plot.showGrid(x=True, y=True, alpha=0.3)
+        self.fra_plot.addLegend()
+        
+        # Custom Axis for Log Frequency
+        axis = self.fra_plot.getPlotItem().getAxis('bottom')
+        axis.setLogMode(False) # We will handle log data manually
+        
+        # Dual Axis for Phase
+        self.fra_plot_p = pg.ViewBox()
+        self.fra_plot.scene().addItem(self.fra_plot_p)
+        self.fra_plot.getPlotItem().showAxis('right')
+        self.fra_plot.getPlotItem().scene().addItem(self.fra_plot_p)
+        self.fra_plot.getPlotItem().getAxis('right').linkToView(self.fra_plot_p)
+        self.fra_plot_p.setXLink(self.fra_plot.getPlotItem())
+        self.fra_plot.getPlotItem().getAxis('right').setLabel('Phase', units='deg')
+        
+        # Handle resizing
+        def update_views():
+            self.fra_plot_p.setGeometry(self.fra_plot.getPlotItem().vb.sceneBoundingRect())
+            self.fra_plot_p.linkedViewChanged(self.fra_plot.getPlotItem().vb, self.fra_plot_p.XAxis)
+        self.fra_plot.getPlotItem().vb.sigResized.connect(update_views)
+        
+        self.fra_curve_mag = self.fra_plot.plot(pen='g', name='Magnitude (dB)')
+        self.fra_curve_phase = pg.PlotCurveItem(pen='c', name='Phase (deg)')
+        self.fra_plot_p.addItem(self.fra_curve_phase)
+        
+        fra_layout.addWidget(self.fra_plot, stretch=3)
+        
+        self.tabs.addTab(fra_widget, "Frequency Response")
+        
+        main_layout.addWidget(self.tabs)
+        self.setLayout(main_layout)
+        
+        # Data storage for FRA
+        self.fra_freqs = []
+        self.fra_log_freqs = []
+        self.fra_mags = []
+        self.fra_phases = []
+        self.fra_worker = None
 
     def on_toggle(self, checked):
         if checked:
@@ -278,9 +497,86 @@ class LockInAmplifierWidget(QWidget):
         self.module.gen_frequency = val
         # Phase continuity is handled in callback by using self.module.gen_frequency
 
-    def on_amp_changed(self, val):
-        amp_linear = 10**(val/20)
-        self.module.gen_amplitude = amp_linear
+    def calculate_linear_amplitude(self, val, unit):
+        gain = self.module.audio_engine.calibration.output_gain
+        amp_linear = 0.0
+        
+        if unit == 'Linear (0-1)':
+            amp_linear = val
+        elif unit == 'dBFS':
+            amp_linear = 10**(val/20)
+        elif unit == 'dBV':
+            # val = 20 * log10(Vrms)
+            v_rms = 10**(val/20)
+            v_peak = v_rms * np.sqrt(2)
+            amp_linear = v_peak / gain
+        elif unit == 'dBu':
+            # val = 20 * log10(Vrms / 0.7746)
+            v_rms = 0.7746 * 10**(val/20)
+            v_peak = v_rms * np.sqrt(2)
+            amp_linear = v_peak / gain
+        elif unit == 'Vrms':
+            v_peak = val * np.sqrt(2)
+            amp_linear = v_peak / gain
+        elif unit == 'Vpeak':
+            amp_linear = val / gain
+            
+        # Clamp
+        if amp_linear > 1.0: amp_linear = 1.0
+        elif amp_linear < 0.0: amp_linear = 0.0
+        
+        return amp_linear
+
+    def on_amp_spin_changed(self, val):
+        unit = self.gen_unit_combo.currentText()
+        self.module.gen_amplitude = self.calculate_linear_amplitude(val, unit)
+
+    def on_gen_unit_changed(self, unit):
+        self.update_amp_display()
+
+    def update_amp_display(self):
+        unit = self.gen_unit_combo.currentText()
+        amp_0_1 = self.module.gen_amplitude
+        gain = self.module.audio_engine.calibration.output_gain
+        
+        self.amp_spin.blockSignals(True)
+        
+        if unit == 'Linear (0-1)':
+            self.amp_spin.setRange(0, 1.0)
+            self.amp_spin.setSingleStep(0.1)
+            self.amp_spin.setValue(amp_0_1)
+        elif unit == 'dBFS':
+            self.amp_spin.setRange(-120, 0)
+            self.amp_spin.setSingleStep(1.0)
+            val = 20 * np.log10(amp_0_1 + 1e-12)
+            self.amp_spin.setValue(val)
+        elif unit == 'dBV':
+            v_peak = amp_0_1 * gain
+            v_rms = v_peak / np.sqrt(2)
+            val = 20 * np.log10(v_rms + 1e-12)
+            self.amp_spin.setRange(-120, 20)
+            self.amp_spin.setSingleStep(1.0)
+            self.amp_spin.setValue(val)
+        elif unit == 'dBu':
+            v_peak = amp_0_1 * gain
+            v_rms = v_peak / np.sqrt(2)
+            val = 20 * np.log10((v_rms + 1e-12) / 0.7746)
+            self.amp_spin.setRange(-120, 20)
+            self.amp_spin.setSingleStep(1.0)
+            self.amp_spin.setValue(val)
+        elif unit == 'Vrms':
+            v_peak = amp_0_1 * gain
+            v_rms = v_peak / np.sqrt(2)
+            self.amp_spin.setRange(0, 100)
+            self.amp_spin.setSingleStep(0.1)
+            self.amp_spin.setValue(v_rms)
+        elif unit == 'Vpeak':
+            v_peak = amp_0_1 * gain
+            self.amp_spin.setRange(0, 100)
+            self.amp_spin.setSingleStep(0.1)
+            self.amp_spin.setValue(v_peak)
+            
+        self.amp_spin.blockSignals(False)
 
     def on_out_ch_changed(self, idx):
         self.module.output_channel = idx
@@ -310,18 +606,80 @@ class LockInAmplifierWidget(QWidget):
         self.module.process_data()
         
         # Update Meters
-        mag = self.module.current_magnitude
+        mag_fs = self.module.current_magnitude
         phase = self.module.current_phase
         
-        self.mag_label.setText(f"{mag:.6f} V") # Assuming 0dBFS = 1.0V for now, or just linear units
+        # Calculate Voltage
+        sensitivity = self.module.audio_engine.calibration.input_sensitivity # Vpeak at 0dBFS
+        v_peak = mag_fs * sensitivity
+        v_rms = v_peak / np.sqrt(2)
         
-        if mag > 0:
-            db = 20 * np.log10(mag + 1e-12)
-            self.mag_db_label.setText(f"{db:.2f} dBFS")
-        else:
-            self.mag_db_label.setText("-inf dBFS")
+        unit = self.unit_combo.currentText()
+        
+        if unit == "dBFS":
+            if mag_fs > 0:
+                val = 20 * np.log10(mag_fs + 1e-12)
+                self.mag_label.setText(f"{val:.2f} dBFS")
+            else:
+                self.mag_label.setText("-inf dBFS")
+            self.mag_db_label.setText("") # Clear secondary
+            
+        elif unit == "dBV":
+            if v_rms > 0:
+                val = 20 * np.log10(v_rms + 1e-12)
+                self.mag_label.setText(f"{val:.2f} dBV")
+            else:
+                self.mag_label.setText("-inf dBV")
+            self.mag_db_label.setText("")
+            
+        elif unit == "dBu":
+            if v_rms > 0:
+                val = 20 * np.log10((v_rms + 1e-12) / 0.7746)
+                self.mag_label.setText(f"{val:.2f} dBu")
+            else:
+                self.mag_label.setText("-inf dBu")
+            self.mag_db_label.setText("")
+            
+        elif unit == "V":
+            self.mag_label.setText(f"{v_rms:.6f} V")
+            # Show dBFS as secondary
+            if mag_fs > 0:
+                db = 20 * np.log10(mag_fs + 1e-12)
+                self.mag_db_label.setText(f"{db:.2f} dBFS")
+            else:
+                self.mag_db_label.setText("-inf dBFS")
+                
+        elif unit == "mV":
+            self.mag_label.setText(f"{v_rms * 1000:.3f} mV")
+            # Show dBFS as secondary
+            if mag_fs > 0:
+                db = 20 * np.log10(mag_fs + 1e-12)
+                self.mag_db_label.setText(f"{db:.2f} dBFS")
+            else:
+                self.mag_db_label.setText("-inf dBFS")
             
         self.phase_label.setText(f"{phase:.2f} deg")
+        
+        # Update X/Y (Always in Voltage for now, or follow unit?)
+        # Let's follow unit logic for X/Y roughly, but X/Y are signed.
+        # dB is not good for signed X/Y.
+        # So we stick to V or mV if V/mV/dBV/dBu is selected, and FS if dBFS.
+        
+        x_fs = self.module.current_x
+        y_fs = self.module.current_y
+        
+        x_v = x_fs * sensitivity / np.sqrt(2) # RMS
+        y_v = y_fs * sensitivity / np.sqrt(2) # RMS
+        
+        if unit == "dBFS":
+            self.x_label.setText(f"{x_fs:.6f} FS")
+            self.y_label.setText(f"{y_fs:.6f} FS")
+        elif unit == "mV":
+            self.x_label.setText(f"{x_v * 1000:.3f} mV")
+            self.y_label.setText(f"{y_v * 1000:.3f} mV")
+        else: # V, dBV, dBu -> Show V
+            self.x_label.setText(f"{x_v:.6f} V")
+            self.y_label.setText(f"{y_v:.6f} V")
         
         # Update Ref Status
         ref_level = self.module.ref_level
@@ -333,3 +691,99 @@ class LockInAmplifierWidget(QWidget):
         else:
             self.ref_status_label.setText("No Signal / Low Level")
             self.ref_status_label.setStyleSheet("font-weight: bold; color: #ff0000;")
+
+    def on_fra_start(self):
+        if self.fra_worker is not None and self.fra_worker.isRunning():
+            self.fra_worker.cancel()
+            self.fra_worker.wait()
+            self.fra_start_btn.setText("Start Sweep")
+            return
+            
+        # Clear Data
+        self.fra_freqs = []
+        self.fra_log_freqs = []
+        self.fra_mags = []
+        self.fra_phases = []
+        self.fra_curve_mag.setData([], [])
+        self.fra_curve_phase.setData([], [])
+        
+        # Start Worker
+        start = self.fra_start_spin.value()
+        end = self.fra_end_spin.value()
+        steps = self.fra_steps_spin.value()
+        log = self.fra_log_check.isChecked()
+        settle = self.fra_settle_spin.value()
+        
+        # Set Amplitude
+        amp_val = self.fra_amp_spin.value()
+        amp_unit = self.fra_amp_unit_combo.currentText()
+        self.module.gen_amplitude = self.calculate_linear_amplitude(amp_val, amp_unit)
+        
+        # Setup Axis Ticks
+        if log:
+            axis = self.fra_plot.getPlotItem().getAxis('bottom')
+            # Generate ticks
+            ticks = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+            ticks_log = [(np.log10(t), str(t) if t < 1000 else f"{t/1000:.0f}k") for t in ticks]
+            axis.setTicks([ticks_log])
+        else:
+            self.fra_plot.getPlotItem().getAxis('bottom').setTicks(None) # Auto
+        
+        self.fra_worker = FRASweepWorker(self.module, start, end, steps, log, settle)
+        self.fra_worker.progress.connect(self.fra_progress.setValue)
+        self.fra_worker.result.connect(self.on_fra_result)
+        self.fra_worker.finished_sweep.connect(self.on_fra_finished)
+        
+        self.fra_worker.start()
+        self.fra_start_btn.setText("Stop Sweep")
+        
+    def on_fra_result(self, f, mag, phase):
+        self.fra_freqs.append(f)
+        
+        # Log X
+        if self.fra_log_check.isChecked():
+            x_val = np.log10(f)
+        else:
+            x_val = f
+        self.fra_log_freqs.append(x_val)
+        
+        # Convert Mag to Selected Unit
+        unit = self.fra_plot_unit_combo.currentText()
+        sensitivity = self.module.audio_engine.calibration.input_sensitivity
+        
+        # mag is Linear (0-1 relative to Full Scale)
+        
+        y_val = 0.0
+        if unit == 'dBFS':
+            y_val = 20 * np.log10(mag + 1e-12)
+            self.fra_plot.setLabel('left', "Magnitude", units='dBFS')
+        elif unit == 'dBV':
+            v_peak = mag * sensitivity
+            v_rms = v_peak / np.sqrt(2)
+            y_val = 20 * np.log10(v_rms + 1e-12)
+            self.fra_plot.setLabel('left', "Magnitude", units='dBV')
+        elif unit == 'dBu':
+            v_peak = mag * sensitivity
+            v_rms = v_peak / np.sqrt(2)
+            y_val = 20 * np.log10((v_rms + 1e-12) / 0.7746)
+            self.fra_plot.setLabel('left', "Magnitude", units='dBu')
+        elif unit == 'Vrms':
+            v_peak = mag * sensitivity
+            y_val = v_peak / np.sqrt(2)
+            self.fra_plot.setLabel('left', "Magnitude", units='V')
+        elif unit == 'Vpeak':
+            y_val = mag * sensitivity
+            self.fra_plot.setLabel('left', "Magnitude", units='V')
+            
+        self.fra_mags.append(y_val)
+        self.fra_phases.append(phase)
+        
+        self.fra_curve_mag.setData(self.fra_log_freqs, self.fra_mags)
+        self.fra_curve_phase.setData(self.fra_log_freqs, self.fra_phases)
+        
+        # Auto-scale Phase View
+        self.fra_plot_p.autoRange()
+        
+    def on_fra_finished(self):
+        self.fra_start_btn.setText("Start Sweep")
+        self.fra_progress.setValue(100)
