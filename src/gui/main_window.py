@@ -13,7 +13,9 @@ from src.gui.widgets.network_analyzer import NetworkAnalyzer
 from src.gui.widgets.distortion_analyzer import DistortionAnalyzer
 from src.gui.widgets.distortion_analyzer import DistortionAnalyzer
 from src.gui.widgets.oscilloscope import Oscilloscope
+from src.gui.widgets.oscilloscope import Oscilloscope
 from src.gui.widgets.lock_in_amplifier import LockInAmplifier
+from src.gui.widgets.welcome import WelcomeWidget
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -68,10 +70,8 @@ class MainWindow(QMainWindow):
             LufsMeter(self.audio_engine),
             LoopbackFinder(self.audio_engine),
             IMDAnalyzer(self.audio_engine),
-            NetworkAnalyzer(self.audio_engine),
             DistortionAnalyzer(self.audio_engine),
             NetworkAnalyzer(self.audio_engine),
-            DistortionAnalyzer(self.audio_engine),
             Oscilloscope(self.audio_engine),
             LockInAmplifier(self.audio_engine)
         ]
@@ -98,9 +98,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.content_area)
         
         # Add initial welcome page (Index 0)
-        welcome_label = QLabel("Select a tool from the sidebar to begin.")
-        welcome_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.content_area.addWidget(welcome_label)
+        self.welcome_widget = WelcomeWidget()
+        self.content_area.addWidget(self.welcome_widget)
         
         # Add Settings Page (Index 1)
         self.settings_widget = SettingsWidget(self.audio_engine, self.config_manager)
