@@ -1,7 +1,8 @@
 import argparse
 import numpy as np
 import pyqtgraph as pg
-from scipy.signal import butter, sosfiltfilt, get_window
+from scipy.signal import butter, sosfiltfilt, get_window, iirnotch, filtfilt
+from scipy.optimize import minimize_scalar
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
                              QComboBox, QCheckBox, QSlider, QGroupBox, QFormLayout, 
                              QSpinBox, QDoubleSpinBox, QTabWidget, QStackedWidget, 
@@ -34,35 +35,69 @@ class AudioCalc:
         return sosfiltfilt(sos, signal)
     
     @staticmethod
-    def calculate_thdn_components(signal, sampling_rate, target_frequency, window_name='hanning'):
+    def calculate_thdn_sine_fit(signal, sampling_rate, freq_guess):
         """
-        Returns (fundamental_rms, residue_rms) for THD+N calculation.
+        Calculates THD+N using Sine Fitting method.
+        Returns (thdn_db, fund_rms, noise_dist_rms)
         """
-        if np.max(np.abs(signal)) == 0:
-            return 0.0, 0.0
+        N = len(signal)
+        t = np.arange(N) / sampling_rate
         
-        # Apply window
-        window = get_window(window_name, len(signal))
-        windowed_signal = signal * window
+        # 1. Optimize Frequency
+        def get_residual_rms(f):
+            w = 2 * np.pi * f
+            sin_t = np.sin(w * t)
+            cos_t = np.cos(w * t)
+            ones = np.ones(N)
+            M = np.column_stack([sin_t, cos_t, ones])
+            coeffs, _, _, _ = np.linalg.lstsq(M, signal, rcond=None)
+            fitted = M @ coeffs
+            residual = signal - fitted
+            return np.sqrt(np.mean(residual**2))
+
+        # Search around guess (+/- 5%)
+        bounds = (freq_guess * 0.95, freq_guess * 1.05)
+        res = minimize_scalar(get_residual_rms, bounds=bounds, method='bounded')
+        best_freq = res.x
         
-        # Notch out fundamental
-        filtered_signal = AudioCalc.notch_filter(windowed_signal, sampling_rate, target_frequency)
+        # 2. Get Final Residual
+        w = 2 * np.pi * best_freq
+        sin_t = np.sin(w * t)
+        cos_t = np.cos(w * t)
+        ones = np.ones(N)
+        M = np.column_stack([sin_t, cos_t, ones])
+        coeffs, _, _, _ = np.linalg.lstsq(M, signal, rcond=None)
+        fitted_fund = M @ coeffs
+        residual = signal - fitted_fund
         
-        # Calculate RMS
-        fundamental_rms = np.sqrt(np.mean(windowed_signal**2))
-        residue_rms = np.sqrt(np.mean(filtered_signal**2))
+        # 3. Bandwidth Limit Residual (20Hz - 20kHz)
+        # Highpass 20Hz (Remove DC/Drift if any left)
+        if sampling_rate > 40:
+            sos_hp = butter(4, 20, 'hp', fs=sampling_rate, output='sos')
+            residual = sosfiltfilt(sos_hp, residual)
         
-        return fundamental_rms, residue_rms
-    
-    @staticmethod
-    def calculate_thdn(signal, sampling_rate, target_frequency, window_name='hanning', min_db=-140.0):
-        fund_rms, res_rms = AudioCalc.calculate_thdn_components(signal, sampling_rate, target_frequency, window_name)
-        
-        if fund_rms == 0:
-            return min_db
+        # Lowpass 20kHz
+        if sampling_rate > 44100:
+            sos_lp = butter(4, 20000, 'lp', fs=sampling_rate, output='sos')
+            residual = sosfiltfilt(sos_lp, residual)
             
-        thdn_value = 20 * np.log10(res_rms / fund_rms + 1e-12)
-        return thdn_value
+        # 4. Calculate RMS
+        # Trim edges slightly to avoid filter transients from bandwidth limit
+        trim = min(100, N//8)
+        if N > 2*trim:
+            nd_rms = np.sqrt(np.mean(residual[trim:-trim]**2))
+            fund_rms = np.sqrt(np.mean(fitted_fund[trim:-trim]**2))
+        else:
+            nd_rms = np.sqrt(np.mean(residual**2))
+            fund_rms = np.sqrt(np.mean(fitted_fund**2))
+            
+        if fund_rms == 0:
+            return -140.0, 0.0, 0.0
+            
+        ratio = nd_rms / fund_rms
+        thdn_db = 20 * np.log10(ratio + 1e-12)
+        
+        return thdn_db, fund_rms, nd_rms
     
     @staticmethod
     def analyze_harmonics(audio_data, fundamental_freq, window_name, sampling_rate, min_db=-140.0):
@@ -99,6 +134,20 @@ class AudioCalc:
             
         max_freq = freqs[peak_idx]
         max_amplitude = amplitude_spectrum[peak_idx]
+        
+        # Refine Frequency using Parabolic Interpolation
+        if 0 < peak_idx < len(amplitude_spectrum) - 1:
+            alpha = amplitude_spectrum[peak_idx-1]
+            beta = amplitude_spectrum[peak_idx]
+            gamma = amplitude_spectrum[peak_idx+1]
+            
+            denom = alpha - 2*beta + gamma
+            if denom != 0:
+                p = 0.5 * (alpha - gamma) / denom
+                max_freq = freqs[peak_idx] + p * (freqs[1] - freqs[0])
+                # Optional: Refine amplitude estimate
+                # max_amplitude = beta - 0.25 * (alpha - gamma) * p
+        
         amp_dbfs = 20 * np.log10(max_amplitude + 1e-12)
         
         result = {
@@ -157,14 +206,10 @@ class AudioCalc:
             thd_percent = 0
             thd_db = min_db
             
-        # THD+N Calculation (Time domain notch)
-        fund_rms, res_rms = AudioCalc.calculate_thdn_components(audio_data, sampling_rate, max_freq, window_name)
-        if fund_rms > 0:
-            thdn_linear = res_rms / fund_rms
-            thdn_db = 20 * np.log10(thdn_linear + 1e-12)
-        else:
-            thdn_linear = 0
-            thdn_db = min_db
+        # THD+N Calculation (Sine Fit)
+        # Use raw audio_data (no window applied yet)
+        thdn_db, fund_rms, res_rms = AudioCalc.calculate_thdn_sine_fit(audio_data, sampling_rate, max_freq)
+        thdn_linear = 10**(thdn_db/20)
             
         thdn_percent = thdn_linear * 100
         sinad_db = -thdn_db
@@ -329,7 +374,10 @@ class SweepWorker(QThread):
                 # val is dBFS, convert to linear
                 self.module.gen_amplitude = 10**(val/20)
             
-            self.msleep(self.duration_ms)
+            # Wait for settling (Generator update + Audio Buffer Latency)
+            # Ensure at least 300ms wait
+            wait_time = max(300, self.duration_ms)
+            self.msleep(wait_time)
             
             # Use safe capture
             self.module.request_capture()
