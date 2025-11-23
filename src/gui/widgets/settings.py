@@ -258,26 +258,25 @@ class SettingsWidget(QWidget):
         title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(title)
 
-        # Input Device Selection
-        layout.addWidget(QLabel("Input Device:"))
-        self.input_combo = QComboBox()
-        layout.addWidget(self.input_combo)
-
-        # Output Device Selection
-        layout.addWidget(QLabel("Output Device:"))
-        self.output_combo = QComboBox()
-        layout.addWidget(self.output_combo)
-
         # Device Selection Group
         dev_group = QGroupBox("Audio Devices")
         dev_layout = QFormLayout()
         
+        self.input_combo = QComboBox()
         dev_layout.addRow("Input Device:", self.input_combo)
+        
+        self.output_combo = QComboBox()
         dev_layout.addRow("Output Device:", self.output_combo)
         
         self.refresh_btn = QPushButton("Refresh Devices")
         self.refresh_btn.clicked.connect(self.refresh_devices)
         dev_layout.addRow(self.refresh_btn)
+        
+        # Active Device Info
+        self.active_in_label = QLabel("None")
+        self.active_out_label = QLabel("None")
+        dev_layout.addRow("Active Input:", self.active_in_label)
+        dev_layout.addRow("Active Output:", self.active_out_label)
         
         dev_group.setLayout(dev_layout)
         layout.addWidget(dev_group)
@@ -352,6 +351,9 @@ class SettingsWidget(QWidget):
         
         layout.addStretch()
         self.setLayout(layout)
+        
+        # Initialize
+        self.refresh_devices()
 
     def open_input_calibration(self):
         dlg = InputCalibrationDialog(self.audio_engine, self)
@@ -396,11 +398,15 @@ class SettingsWidget(QWidget):
         # Restore selection if possible
         if default_in is not None:
             idx = self.input_combo.findData(default_in)
-            if idx >= 0: self.input_combo.setCurrentIndex(idx)
+            if idx >= 0: 
+                self.input_combo.setCurrentIndex(idx)
+                self.active_in_label.setText(self.input_combo.itemText(idx))
             
         if default_out is not None:
             idx = self.output_combo.findData(default_out)
-            if idx >= 0: self.output_combo.setCurrentIndex(idx)
+            if idx >= 0: 
+                self.output_combo.setCurrentIndex(idx)
+                self.active_out_label.setText(self.output_combo.itemText(idx))
             
         # Connect signals after populating to avoid triggering during setup
         try:
@@ -419,6 +425,8 @@ class SettingsWidget(QWidget):
         if input_idx is not None and output_idx is not None:
             try:
                 self.audio_engine.set_devices(input_idx, output_idx)
+                self.active_in_label.setText(self.input_combo.currentText())
+                self.active_out_label.setText(self.output_combo.currentText())
                 QMessageBox.information(self, "Success", f"Devices set to Input: {input_idx}, Output: {output_idx}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to set devices: {e}")
