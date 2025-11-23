@@ -347,6 +347,13 @@ class IMDAnalyzerWidget(QWidget):
         self.plot_widget.setLabel('bottom', 'Frequency', units='Hz')
         self.plot_widget.setLogMode(x=True, y=True)
         self.plot_widget.showGrid(x=True, y=True)
+        
+        # Custom Axis Ticks
+        axis = self.plot_widget.getPlotItem().getAxis('bottom')
+        ticks = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+        ticks_log = [(np.log10(t), str(t) if t < 1000 else f"{t/1000:.0f}k") for t in ticks]
+        axis.setTicks([ticks_log])
+        
         self.plot_curve = self.plot_widget.plot(pen='y')
         layout.addWidget(self.plot_widget)
         

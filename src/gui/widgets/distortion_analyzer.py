@@ -631,7 +631,18 @@ class DistortionAnalyzerWidget(QWidget):
         self.spectrum_plot.setLabel('bottom', 'Frequency', units='Hz')
         self.spectrum_plot.setLogMode(x=True, y=False)
         self.spectrum_plot.setYRange(-140, 0)
+        self.spectrum_plot.setYRange(-140, 0)
         self.spectrum_plot.showGrid(x=True, y=True)
+        
+        # Custom Axis Ticks for Spectrum
+        axis_spec = self.spectrum_plot.getPlotItem().getAxis('bottom')
+        ticks = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+        ticks_log = [(np.log10(t), str(t) if t < 1000 else f"{t/1000:.0f}k") for t in ticks]
+        axis_spec.setTicks([ticks_log])
+        
+        # Set Range (log domain)
+        self.spectrum_plot.setXRange(np.log10(20), np.log10(20000))
+        
         self.spectrum_curve = self.spectrum_plot.plot(pen='y')
         self.tabs.addTab(self.spectrum_plot, "Spectrum")
         
@@ -647,7 +658,19 @@ class DistortionAnalyzerWidget(QWidget):
         self.sweep_plot.setLabel('left', 'THD+N', units='dB')
         self.sweep_plot.setLabel('bottom', 'Frequency', units='Hz') # Dynamic label
         self.sweep_plot.setLogMode(x=True, y=False)
+        self.sweep_plot.setLogMode(x=True, y=False)
         self.sweep_plot.showGrid(x=True, y=True)
+        
+        # Custom Axis Ticks for Sweep (Frequency Mode)
+        # Note: If mode changes to Amplitude Sweep, we might need to reset this?
+        # The user only requested "like Spectrum Analyzer", which implies Frequency domain.
+        # We'll set it here, and handle mode changes if necessary.
+        self.sweep_axis = self.sweep_plot.getPlotItem().getAxis('bottom')
+        self.sweep_axis.setTicks([ticks_log])
+        
+        # Set Range (log domain) for Frequency Sweep default
+        self.sweep_plot.setXRange(np.log10(20), np.log10(20000))
+        
         self.sweep_curve = self.sweep_plot.plot(pen='c', symbol='o')
         self.tabs.addTab(self.sweep_plot, "Sweep Results")
         
@@ -679,6 +702,11 @@ class DistortionAnalyzerWidget(QWidget):
                 self.sweep_end_spin.setValue(20000)
                 self.sweep_plot.setLabel('bottom', 'Frequency', units='Hz')
                 self.sweep_plot.setLogMode(x=True, y=False)
+                # Restore custom ticks for frequency
+                ticks = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+                ticks_log = [(np.log10(t), str(t) if t < 1000 else f"{t/1000:.0f}k") for t in ticks]
+                self.sweep_axis.setTicks([ticks_log])
+                self.sweep_plot.setXRange(np.log10(20), np.log10(20000))
             else: # Amplitude Sweep
                 self.sweep_start_spin.setSuffix(" dBFS")
                 self.sweep_end_spin.setSuffix(" dBFS")
@@ -686,6 +714,8 @@ class DistortionAnalyzerWidget(QWidget):
                 self.sweep_end_spin.setValue(0)
                 self.sweep_plot.setLabel('bottom', 'Amplitude', units='dBFS')
                 self.sweep_plot.setLogMode(x=False, y=False)
+                # Reset ticks to auto for amplitude
+                self.sweep_axis.setTicks(None)
 
     def on_out_mode_changed(self, idx):
         if idx == 0: # Internal Sine
@@ -834,7 +864,7 @@ class DistortionAnalyzerWidget(QWidget):
         
         mode = self.mode_combo.currentText()
         if mode == "Frequency Sweep":
-            x_plot = np.log10(np.array(x_data) + 1e-12)
+            x_plot = np.array(x_data)
         else:
             x_plot = np.array(x_data)
             
@@ -885,4 +915,4 @@ class DistortionAnalyzerWidget(QWidget):
         mag = 20 * np.log10(np.abs(fft_data) / len(data) * 2 + 1e-12)
         freqs = np.fft.rfftfreq(len(data), 1/sample_rate)
         
-        self.spectrum_curve.setData(np.log10(freqs[1:]+1e-12), mag[1:])
+        self.spectrum_curve.setData(freqs[1:], mag[1:])
