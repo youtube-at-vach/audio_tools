@@ -14,6 +14,7 @@ class OutputCalibrationDialog(QDialog):
         self.resize(400, 300)
         self.init_ui()
         self.is_playing = False
+        self.callback_id = None
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -86,12 +87,15 @@ class OutputCalibrationDialog(QDialog):
                 outdata[:, 0] = tone
         
         callback.t_start = 0
-        self.audio_engine.start_stream(callback)
+        callback.t_start = 0
+        self.callback_id = self.audio_engine.register_callback(callback)
         self.is_playing = True
 
     def stop_tone(self):
         if self.is_playing:
-            self.audio_engine.stop_stream()
+            if self.callback_id is not None:
+                self.audio_engine.unregister_callback(self.callback_id)
+                self.callback_id = None
             self.is_playing = False
 
     def on_save(self):
@@ -134,6 +138,7 @@ class InputCalibrationDialog(QDialog):
         self.resize(400, 300)
         self.init_ui()
         self.is_measuring = False
+        self.callback_id = None
         self.current_rms_dbfs = -100.0
         
         self.timer = QTimer()
@@ -195,12 +200,14 @@ class InputCalibrationDialog(QDialog):
                 self.current_rms_dbfs = db
             outdata.fill(0)
             
-        self.audio_engine.start_stream(callback)
+        self.callback_id = self.audio_engine.register_callback(callback)
         self.is_measuring = True
 
     def stop_measurement(self):
         if self.is_measuring:
-            self.audio_engine.stop_stream()
+            if self.callback_id is not None:
+                self.audio_engine.unregister_callback(self.callback_id)
+                self.callback_id = None
             self.is_measuring = False
 
     def update_level(self):

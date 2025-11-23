@@ -259,6 +259,8 @@ class DistortionAnalyzer(MeasurementModule):
         self.sweep_mode = False
         self.sweep_running = False
         self.sweep_results = []
+        
+        self.callback_id = None
 
     @property
     def name(self) -> str:
@@ -327,11 +329,13 @@ class DistortionAnalyzer(MeasurementModule):
                 self.capture_requested = False
                 self.capture_ready = True
 
-        self.audio_engine.start_stream(callback, channels=2)
+        self.callback_id = self.audio_engine.register_callback(callback)
 
     def stop_analysis(self):
         if self.is_running:
-            self.audio_engine.stop_stream()
+            if self.callback_id is not None:
+                self.audio_engine.unregister_callback(self.callback_id)
+                self.callback_id = None
             self.is_running = False
             
     def request_capture(self):

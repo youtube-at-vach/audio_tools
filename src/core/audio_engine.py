@@ -218,6 +218,27 @@ class AudioEngine:
         """Returns True if the stream is active."""
         return self.stream is not None and self.stream.active
 
+    def get_status(self):
+        """Returns a dictionary containing current engine status."""
+        active = self.is_active()
+        cpu_load = 0.0
+        if active and self.stream:
+            cpu_load = self.stream.cpu_load
+            
+        with self.lock:
+            client_count = len(self.callbacks)
+            
+        return {
+            "active": active,
+            "input_channels": self.input_channel_mode,
+            "output_channels": self.output_channel_mode,
+            "sample_rate": self.sample_rate,
+            "cpu_load": cpu_load,
+            "active_clients": client_count,
+            "input_device": self.input_device,
+            "output_device": self.output_device
+        }
+
     # Legacy method support (deprecated but kept for compatibility during transition if needed)
     def start_stream(self, callback, channels=2):
         """

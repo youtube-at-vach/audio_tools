@@ -153,6 +153,8 @@ class IMDAnalyzer(MeasurementModule):
         # Threading
         self.analysis_queue = queue.Queue(maxsize=2) # Small buffer to drop old frames if slow
         self.worker = None
+        
+        self.callback_id = None
 
     @property
     def name(self) -> str:
@@ -187,13 +189,16 @@ class IMDAnalyzer(MeasurementModule):
         self.worker = AnalysisWorker(self.analysis_queue, self.signals, self)
         self.worker.start()
         
-        self.audio_engine.start_stream(self._audio_callback)
+        self.callback_id = self.audio_engine.register_callback(self._audio_callback)
 
     def stop_analysis(self):
         if not self.is_running:
             return
             
-        self.audio_engine.stop_stream()
+        if self.callback_id is not None:
+            self.audio_engine.unregister_callback(self.callback_id)
+            self.callback_id = None
+            
         self.is_running = False
         
         if self.worker:
