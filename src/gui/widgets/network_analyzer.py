@@ -316,7 +316,7 @@ class NetworkAnalyzer(MeasurementModule):
                 # Generate Tone
                 num_samples = int(sample_rate * self.duration_per_step)
                 t = np.arange(num_samples) / sample_rate
-                tone = self.amplitude * np.sin(2 * np.pi * freq * t)
+                tone = self.amplitude * np.cos(2 * np.pi * freq * t)
                 
                 # Padding for latency
                 # We need to ensure we capture the full tone after it travels through the loopback
@@ -488,6 +488,12 @@ class NetworkAnalyzerWidget(QWidget):
         self.smooth_combo.currentTextChanged.connect(self.refresh_plots)
         form.addRow("Smoothing:", self.smooth_combo)
         
+        # Unit Selector
+        self.unit_combo = QComboBox()
+        self.unit_combo.addItems(["dBFS", "dBV", "dBu", "Vrms", "Vpeak"])
+        self.unit_combo.currentTextChanged.connect(self.refresh_plots)
+        form.addRow("Unit:", self.unit_combo)
+        
         self.lat_btn = QPushButton("Calibrate Latency")
         self.lat_btn.clicked.connect(self.calibrate)
         form.addRow(self.lat_btn)
@@ -616,47 +622,105 @@ class NetworkAnalyzerWidget(QWidget):
             return
             
         smooth_mode = self.smooth_combo.currentText()
+        unit = self.unit_combo.currentText()
         
-        mags_to_plot = self.mags
-        phases_to_plot = self.phases
+        mags_to_plot = np.array(self.mags)
+        phases_to_plot = np.array(self.phases)
         
-        if smooth_mode != "Off" and len(self.mags) > 3:
-            window_size = 3
-            if smooth_mode == "Medium": window_size = 5
-            if smooth_mode == "Heavy": window_size = 9
+        # Unit Conversion
+        # self.mags is in dBFS
+        # Convert to Linear (Full Scale ratio)
+        mags_linear = 10 ** (mags_to_plot / 20)
+        
+        # Get Input Sensitivity (Volts for 0dBFS)
+        # Default to 1.0 if not available
+        try:
+            input_sensitivity = self.module.audio_engine.calibration.input_sensitivity
+        except:
+            input_sensitivity = 1.0
             
-            # Simple moving average
-            mags_to_plot = scipy.signal.savgol_filter(mags_to_plot, min(len(mags_to_plot), window_size), 1) if len(mags_to_plot) >= window_size else mags_to_plot
-            phases_to_plot = scipy.signal.savgol_filter(phases_to_plot, min(len(phases_to_plot), window_size), 1) if len(phases_to_plot) >= window_size else phases_to_plot
+        if unit == "dBFS":
+            y_values = mags_to_plot
+            self.mag_plot.setLabel('left', 'Magnitude', units='dBFS')
+        elif unit == "dBV":
+            # dBV = 20 * log10(Vrms)
+            # Vpeak = linear * input_sensitivity
+            # Vrms = Vpeak / sqrt(2)
+            v_peak = mags_linear * input_sensitivity
+            v_rms = v_peak / np.sqrt(2)
+            y_values = 20 * np.log10(v_rms + 1e-12)
+            self.mag_plot.setLabel('left', 'Magnitude', units='dBV')
+        elif unit == "dBu":
+            # dBu = 20 * log10(Vrms / 0.7746)
+            v_peak = mags_linear * input_sensitivity
+            v_rms = v_peak / np.sqrt(2)
+            y_values = 20 * np.log10((v_rms + 1e-12) / 0.7746)
+            self.mag_plot.setLabel('left', 'Magnitude', units='dBu')
+        elif unit == "Vrms":
+            v_peak = mags_linear * input_sensitivity
+            y_values = v_peak / np.sqrt(2)
+            self.mag_plot.setLabel('left', 'Magnitude', units='V')
+        elif unit == "Vpeak":
+            y_values = mags_linear * input_sensitivity
+            self.mag_plot.setLabel('left', 'Magnitude', units='V')
+        else:
+            y_values = mags_to_plot
             
         # Apply Reference if enabled
         if self.apply_ref_check.isChecked() and self.module.reference_trace is not None:
             ref = self.module.reference_trace
             ref_freqs = ref['freqs']
-            ref_mags = ref['mags']
+            ref_mags = ref['mags'] # dBFS
             ref_phases = ref['phases']
             
             # Interpolate reference to current frequencies
-            # We assume freqs are sorted
             if len(ref_freqs) > 1:
-                interp_mags = np.interp(self.freqs, ref_freqs, ref_mags)
+                interp_mags_dbfs = np.interp(self.freqs, ref_freqs, ref_mags)
                 interp_phases = np.interp(self.freqs, ref_freqs, ref_phases)
                 
-                # Normalize: Measured - Reference
-                # Mag (dB): M_norm = M_meas - M_ref
-                # Phase (deg): P_norm = P_meas - P_ref
+                # Calculate Reference in Target Unit
+                ref_mags_linear = 10 ** (interp_mags_dbfs / 20)
                 
-                # Ensure lists are numpy arrays for subtraction
-                current_mags = np.array(mags_to_plot)
+                if unit == "dBFS":
+                    ref_y = interp_mags_dbfs
+                elif unit == "dBV":
+                    v_peak = ref_mags_linear * input_sensitivity
+                    v_rms = v_peak / np.sqrt(2)
+                    ref_y = 20 * np.log10(v_rms + 1e-12)
+                elif unit == "dBu":
+                    v_peak = ref_mags_linear * input_sensitivity
+                    v_rms = v_peak / np.sqrt(2)
+                    ref_y = 20 * np.log10((v_rms + 1e-12) / 0.7746)
+                elif unit == "Vrms":
+                    v_peak = ref_mags_linear * input_sensitivity
+                    ref_y = v_peak / np.sqrt(2)
+                elif unit == "Vpeak":
+                    ref_y = ref_mags_linear * input_sensitivity
+                
+                # Normalize
+                if "dB" in unit:
+                    y_values = y_values - ref_y
+                else:
+                    # Linear division
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        y_values = y_values / ref_y
+                        y_values = np.nan_to_num(y_values)
+                
+                # Phase normalization
                 current_phases = np.array(phases_to_plot)
-                
-                mags_to_plot = current_mags - interp_mags
                 phases_to_plot = current_phases - interp_phases
-                
-                # Wrap phase
                 phases_to_plot = (phases_to_plot + 180) % 360 - 180
 
-        self.mag_curve.setData(self.freqs, mags_to_plot)
+        if smooth_mode != "Off" and len(y_values) > 3:
+            window_size = 3
+            if smooth_mode == "Medium": window_size = 5
+            if smooth_mode == "Heavy": window_size = 9
+            
+            # Simple moving average
+            y_values = scipy.signal.savgol_filter(y_values, min(len(y_values), window_size), 1) if len(y_values) >= window_size else y_values
+            phases_to_plot = scipy.signal.savgol_filter(phases_to_plot, min(len(phases_to_plot), window_size), 1) if len(phases_to_plot) >= window_size else phases_to_plot
+
+        self.mag_curve.setData(self.freqs, y_values)
         self.phase_curve.setData(self.freqs, phases_to_plot)
 
     def on_sweep_finished(self):
