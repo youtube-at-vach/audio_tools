@@ -9,11 +9,14 @@ PythonとPyQt6を使用して構築されており、オーディオ信号の生
 
 *   **Signal Generator**: 正弦波、矩形波、ノイズなどのテスト信号を生成します。
 *   **Spectrum Analyzer**: リアルタイムで周波数スペクトルを表示します。
+*   **Oscilloscope**: 波形を時間軸で表示します。
+*   **Frequency Counter**: 高精度な周波数測定を行います。
 *   **LUFS Meter**: ラウドネス（LUFS）を測定します。
 *   **Loopback Finder**: オーディオインターフェースのループバック遅延を測定・補正します。
 *   **IMD Analyzer**: 相互変調歪み（IMD）を測定します。
 *   **Network Analyzer**: ゲインと位相を含む詳細なネットワーク解析を行います（周波数特性測定を含む）。
 *   **Distortion Analyzer**: THD, THD+N, SINAD などの歪み率を測定します。
+*   **Lock-in Amplifier**: 微小信号の位相敏感検波を行います。
 
 ## 🚀 クイックスタート (Quick Start)
 
@@ -43,31 +46,6 @@ python main_gui.py
 1.  `Audio_Measurement_Tools-x86_64.AppImage` をダウンロードします。
 2.  実行権限を付与します：`chmod +x Audio_Measurement_Tools-x86_64.AppImage`
 3.  実行します：`./Audio_Measurement_Tools-x86_64.AppImage`
-
----
-
-## 🏛️ 殿堂入り：Legacy Tools
-
-統合前の個別のスクリプト群は `legacy/` ディレクトリに保存されています。
-これらは現在メンテナンスされていませんが、個別の機能を参照したい場合に役立ちます。
-
-*   **audio_analyzer**: 歪み可視化や音声計算など
-*   **audio_calibration_tool**: デバイス較正
-*   **audio_crosstalk_analyzer**: クロストーク測定
-*   **audio_freq_response_analyzer**: 周波数応答解析 (旧)
-*   **audio_imd_analyzer**: IMD測定 (旧)
-*   **audio_lissajous_analyzer**: リサージュ図形
-*   **audio_loopback_finder**: ループバック検出 (旧)
-*   **audio_phase_analyzer**: 位相差測定
-*   **audio_signal_generator**: 信号生成 (旧)
-*   **audio_transient_analyzer**: 過渡信号解析
-*   **dynamic_range_analyzer**: ダイナミックレンジ測定
-*   **lufs_meter**: LUFSメーター (旧)
-*   **noise_generator**: ノイズ生成
-*   **noise_spectrum_analyzer**: ノイズスペクトル解析
-*   **rt60_analyzer**: 残響時間(RT60)測定
-*   **snr_analyzer**: SNR測定
-*   **wow_flutter_analyzer**: ワウフラッター測定
 
 ---
 
