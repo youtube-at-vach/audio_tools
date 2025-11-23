@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, QPushButto
                              QDialogButtonBox, QDoubleSpinBox, QHBoxLayout)
 from PyQt6.QtCore import QTimer, Qt
 from src.core.audio_engine import AudioEngine
+from src.core.config_manager import ConfigManager
 
 class OutputCalibrationDialog(QDialog):
     def __init__(self, audio_engine: AudioEngine, parent=None):
@@ -245,9 +246,10 @@ class InputCalibrationDialog(QDialog):
         super().closeEvent(event)
 
 class SettingsWidget(QWidget):
-    def __init__(self, audio_engine: AudioEngine):
+    def __init__(self, audio_engine: AudioEngine, config_manager: ConfigManager):
         super().__init__()
         self.audio_engine = audio_engine
+        self.config_manager = config_manager
         self.init_ui()
 
     def init_ui(self):
@@ -427,6 +429,12 @@ class SettingsWidget(QWidget):
                 self.audio_engine.set_devices(input_idx, output_idx)
                 self.active_in_label.setText(self.input_combo.currentText())
                 self.active_out_label.setText(self.output_combo.currentText())
+                
+                # Save to config
+                in_name = self.input_combo.currentText().split(": ", 1)[1]
+                out_name = self.output_combo.currentText().split(": ", 1)[1]
+                self.config_manager.set_last_devices(in_name, out_name)
+                
                 QMessageBox.information(self, "Success", f"Devices set to Input: {input_idx}, Output: {output_idx}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to set devices: {e}")
