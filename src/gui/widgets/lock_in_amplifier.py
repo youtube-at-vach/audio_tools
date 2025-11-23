@@ -208,7 +208,37 @@ class FRASweepWorker(QThread):
             # Wait for settling
             time.sleep(self.settle_time)
             
-            # Read measurement
+            # Measurement Loop
+            # We need to capture 'averaging_count' buffers
+            self.module.history.clear()
+            
+            # Calculate buffer duration
+            sample_rate = self.module.audio_engine.sample_rate
+            buffer_duration = self.module.buffer_size / sample_rate
+            
+            # Ensure we wait at least a bit to avoid CPU spin if buffer is tiny, 
+            # though buffer_size is usually > 2048 (approx 40ms at 48k)
+            wait_time = max(0.05, buffer_duration)
+            
+            # We need to fill the history with new data
+            # The process_data() call processes the *current* buffer.
+            # We need to wait for the audio callback to update the buffer.
+            
+            # First, wait for one full buffer fill to ensure we are past the settling time completely
+            time.sleep(wait_time)
+            
+            for _ in range(self.module.averaging_count):
+                if self.is_cancelled: break
+                
+                # Wait for next buffer update
+                # Since we don't have precise synchronization with callback here, 
+                # we sleep for the buffer duration.
+                time.sleep(wait_time)
+                
+                # Process the current buffer state
+                self.module.process_data()
+            
+            # Read measurement (which is now the average of the history)
             mag = self.module.current_magnitude
             phase = self.module.current_phase
             
@@ -409,20 +439,6 @@ class LockInAmplifierWidget(QWidget):
         self.fra_settle_spin.setRange(0.1, 5.0); self.fra_settle_spin.setValue(0.5); self.fra_settle_spin.setSuffix(" s")
         fra_form.addRow("Settling Time:", self.fra_settle_spin)
         
-        # FRA Amplitude
-        self.fra_amp_spin = QDoubleSpinBox()
-        self.fra_amp_spin.setRange(-120, 20)
-        self.fra_amp_spin.setValue(-6)
-        
-        self.fra_amp_unit_combo = QComboBox()
-        self.fra_amp_unit_combo.addItems(['Linear (0-1)', 'dBFS', 'dBV', 'dBu', 'Vrms', 'Vpeak'])
-        self.fra_amp_unit_combo.setCurrentText('dBFS')
-        
-        fra_amp_layout = QHBoxLayout()
-        fra_amp_layout.addWidget(self.fra_amp_spin)
-        fra_amp_layout.addWidget(self.fra_amp_unit_combo)
-        fra_form.addRow("Amplitude:", fra_amp_layout)
-
         # Plot Unit Selector
         self.fra_plot_unit_combo = QComboBox()
         self.fra_plot_unit_combo.addItems(['dBFS', 'dBV', 'dBu', 'Vrms', 'Vpeak'])
@@ -707,6 +723,10 @@ class LockInAmplifierWidget(QWidget):
         self.fra_curve_mag.setData([], [])
         self.fra_curve_phase.setData([], [])
         
+        # Reset View (Force AutoRange)
+        self.fra_plot.getPlotItem().enableAutoRange()
+        self.fra_plot_p.enableAutoRange()
+        
         # Start Worker
         start = self.fra_start_spin.value()
         end = self.fra_end_spin.value()
@@ -714,9 +734,15 @@ class LockInAmplifierWidget(QWidget):
         log = self.fra_log_check.isChecked()
         settle = self.fra_settle_spin.value()
         
-        # Set Amplitude
-        amp_val = self.fra_amp_spin.value()
-        amp_unit = self.fra_amp_unit_combo.currentText()
+        # Force Apply Settings (Channel Routing)
+        # This ensures settings are applied even if Manual mode wasn't run
+        self.module.output_channel = self.out_ch_combo.currentIndex()
+        self.module.signal_channel = self.sig_ch_combo.currentIndex()
+        self.module.ref_channel = self.ref_ch_combo.currentIndex()
+        
+        # Set Amplitude (Use Manual Settings)
+        amp_val = self.amp_spin.value()
+        amp_unit = self.gen_unit_combo.currentText()
         self.module.gen_amplitude = self.calculate_linear_amplitude(amp_val, amp_unit)
         
         # Setup Axis Ticks
@@ -787,3 +813,5 @@ class LockInAmplifierWidget(QWidget):
     def on_fra_finished(self):
         self.fra_start_btn.setText("Start Sweep")
         self.fra_progress.setValue(100)
+        self.fra_plot.getPlotItem().autoRange()
+        self.fra_plot_p.autoRange()
