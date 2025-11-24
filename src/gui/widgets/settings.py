@@ -334,7 +334,16 @@ class SettingsWidget(QWidget):
         self.bs_combo.addItems(['256', '512', '1024', '2048', '4096'])
         self.bs_combo.setCurrentText(str(self.audio_engine.block_size))
         self.bs_combo.currentTextChanged.connect(self.on_bs_changed)
-        conf_layout.addRow(tr("Buffer Size:"), self.bs_combo)
+        
+        self.bs_duration_label = QLabel()
+        self.bs_duration_label.setStyleSheet("color: #888888; font-style: italic; margin-left: 10px;")
+        
+        bs_layout = QHBoxLayout()
+        bs_layout.setContentsMargins(0, 0, 0, 0)
+        bs_layout.addWidget(self.bs_combo)
+        bs_layout.addWidget(self.bs_duration_label)
+        bs_layout.addStretch() # Keep it to the left
+        conf_layout.addRow(tr("Buffer Size:"), bs_layout)
         
         # Input Channels
         self.in_ch_combo = QComboBox()
@@ -359,12 +368,13 @@ class SettingsWidget(QWidget):
         
         # Input Sensitivity
         self.in_sens_edit = QLineEdit()
-        self.in_sens_edit.setText(str(self.audio_engine.calibration.input_sensitivity))
+        self.in_sens_edit.setText(f"{self.audio_engine.calibration.input_sensitivity:.4f}")
         self.in_sens_edit.editingFinished.connect(self.on_in_sens_changed)
         
         in_cal_btn = QPushButton(tr("Wizard"))
         in_cal_btn.clicked.connect(self.open_input_calibration)
         in_cal_layout = QHBoxLayout()
+        in_cal_layout.setContentsMargins(0, 0, 0, 0)
         in_cal_layout.addWidget(self.in_sens_edit)
         in_cal_layout.addWidget(in_cal_btn)
         
@@ -372,12 +382,13 @@ class SettingsWidget(QWidget):
         
         # Output Gain
         self.out_gain_edit = QLineEdit()
-        self.out_gain_edit.setText(str(self.audio_engine.calibration.output_gain))
+        self.out_gain_edit.setText(f"{self.audio_engine.calibration.output_gain:.4f}")
         self.out_gain_edit.editingFinished.connect(self.on_out_gain_changed)
         
         out_cal_btn = QPushButton(tr("Wizard"))
         out_cal_btn.clicked.connect(self.open_output_calibration)
         out_cal_layout = QHBoxLayout()
+        out_cal_layout.setContentsMargins(0, 0, 0, 0)
         out_cal_layout.addWidget(self.out_gain_edit)
         out_cal_layout.addWidget(out_cal_btn)
         
@@ -391,6 +402,7 @@ class SettingsWidget(QWidget):
         
         # Initialize
         self.refresh_devices()
+        self.update_buffer_duration()
 
     def on_language_changed(self):
         lang = self.lang_combo.currentData()
@@ -490,10 +502,20 @@ class SettingsWidget(QWidget):
             except Exception as e:
                 QMessageBox.critical(self, tr("Error"), f"{tr('Failed to set devices:')} {e}")
 
+    def update_buffer_duration(self):
+        try:
+            sr = int(self.sr_combo.currentText())
+            bs = int(self.bs_combo.currentText())
+            duration_ms = (bs / sr) * 1000
+            self.bs_duration_label.setText(f"Latency: {duration_ms:.1f} ms")
+        except ValueError:
+            self.bs_duration_label.setText("")
+
     def on_sr_changed(self, text):
         try:
             rate = int(text)
             self.audio_engine.set_sample_rate(rate)
+            self.update_buffer_duration()
             
             # Save config
             if self.input_combo.currentIndex() >= 0:
@@ -512,6 +534,7 @@ class SettingsWidget(QWidget):
         try:
             size = int(text)
             self.audio_engine.set_block_size(size)
+            self.update_buffer_duration()
             
             # Save config
             if self.input_combo.currentIndex() >= 0:

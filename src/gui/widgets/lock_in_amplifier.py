@@ -715,8 +715,9 @@ class LockInAmplifierWidget(QWidget):
     def on_fra_start(self):
         if self.fra_worker is not None and self.fra_worker.isRunning():
             self.fra_worker.cancel()
-            self.fra_worker.wait()
-            self.fra_start_btn.setText("Start Sweep")
+            self.fra_start_btn.setText("Stopping...")
+            self.fra_start_btn.setEnabled(False)
+            # Do not wait() here, let the finished signal handle cleanup
             return
             
         # Clear Data
@@ -816,6 +817,7 @@ class LockInAmplifierWidget(QWidget):
         
     def on_fra_finished(self):
         self.fra_start_btn.setText("Start Sweep")
+        self.fra_start_btn.setEnabled(True)
         self.fra_progress.setValue(100)
         self.fra_plot.getPlotItem().autoRange()
         self.fra_plot_p.autoRange()
