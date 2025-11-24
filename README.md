@@ -1,55 +1,72 @@
-# 🚀 Audio Measurement Tools (Unified GUI) 🎶
+# 🚀 Audio Measurement Suite 🎶
 
-ようこそ！このプロジェクトは、かつて散らばっていた多数のオーディオ測定ツールを、**ひとつの強力なGUIアプリケーション**へと統合したものです。
-PythonとPyQt6を使用して構築されており、オーディオ信号の生成、解析、測定を直感的なインターフェースで行うことができます。
+**Audio Measurement Suite** は、プロフェッショナルなオーディオ測定ツールをひとつの強力なGUIアプリケーションに統合したソフトウェアです。
+PythonとPyQt6で構築されており、高精度な信号生成、解析、測定を直感的なインターフェースで提供します。
 
-## 🛠️ 機能一覧 (Modules)
+## ✨ 主な機能 (Features)
 
-現在、以下のモジュールが統合されています：
+### 🛠️ 測定モジュール
+以下の10種類のモジュールが統合されています：
 
-*   **Signal Generator**: 正弦波、矩形波、ノイズなどのテスト信号を生成します。
-*   **Spectrum Analyzer**: リアルタイムで周波数スペクトルを表示します。
-*   **Oscilloscope**: 波形を時間軸で表示します。
-*   **Frequency Counter**: 高精度な周波数測定を行います。
-*   **LUFS Meter**: ラウドネス（LUFS）を測定します。
-*   **Loopback Finder**: オーディオインターフェースのループバック遅延を測定・補正します。
-*   **IMD Analyzer**: 相互変調歪み（IMD）を測定します。
-*   **Network Analyzer**: ゲインと位相を含む詳細なネットワーク解析を行います（周波数特性測定を含む）。
-*   **Distortion Analyzer**: THD, THD+N, SINAD などの歪み率を測定します。
-*   **Lock-in Amplifier**: 微小信号の位相敏感検波を行います。
+1.  **Signal Generator**: 正弦波、矩形波、ノイズ、スイープ信号などを生成。
+2.  **Spectrum Analyzer**: 高速FFTによるリアルタイムスペクトル解析。
+3.  **Oscilloscope**: 波形の時間軸表示とトリガー機能。
+4.  **Distortion Analyzer**: THD, THD+N, SINAD, IMD (SMPTE/CCIF) の測定。
+5.  **Network Analyzer**: 周波数特性（ゲイン・位相）の測定。
+6.  **Lock-in Amplifier**: 微小信号の位相敏感検波 (LIA)。
+7.  **Frequency Counter**: 高精度な周波数測定とアラン分散プロット。
+8.  **Lufs Meter**: ラウドネス (LUFS) のリアルタイム測定。
+9.  **IMD Analyzer**: 相互変調歪みの専用解析ツール。
+10. **Loopback Finder**: オーディオデバイスの遅延測定。
 
-## 🚀 クイックスタート (Quick Start)
+### 🌍 多言語対応 (Localization)
+世界中の主要な言語をサポートしています。設定画面から切り替え可能です。
+*   英語 (English)
+*   日本語 (Japanese)
+*   中国語 (Chinese)
+*   スペイン語 (Spanish)
+*   フランス語 (French)
+*   ドイツ語 (German)
+*   ポルトガル語 (Portuguese)
+*   ロシア語 (Russian)
+*   韓国語 (Korean)
 
-### 必要条件
-
-*   Python 3.10+
-*   推奨: 仮想環境 (venv) の使用
-
-### インストール
-
-依存関係をインストールします：
-
-```bash
-pip install -r requirements.txt
-```
-
-### 実行方法
-
-メインのGUIアプリケーションを起動します：
-
-```bash
-python main_gui.py
-```
-
-または、ビルド済みの **AppImage** を使用することもできます（Linuxのみ）：
-
-1.  `Audio_Measurement_Tools-x86_64.AppImage` をダウンロードします。
-2.  実行権限を付与します：`chmod +x Audio_Measurement_Tools-x86_64.AppImage`
-3.  実行します：`./Audio_Measurement_Tools-x86_64.AppImage`
+### ⚙️ 高度な設定
+*   **入出力設定**: デバイス選択、サンプリングレート (44.1kHz - 192kHz)、バッファーサイズ変更。
+*   **キャリブレーション**: 入力感度と出力ゲインの補正ウィザードを搭載し、電圧 (Vrms, Vpeak, dBu, dBV) での正確な読み取りが可能。
+*   **チャンネルルーティング**: 入力・出力チャンネルの個別割り当てに対応。
 
 ---
 
-## 📜 ライセンス
+## 🚀 インストールと実行 (Installation & Usage)
+
+### 📦 ビルド済みパッケージを使用する場合
+**Releases** ページから最新のバージョンをダウンロードしてください。
+
+*   **Windows**: `Audio_Measurement_Tools.exe` をダウンロードして実行します。
+*   **Linux**: `Audio_Measurement_Tools-x86_64.AppImage` をダウンロードし、実行権限を付与して起動します。
+    ```bash
+    chmod +x Audio_Measurement_Tools-*.AppImage
+    ./Audio_Measurement_Tools-*.AppImage
+    ```
+
+### 🐍 ソースコードから実行する場合
+
+**必要条件**: Python 3.10 以上
+
+1.  リポジトリをクローンします。
+2.  依存関係をインストールします：
+    ```bash
+    pip install -r requirements.txt
+    ```
+3.  アプリケーションを起動します：
+    ```bash
+    python main_gui.py
+    ```
+
+---
+
+## 📜 ライセンス (License)
 
 このプロジェクトは **The Unlicense** の下でパブリックドメインとして公開されています。
 営利・非営利を問わず、自由にコピー、変更、配布、使用することができます。
