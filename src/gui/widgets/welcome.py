@@ -4,6 +4,8 @@ from PyQt6.QtGui import QPixmap, QFont
 import os
 from src.core.utils import resource_path
 
+from src.core.localization import tr
+
 class WelcomeWidget(QWidget):
     def __init__(self):
         super().__init__()
@@ -36,7 +38,7 @@ class WelcomeWidget(QWidget):
             image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             image_label.setStyleSheet("background-color: #1e1e1e;") # Match dark theme
         else:
-            image_label.setText("Welcome Image Not Found")
+            image_label.setText(tr("Welcome Image Not Found"))
             image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             
         layout.addWidget(image_label)
@@ -49,15 +51,14 @@ class WelcomeWidget(QWidget):
         text_layout.setSpacing(15)
         
         # Title
-        title = QLabel("Audio Measurement Suite")
+        title = QLabel(tr("Audio Measurement Suite"))
         title.setFont(QFont("Arial", 24, QFont.Weight.Bold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         text_layout.addWidget(title)
         
         # Description
         desc = QLabel(
-            "A comprehensive set of tools for precision audio analysis and measurement.\n"
-            "Select a module from the sidebar to begin."
+            tr("A comprehensive set of tools for precision audio analysis and measurement.\nSelect a module from the sidebar to begin.")
         )
         desc.setFont(QFont("Arial", 12))
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -68,8 +69,8 @@ class WelcomeWidget(QWidget):
         features_layout.setSpacing(20)
         
         features = [
-            "Signal Generator", "Spectrum Analyzer", "Oscilloscope", 
-            "Distortion Analyzer", "Network Analyzer", "IMD Analyzer"
+            tr("Signal Generator"), tr("Spectrum Analyzer"), tr("Oscilloscope"), 
+            tr("Distortion Analyzer"), tr("Network Analyzer"), tr("IMD Analyzer")
         ]
         
         for feat in features:

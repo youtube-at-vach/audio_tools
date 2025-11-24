@@ -5,12 +5,13 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, QPushButto
 from PyQt6.QtCore import QTimer, Qt
 from src.core.audio_engine import AudioEngine
 from src.core.config_manager import ConfigManager
+from src.core.localization import tr, get_manager
 
 class OutputCalibrationDialog(QDialog):
     def __init__(self, audio_engine: AudioEngine, parent=None):
         super().__init__(parent)
         self.audio_engine = audio_engine
-        self.setWindowTitle("Output Calibration Wizard")
+        self.setWindowTitle(tr("Output Calibration Wizard"))
         self.resize(400, 300)
         self.init_ui()
         self.is_playing = False
@@ -20,29 +21,29 @@ class OutputCalibrationDialog(QDialog):
         layout = QVBoxLayout()
         
         # Step 1
-        layout.addWidget(QLabel("<b>Step 1:</b> Connect a voltmeter to the output."))
+        layout.addWidget(QLabel(f"<b>Step 1:</b> {tr('Connect a voltmeter to the output.')}"))
         
         # Step 2
-        layout.addWidget(QLabel("<b>Step 2:</b> Set Test Tone."))
+        layout.addWidget(QLabel(f"<b>Step 2:</b> {tr('Set Test Tone.')}"))
         form = QFormLayout()
         self.freq_spin = QDoubleSpinBox()
         self.freq_spin.setRange(20, 20000); self.freq_spin.setValue(1000)
-        form.addRow("Frequency (Hz):", self.freq_spin)
+        form.addRow(f"{tr('Frequency (Hz):')}", self.freq_spin)
         
         self.level_spin = QDoubleSpinBox()
         self.level_spin.setRange(-60, 0); self.level_spin.setValue(-12)
-        form.addRow("Level (dBFS):", self.level_spin)
+        form.addRow(f"{tr('Level (dBFS):')}", self.level_spin)
         layout.addLayout(form)
         
         # Step 3
-        layout.addWidget(QLabel("<b>Step 3:</b> Play Tone."))
-        self.play_btn = QPushButton("Start Tone")
+        layout.addWidget(QLabel(f"<b>Step 3:</b> {tr('Play Tone.')}"))
+        self.play_btn = QPushButton(tr("Start Tone"))
         self.play_btn.setCheckable(True)
         self.play_btn.clicked.connect(self.on_play_toggle)
         layout.addWidget(self.play_btn)
         
         # Step 4
-        layout.addWidget(QLabel("<b>Step 4:</b> Enter measured voltage."))
+        layout.addWidget(QLabel(f"<b>Step 4:</b> {tr('Enter measured voltage.')}"))
         meas_layout = QHBoxLayout()
         self.meas_spin = QDoubleSpinBox()
         self.meas_spin.setRange(-200, 1000); self.meas_spin.setDecimals(4)
@@ -54,8 +55,8 @@ class OutputCalibrationDialog(QDialog):
         layout.addLayout(meas_layout)
         
         # Step 5
-        layout.addWidget(QLabel("<b>Step 5:</b> Save."))
-        self.save_btn = QPushButton("Calculate & Save")
+        layout.addWidget(QLabel(f"<b>Step 5:</b> {tr('Save.')}"))
+        self.save_btn = QPushButton(tr("Calculate & Save"))
         self.save_btn.clicked.connect(self.on_save)
         layout.addWidget(self.save_btn)
         
@@ -64,10 +65,10 @@ class OutputCalibrationDialog(QDialog):
     def on_play_toggle(self, checked):
         if checked:
             self.start_tone()
-            self.play_btn.setText("Stop Tone")
+            self.play_btn.setText(tr("Stop Tone"))
         else:
             self.stop_tone()
-            self.play_btn.setText("Start Tone")
+            self.play_btn.setText(tr("Start Tone"))
 
     def start_tone(self):
         freq = self.freq_spin.value()
@@ -120,11 +121,11 @@ class OutputCalibrationDialog(QDialog):
             gain = v_peak / (10**(dbfs/20))
             
             self.audio_engine.calibration.set_output_gain(gain)
-            QMessageBox.information(self, "Success", f"Output Gain calibrated to {gain:.4f} V/FS")
+            QMessageBox.information(self, tr("Success"), f"Output Gain calibrated to {gain:.4f} V/FS")
             self.accept()
             
         except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, tr("Error"), str(e))
 
     def closeEvent(self, event):
         self.stop_tone()
@@ -134,7 +135,7 @@ class InputCalibrationDialog(QDialog):
     def __init__(self, audio_engine: AudioEngine, parent=None):
         super().__init__(parent)
         self.audio_engine = audio_engine
-        self.setWindowTitle("Input Calibration Wizard")
+        self.setWindowTitle(tr("Input Calibration Wizard"))
         self.resize(400, 300)
         self.init_ui()
         self.is_measuring = False
@@ -148,11 +149,11 @@ class InputCalibrationDialog(QDialog):
         layout = QVBoxLayout()
         
         # Step 1
-        layout.addWidget(QLabel("<b>Step 1:</b> Connect a known signal source to the input."))
+        layout.addWidget(QLabel(f"<b>Step 1:</b> {tr('Connect a known signal source to the input.')}"))
         
         # Step 2
-        layout.addWidget(QLabel("<b>Step 2:</b> Measure Input Level."))
-        self.measure_btn = QPushButton("Start Measurement")
+        layout.addWidget(QLabel(f"<b>Step 2:</b> {tr('Measure Input Level.')}"))
+        self.measure_btn = QPushButton(tr("Start Measurement"))
         self.measure_btn.setCheckable(True)
         self.measure_btn.clicked.connect(self.on_measure_toggle)
         layout.addWidget(self.measure_btn)
@@ -162,7 +163,7 @@ class InputCalibrationDialog(QDialog):
         layout.addWidget(self.level_label)
         
         # Step 3
-        layout.addWidget(QLabel("<b>Step 3:</b> Enter known source voltage."))
+        layout.addWidget(QLabel(f"<b>Step 3:</b> {tr('Enter known source voltage.')}"))
         meas_layout = QHBoxLayout()
         self.meas_spin = QDoubleSpinBox()
         self.meas_spin.setRange(-200, 1000); self.meas_spin.setDecimals(4)
@@ -174,8 +175,8 @@ class InputCalibrationDialog(QDialog):
         layout.addLayout(meas_layout)
         
         # Step 4
-        layout.addWidget(QLabel("<b>Step 4:</b> Save."))
-        self.save_btn = QPushButton("Calculate & Save")
+        layout.addWidget(QLabel(f"<b>Step 4:</b> {tr('Save.')}"))
+        self.save_btn = QPushButton(tr("Calculate & Save"))
         self.save_btn.clicked.connect(self.on_save)
         layout.addWidget(self.save_btn)
         
@@ -184,11 +185,11 @@ class InputCalibrationDialog(QDialog):
     def on_measure_toggle(self, checked):
         if checked:
             self.start_measurement()
-            self.measure_btn.setText("Stop Measurement")
+            self.measure_btn.setText(tr("Stop Measurement"))
             self.timer.start(100)
         else:
             self.stop_measurement()
-            self.measure_btn.setText("Start Measurement")
+            self.measure_btn.setText(tr("Start Measurement"))
             self.timer.stop()
 
     def start_measurement(self):
@@ -242,11 +243,11 @@ class InputCalibrationDialog(QDialog):
             sensitivity = v_peak / measured_fs_peak
             
             self.audio_engine.calibration.set_input_sensitivity(sensitivity)
-            QMessageBox.information(self, "Success", f"Input Sensitivity calibrated to {sensitivity:.4f} V/FS")
+            QMessageBox.information(self, tr("Success"), f"Input Sensitivity calibrated to {sensitivity:.4f} V/FS")
             self.accept()
             
         except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, tr("Error"), str(e))
 
     def closeEvent(self, event):
         self.stop_measurement()
@@ -263,35 +264,62 @@ class SettingsWidget(QWidget):
         layout = QVBoxLayout()
         
         # Title
-        title = QLabel("Audio Device Settings")
+        title = QLabel(tr("Audio Device Settings"))
         title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(title)
 
+        # Language Settings
+        lang_group = QGroupBox(tr("Language"))
+        lang_layout = QFormLayout()
+        
+        self.lang_combo = QComboBox()
+        # Load available languages
+        manager = get_manager()
+        # Sort: en first, then others
+        langs = sorted(manager.available_languages.keys())
+        if 'en' in langs:
+            langs.remove('en')
+            langs.insert(0, 'en')
+            
+        for lang in langs:
+            self.lang_combo.addItem(lang, lang)
+            
+        # Set current
+        idx = self.lang_combo.findData(manager.language)
+        if idx >= 0:
+            self.lang_combo.setCurrentIndex(idx)
+            
+        self.lang_combo.currentIndexChanged.connect(self.on_language_changed)
+        lang_layout.addRow(tr("Language") + ":", self.lang_combo)
+        
+        lang_group.setLayout(lang_layout)
+        layout.addWidget(lang_group)
+
         # Device Selection Group
-        dev_group = QGroupBox("Audio Devices")
+        dev_group = QGroupBox(tr("Audio Devices"))
         dev_layout = QFormLayout()
         
         self.input_combo = QComboBox()
-        dev_layout.addRow("Input Device:", self.input_combo)
+        dev_layout.addRow(tr("Input Device:"), self.input_combo)
         
         self.output_combo = QComboBox()
-        dev_layout.addRow("Output Device:", self.output_combo)
+        dev_layout.addRow(tr("Output Device:"), self.output_combo)
         
-        self.refresh_btn = QPushButton("Refresh Devices")
+        self.refresh_btn = QPushButton(tr("Refresh Devices"))
         self.refresh_btn.clicked.connect(self.refresh_devices)
         dev_layout.addRow(self.refresh_btn)
         
         # Active Device Info
         self.active_in_label = QLabel("None")
         self.active_out_label = QLabel("None")
-        dev_layout.addRow("Active Input:", self.active_in_label)
-        dev_layout.addRow("Active Output:", self.active_out_label)
+        dev_layout.addRow(tr("Active Input:"), self.active_in_label)
+        dev_layout.addRow(tr("Active Output:"), self.active_out_label)
         
         dev_group.setLayout(dev_layout)
         layout.addWidget(dev_group)
         
         # Audio Configuration Group
-        conf_group = QGroupBox("Audio Configuration")
+        conf_group = QGroupBox(tr("Audio Configuration"))
         conf_layout = QFormLayout()
         
         # Sample Rate
@@ -299,34 +327,34 @@ class SettingsWidget(QWidget):
         self.sr_combo.addItems(['44100', '48000', '88200', '96000', '192000'])
         self.sr_combo.setCurrentText(str(self.audio_engine.sample_rate))
         self.sr_combo.currentTextChanged.connect(self.on_sr_changed)
-        conf_layout.addRow("Sample Rate:", self.sr_combo)
+        conf_layout.addRow(tr("Sample Rate:"), self.sr_combo)
         
         # Buffer Size
         self.bs_combo = QComboBox()
         self.bs_combo.addItems(['256', '512', '1024', '2048', '4096'])
         self.bs_combo.setCurrentText(str(self.audio_engine.block_size))
         self.bs_combo.currentTextChanged.connect(self.on_bs_changed)
-        conf_layout.addRow("Buffer Size:", self.bs_combo)
+        conf_layout.addRow(tr("Buffer Size:"), self.bs_combo)
         
         # Input Channels
         self.in_ch_combo = QComboBox()
         self.in_ch_combo.addItems(['Stereo', 'Left', 'Right'])
         self.in_ch_combo.setCurrentText(self.audio_engine.input_channel_mode.capitalize())
         self.in_ch_combo.currentTextChanged.connect(self.on_ch_mode_changed)
-        conf_layout.addRow("Input Channels:", self.in_ch_combo)
+        conf_layout.addRow(tr("Input Channels:"), self.in_ch_combo)
         
         # Output Channels
         self.out_ch_combo = QComboBox()
         self.out_ch_combo.addItems(['Stereo', 'Left', 'Right'])
         self.out_ch_combo.setCurrentText(self.audio_engine.output_channel_mode.capitalize())
         self.out_ch_combo.currentTextChanged.connect(self.on_ch_mode_changed)
-        conf_layout.addRow("Output Channels:", self.out_ch_combo)
+        conf_layout.addRow(tr("Output Channels:"), self.out_ch_combo)
         
         conf_group.setLayout(conf_layout)
         layout.addWidget(conf_group)
         
         # Calibration Group
-        cal_group = QGroupBox("Calibration")
+        cal_group = QGroupBox(tr("Calibration"))
         cal_layout = QFormLayout()
         
         # Input Sensitivity
@@ -334,26 +362,26 @@ class SettingsWidget(QWidget):
         self.in_sens_edit.setText(str(self.audio_engine.calibration.input_sensitivity))
         self.in_sens_edit.editingFinished.connect(self.on_in_sens_changed)
         
-        in_cal_btn = QPushButton("Wizard")
+        in_cal_btn = QPushButton(tr("Wizard"))
         in_cal_btn.clicked.connect(self.open_input_calibration)
         in_cal_layout = QHBoxLayout()
         in_cal_layout.addWidget(self.in_sens_edit)
         in_cal_layout.addWidget(in_cal_btn)
         
-        cal_layout.addRow("Input Sensitivity (V/FS):", in_cal_layout)
+        cal_layout.addRow(tr("Input Sensitivity (V/FS):"), in_cal_layout)
         
         # Output Gain
         self.out_gain_edit = QLineEdit()
         self.out_gain_edit.setText(str(self.audio_engine.calibration.output_gain))
         self.out_gain_edit.editingFinished.connect(self.on_out_gain_changed)
         
-        out_cal_btn = QPushButton("Wizard")
+        out_cal_btn = QPushButton(tr("Wizard"))
         out_cal_btn.clicked.connect(self.open_output_calibration)
         out_cal_layout = QHBoxLayout()
         out_cal_layout.addWidget(self.out_gain_edit)
         out_cal_layout.addWidget(out_cal_btn)
         
-        cal_layout.addRow("Output Gain (V/FS):", out_cal_layout)
+        cal_layout.addRow(tr("Output Gain (V/FS):"), out_cal_layout)
         
         cal_group.setLayout(cal_layout)
         layout.addWidget(cal_group)
@@ -363,6 +391,14 @@ class SettingsWidget(QWidget):
         
         # Initialize
         self.refresh_devices()
+
+    def on_language_changed(self):
+        lang = self.lang_combo.currentData()
+        if lang:
+            # Only save if changed
+            if lang != self.config_manager.get_language():
+                self.config_manager.set_language(lang)
+                QMessageBox.information(self, tr("Restart Required"), tr("Please restart the application to apply language changes."))
 
     def open_input_calibration(self):
         dlg = InputCalibrationDialog(self.audio_engine, self)
@@ -450,9 +486,9 @@ class SettingsWidget(QWidget):
                     self.audio_engine.output_channel_mode
                 )
                 
-                QMessageBox.information(self, "Success", f"Devices set to Input: {input_idx}, Output: {output_idx}")
+                QMessageBox.information(self, tr("Success"), f"{tr('Devices set to Input:')} {input_idx}, {tr('Output:')} {output_idx}")
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to set devices: {e}")
+                QMessageBox.critical(self, tr("Error"), f"{tr('Failed to set devices:')} {e}")
 
     def on_sr_changed(self, text):
         try:

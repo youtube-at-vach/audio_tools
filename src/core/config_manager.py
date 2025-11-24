@@ -58,3 +58,12 @@ class ConfigManager:
         self.config["audio"]["input_channels"] = in_ch
         self.config["audio"]["output_channels"] = out_ch
         self.save_config()
+
+    def get_language(self):
+        """Returns the saved language code, defaults to 'en'."""
+        return self.config.get("language", "en")
+
+    def set_language(self, lang_code):
+        """Updates the language setting."""
+        self.config["language"] = lang_code
+        self.save_config()
