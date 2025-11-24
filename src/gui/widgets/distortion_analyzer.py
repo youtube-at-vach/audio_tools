@@ -24,7 +24,8 @@ class DistortionAnalyzer(MeasurementModule):
         
         # Generator Settings
         self.gen_frequency = 1000.0
-        self.gen_amplitude = 0.5 # Linear 0-1
+        self.gen_frequency = 1000.0
+        self._gen_amplitude = 0.5 # Linear 0-1
         self.output_channel = 0 # 0: Left, 1: Right
         self.output_enabled = True
         
@@ -40,7 +41,12 @@ class DistortionAnalyzer(MeasurementModule):
         
         # Playback state
         self._phase_f1 = 0.0
+        self._phase_f1 = 0.0
         self._phase_f2 = 0.0
+        
+        # Mode
+        self.mode = 'Real-time'
+        self.signal_type = 'sine' # 'sine', 'smpte', 'ccif'
         
         # State
         self.current_result = None
@@ -57,6 +63,20 @@ class DistortionAnalyzer(MeasurementModule):
         self.sweep_results = []
         
         self.callback_id = None
+
+    @property
+    def gen_amplitude(self):
+        return self._gen_amplitude
+        
+    @gen_amplitude.setter
+    def gen_amplitude(self, value):
+        # Clamp to prevent overflow (e.g. if user enters Hz in dB field)
+        # Max 10.0 (20dB headroom above 0dBFS) is plenty.
+        if value > 10.0:
+            value = 10.0
+        elif value < 0.0:
+            value = 0.0
+        self._gen_amplitude = value
 
     @property
     def name(self) -> str:
@@ -91,10 +111,8 @@ class DistortionAnalyzer(MeasurementModule):
             # Generate Signal
             outdata.fill(0)
             if self.output_enabled:
-                # Check mode via a flag or infer from params? 
-                # Ideally we should have a mode flag in module, but currently it's in Widget.
-                # Let's add a mode flag to module.
-                if hasattr(self, 'mode') and self.mode == 'IMD Measurement':
+                # Check signal type
+                if self.signal_type == 'smpte' or self.signal_type == 'ccif':
                     sine_wave = self._generate_dual_tone(frames, sample_rate)
                 else:
                     t = (np.arange(frames) + phase) / sample_rate
@@ -251,9 +269,6 @@ class DistortionAnalyzerWidget(QWidget):
         super().__init__()
         self.module = module
         self.sweep_worker = None
-        self.module = module
-        self.sweep_worker = None
-        self.init_ui()
         self.init_ui()
         
         self.timer = QTimer()
@@ -271,7 +286,9 @@ class DistortionAnalyzerWidget(QWidget):
         mode_group = QGroupBox("Mode")
         mode_layout = QVBoxLayout()
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["Real-time", "Frequency Sweep", "Amplitude Sweep", "IMD Measurement"])
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(["Real-time", "Frequency Sweep", "Amplitude Sweep"])
+        self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         mode_layout.addWidget(self.mode_combo)
         mode_group.setLayout(mode_layout)
@@ -286,18 +303,57 @@ class DistortionAnalyzerWidget(QWidget):
         
         # Output Mode
         self.out_mode_combo = QComboBox()
-        self.out_mode_combo.addItems(["Internal Sine", "Off (External Source)"])
+        self.out_mode_combo.addItems(["Off (External Source)", "Sine Wave", "SMPTE IMD", "CCIF IMD"])
         self.out_mode_combo.currentIndexChanged.connect(self.on_out_mode_changed)
-        rt_layout.addRow("Output Mode:", self.out_mode_combo)
+        rt_layout.addRow("Signal Generator:", self.out_mode_combo)
+        
+        # Generator Settings Stack
+        self.gen_stack = QStackedWidget()
+        
+        # 1. Sine Settings
+        sine_widget = QWidget()
+        sine_layout = QFormLayout()
+        sine_layout.setContentsMargins(0,0,0,0)
         
         self.freq_spin = QDoubleSpinBox()
         self.freq_spin.setRange(20, 20000)
         self.freq_spin.setValue(1000)
         self.freq_spin.setSuffix(" Hz")
         self.freq_spin.valueChanged.connect(self.on_freq_changed)
-        rt_layout.addRow("Frequency:", self.freq_spin)
+        sine_layout.addRow("Frequency:", self.freq_spin)
         
-        # Amplitude with Units
+        sine_widget.setLayout(sine_layout)
+        self.gen_stack.addWidget(sine_widget)
+        
+        # 2. IMD Settings
+        imd_gen_widget = QWidget()
+        imd_gen_layout = QFormLayout()
+        imd_gen_layout.setContentsMargins(0,0,0,0)
+        
+        self.imd_f1_spin = QDoubleSpinBox()
+        self.imd_f1_spin.setRange(10, 20000)
+        self.imd_f1_spin.setValue(self.module.imd_f1)
+        self.imd_f1_spin.valueChanged.connect(lambda v: setattr(self.module, 'imd_f1', v))
+        imd_gen_layout.addRow("Freq 1 (Hz):", self.imd_f1_spin)
+        
+        self.imd_f2_spin = QDoubleSpinBox()
+        self.imd_f2_spin.setRange(10, 24000)
+        self.imd_f2_spin.setValue(self.module.imd_f2)
+        self.imd_f2_spin.valueChanged.connect(lambda v: setattr(self.module, 'imd_f2', v))
+        imd_gen_layout.addRow("Freq 2 (Hz):", self.imd_f2_spin)
+        
+        self.imd_ratio_spin = QDoubleSpinBox()
+        self.imd_ratio_spin.setRange(1, 10)
+        self.imd_ratio_spin.setValue(self.module.imd_ratio)
+        self.imd_ratio_spin.valueChanged.connect(lambda v: setattr(self.module, 'imd_ratio', v))
+        imd_gen_layout.addRow("Ratio (F1:F2):", self.imd_ratio_spin)
+        
+        imd_gen_widget.setLayout(imd_gen_layout)
+        self.gen_stack.addWidget(imd_gen_widget)
+        
+        rt_layout.addRow(self.gen_stack)
+        
+        # Amplitude (Shared)
         amp_layout = QHBoxLayout()
         self.amp_spin = QDoubleSpinBox()
         self.amp_spin.setRange(-120, 20) # Allow positive for dBV/dBu
@@ -337,50 +393,6 @@ class DistortionAnalyzerWidget(QWidget):
         sweep_widget.setLayout(sweep_layout)
         self.controls_stack.addWidget(sweep_widget)
         
-        # Page 3: IMD Controls
-        imd_widget = QWidget()
-        imd_layout = QFormLayout()
-        
-        self.imd_std_combo = QComboBox()
-        self.imd_std_combo.addItems(['smpte', 'ccif'])
-        self.imd_std_combo.currentTextChanged.connect(self.on_imd_std_changed)
-        imd_layout.addRow("Standard:", self.imd_std_combo)
-        
-        self.imd_f1_spin = QDoubleSpinBox()
-        self.imd_f1_spin.setRange(10, 20000)
-        self.imd_f1_spin.setValue(self.module.imd_f1)
-        self.imd_f1_spin.valueChanged.connect(lambda v: setattr(self.module, 'imd_f1', v))
-        imd_layout.addRow("Freq 1 (Hz):", self.imd_f1_spin)
-        
-        self.imd_f2_spin = QDoubleSpinBox()
-        self.imd_f2_spin.setRange(10, 24000)
-        self.imd_f2_spin.setValue(self.module.imd_f2)
-        self.imd_f2_spin.valueChanged.connect(lambda v: setattr(self.module, 'imd_f2', v))
-        imd_layout.addRow("Freq 2 (Hz):", self.imd_f2_spin)
-        
-        self.imd_ratio_spin = QDoubleSpinBox()
-        self.imd_ratio_spin.setRange(1, 10)
-        self.imd_ratio_spin.setValue(self.module.imd_ratio)
-        self.imd_ratio_spin.valueChanged.connect(lambda v: setattr(self.module, 'imd_ratio', v))
-        imd_layout.addRow("Ratio (F1:F2):", self.imd_ratio_spin)
-        
-        # Reuse Amplitude controls for IMD? Yes, but maybe duplicate for clarity or just switch back to RT page?
-        # Better to have dedicated amplitude here or shared. 
-        # For simplicity, let's add amplitude here too or rely on the fact that we can switch back.
-        # But user wants to adjust while in IMD mode.
-        # Let's add amplitude control here too.
-        
-        imd_amp_layout = QHBoxLayout()
-        self.imd_amp_spin = QDoubleSpinBox()
-        self.imd_amp_spin.setRange(-120, 0)
-        self.imd_amp_spin.setValue(-6)
-        self.imd_amp_spin.valueChanged.connect(self.on_imd_amp_changed)
-        imd_amp_layout.addWidget(self.imd_amp_spin)
-        imd_amp_layout.addWidget(QLabel("dBFS")) # Simplified for IMD
-        imd_layout.addRow("Amplitude:", imd_amp_layout)
-        
-        imd_widget.setLayout(imd_layout)
-        self.controls_stack.addWidget(imd_widget)
         
         left_panel.addWidget(self.controls_stack)
         
@@ -518,12 +530,6 @@ class DistortionAnalyzerWidget(QWidget):
             self.meters_group.setVisible(True)
             self.set_meters_mode('thd')
             self.tabs.setCurrentIndex(0)
-        elif mode == "IMD Measurement":
-            self.controls_stack.setCurrentIndex(2)
-            self.meters_group.setVisible(True)
-            self.set_meters_mode('imd')
-            self.tabs.setCurrentIndex(0)
-            self.on_imd_std_changed(self.imd_std_combo.currentText()) # Init controls
         else:
             self.controls_stack.setCurrentIndex(1)
             self.meters_group.setVisible(False)
@@ -552,16 +558,45 @@ class DistortionAnalyzerWidget(QWidget):
                 self.sweep_axis.setTicks(None)
 
     def on_out_mode_changed(self, idx):
-        if idx == 0: # Internal Sine
-            self.module.output_enabled = True
-            self.freq_spin.setEnabled(True)
-            self.amp_spin.setEnabled(True)
-            self.unit_combo.setEnabled(True)
-        else: # Off
+        # 0: Off, 1: Sine, 2: SMPTE, 3: CCIF
+        if idx == 0: # Off
             self.module.output_enabled = False
-            self.freq_spin.setEnabled(True) # Still need freq for analysis reference
+            self.gen_stack.setVisible(False)
             self.amp_spin.setEnabled(False)
             self.unit_combo.setEnabled(False)
+            self.module.signal_type = 'sine' # Default
+        else:
+            self.module.output_enabled = True
+            self.gen_stack.setVisible(True)
+            self.amp_spin.setEnabled(True)
+            self.unit_combo.setEnabled(True)
+            
+            if idx == 1: # Sine
+                self.module.signal_type = 'sine'
+                self.gen_stack.setCurrentIndex(0)
+                self.set_meters_mode('thd')
+            elif idx == 2: # SMPTE
+                self.module.signal_type = 'smpte'
+                self.module.imd_standard = 'smpte'
+                self.gen_stack.setCurrentIndex(1)
+                self.set_meters_mode('imd')
+                # Update IMD params
+                self.module.imd_f1 = 60.0
+                self.module.imd_f2 = 7000.0
+                self.imd_f1_spin.setValue(60.0)
+                self.imd_f2_spin.setValue(7000.0)
+                self.imd_ratio_spin.setEnabled(True)
+            elif idx == 3: # CCIF
+                self.module.signal_type = 'ccif'
+                self.module.imd_standard = 'ccif'
+                self.gen_stack.setCurrentIndex(1)
+                self.set_meters_mode('imd')
+                # Update IMD params
+                self.module.imd_f1 = 19000.0
+                self.module.imd_f2 = 20000.0
+                self.imd_f1_spin.setValue(19000.0)
+                self.imd_f2_spin.setValue(20000.0)
+                self.imd_ratio_spin.setEnabled(False)
 
     def on_unit_changed(self, unit):
         # Update spin box range/value based on current amplitude
@@ -652,22 +687,6 @@ class DistortionAnalyzerWidget(QWidget):
             self.sinad_label.setVisible(False)
             self.imd_meter_widget.setVisible(True)
 
-    def on_imd_std_changed(self, text):
-        self.module.imd_standard = text
-        if text == 'smpte':
-            self.module.imd_f1 = 60.0
-            self.module.imd_f2 = 7000.0
-            self.imd_ratio_spin.setEnabled(True)
-        else: # ccif
-            self.module.imd_f1 = 19000.0
-            self.module.imd_f2 = 20000.0
-            self.imd_ratio_spin.setEnabled(False)
-            
-        self.imd_f1_spin.setValue(self.module.imd_f1)
-        self.imd_f2_spin.setValue(self.module.imd_f2)
-
-    def on_imd_amp_changed(self, val):
-        self.module.gen_amplitude = 10**(val/20)
 
     def start_sweep(self, mode):
         self.module.start_analysis() # Ensure audio is running
@@ -679,6 +698,13 @@ class DistortionAnalyzerWidget(QWidget):
         start = self.sweep_start_spin.value()
         end = self.sweep_end_spin.value()
         steps = self.sweep_steps_spin.value()
+        
+        if sweep_type == 'frequency':
+            if start <= 0 or end <= 0:
+                print("Error: Frequency sweep range must be positive.")
+                self.action_btn.setChecked(False)
+                self.action_btn.setText("Start Measurement")
+                return
         
         self.sweep_worker = SweepWorker(self.module, sweep_type, start, end, steps)
         self.sweep_worker.result_ready.connect(self.on_sweep_result)
@@ -725,14 +751,14 @@ class DistortionAnalyzerWidget(QWidget):
         sample_rate = self.module.audio_engine.sample_rate
         
         # Perform Analysis
-        # Perform Analysis
-        if self.module.mode == "IMD Measurement":
+        # Check signal type instead of mode
+        if self.module.signal_type in ['smpte', 'ccif']:
             window = get_window(self.module.window_type, len(data))
             fft_data = np.fft.rfft(data * window)
             mag = np.abs(fft_data) * (2 / np.sum(window)) # Linear magnitude for IMD calc
             freqs = np.fft.rfftfreq(len(data), 1/sample_rate)
             
-            if self.module.imd_standard == 'smpte':
+            if self.module.signal_type == 'smpte':
                 res = AudioCalc.calculate_imd_smpte(mag, freqs, self.module.imd_f1, self.module.imd_f2)
             else:
                 res = AudioCalc.calculate_imd_ccif(mag, freqs, self.module.imd_f1, self.module.imd_f2)
