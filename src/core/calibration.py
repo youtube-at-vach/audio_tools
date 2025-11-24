@@ -11,6 +11,7 @@ class CalibrationManager:
         self.config_path = config_path
         self.input_sensitivity = 1.0 # Volts per Full Scale (V/FS) (Peak)
         self.output_gain = 1.0 # Volts per Full Scale (V/FS) (Peak)
+        self.frequency_calibration = 1.0 # Multiplier for frequency correction
         self.load()
 
     def load(self):
@@ -20,13 +21,15 @@ class CalibrationManager:
                     data = json.load(f)
                     self.input_sensitivity = data.get('input_sensitivity', 1.0)
                     self.output_gain = data.get('output_gain', 1.0)
+                    self.frequency_calibration = data.get('frequency_calibration', 1.0)
             except Exception as e:
                 print(f"Failed to load calibration: {e}")
 
     def save(self):
         data = {
             'input_sensitivity': self.input_sensitivity,
-            'output_gain': self.output_gain
+            'output_gain': self.output_gain,
+            'frequency_calibration': self.frequency_calibration
         }
         try:
             with open(self.config_path, 'w') as f:
@@ -42,6 +45,11 @@ class CalibrationManager:
     def set_output_gain(self, v_per_fs):
         """Sets output gain in Volts (Peak) corresponding to 1.0 FS."""
         self.output_gain = v_per_fs
+        self.save()
+
+    def set_frequency_calibration(self, factor):
+        """Sets the frequency calibration factor (multiplier)."""
+        self.frequency_calibration = factor
         self.save()
 
     def dbfs_to_dbv(self, dbfs):
