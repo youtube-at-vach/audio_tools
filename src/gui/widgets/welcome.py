@@ -25,7 +25,9 @@ class WelcomeWidget(QWidget):
              # Try relative to this file
              assets_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', 'welcome.png')
 
+        print(f"DEBUG: Attempting to load welcome image from: {assets_path}")
         if os.path.exists(assets_path):
+            print("DEBUG: Image file found.")
             pixmap = QPixmap(assets_path)
             # Resize to fit width, keeping aspect ratio, or just display centered
             # Let's scale it to a reasonable height, e.g., 400px
