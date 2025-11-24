@@ -13,15 +13,21 @@ from src.gui.widgets.oscilloscope import Oscilloscope
 from src.gui.widgets.lock_in_amplifier import LockInAmplifier
 from src.gui.widgets.welcome import WelcomeWidget
 from src.gui.widgets.frequency_counter import FrequencyCounter
+from src.core.localization import get_manager, tr
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Audio Measurement Tools")
+        self.setWindowTitle(tr("Audio Measurement Suite"))
         self.resize(1000, 700)
         
         # Initialize Core Components
         self.config_manager = ConfigManager()
+        
+        # Initialize Localization
+        lang = self.config_manager.get_language()
+        get_manager().load_language(lang)
+        
         self.audio_engine = AudioEngine()
         
         # Load saved config
@@ -94,11 +100,11 @@ class MainWindow(QMainWindow):
         # Sidebar for tool selection
         self.sidebar = QListWidget()
         self.sidebar.setFixedWidth(200)
-        self.sidebar.addItem("Welcome")
-        self.sidebar.addItem("Settings") # Add Settings item
+        self.sidebar.addItem(tr("Welcome"))
+        self.sidebar.addItem(tr("Settings")) # Add Settings item
         
         for module in self.modules:
-            self.sidebar.addItem(module.name)
+            self.sidebar.addItem(tr(module.name))
             
         self.sidebar.currentRowChanged.connect(self.on_tool_selected)
         layout.addWidget(self.sidebar)
