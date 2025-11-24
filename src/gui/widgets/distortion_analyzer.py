@@ -32,6 +32,16 @@ class DistortionAnalyzer(MeasurementModule):
         self.window_type = 'blackmanharris' # Good for distortion
         self.averaging = 0.0
         
+        # IMD Settings
+        self.imd_standard = 'smpte' # 'smpte' or 'ccif'
+        self.imd_f1 = 60.0
+        self.imd_f2 = 7000.0
+        self.imd_ratio = 4.0 # 4:1 for SMPTE
+        
+        # Playback state
+        self._phase_f1 = 0.0
+        self._phase_f2 = 0.0
+        
         # State
         self.current_result = None
         self._avg_thdn = None
@@ -78,13 +88,18 @@ class DistortionAnalyzer(MeasurementModule):
             if status:
                 print(status)
                 
-            # Generate Sine
+            # Generate Signal
             outdata.fill(0)
             if self.output_enabled:
-                t = (np.arange(frames) + phase) / sample_rate
-                phase += frames
-                
-                sine_wave = self.gen_amplitude * np.sin(2 * np.pi * self.gen_frequency * t)
+                # Check mode via a flag or infer from params? 
+                # Ideally we should have a mode flag in module, but currently it's in Widget.
+                # Let's add a mode flag to module.
+                if hasattr(self, 'mode') and self.mode == 'IMD Measurement':
+                    sine_wave = self._generate_dual_tone(frames, sample_rate)
+                else:
+                    t = (np.arange(frames) + phase) / sample_rate
+                    phase += frames
+                    sine_wave = self.gen_amplitude * np.sin(2 * np.pi * self.gen_frequency * t)
                 
                 if self.output_channel == 0:
                     outdata[:, 0] = sine_wave
@@ -116,6 +131,35 @@ class DistortionAnalyzer(MeasurementModule):
                 self.capture_ready = True
 
         self.callback_id = self.audio_engine.register_callback(callback)
+
+    def _generate_dual_tone(self, frames, sample_rate):
+        # Calculate amplitudes based on ratio
+        # Total amplitude should not exceed self.gen_amplitude
+        
+        if self.imd_standard == 'smpte':
+            # ratio = amp_f1 / amp_f2
+            # amp_f2 * (ratio + 1) = self.gen_amplitude
+            amp_f2 = self.gen_amplitude / (self.imd_ratio + 1)
+            amp_f1 = amp_f2 * self.imd_ratio
+        else: # CCIF
+            # 1:1 ratio usually
+            amp_f1 = self.gen_amplitude / 2
+            amp_f2 = self.gen_amplitude / 2
+            
+        # Generate phases
+        phase_inc_f1 = 2 * np.pi * self.imd_f1 / sample_rate
+        phase_inc_f2 = 2 * np.pi * self.imd_f2 / sample_rate
+        
+        t = np.arange(frames)
+        phases_f1 = self._phase_f1 + t * phase_inc_f1
+        phases_f2 = self._phase_f2 + t * phase_inc_f2
+        
+        # Update state
+        self._phase_f1 = (self._phase_f1 + frames * phase_inc_f1) % (2 * np.pi)
+        self._phase_f2 = (self._phase_f2 + frames * phase_inc_f2) % (2 * np.pi)
+        
+        signal = amp_f1 * np.sin(phases_f1) + amp_f2 * np.sin(phases_f2)
+        return signal
 
     def stop_analysis(self):
         if self.is_running:
@@ -201,123 +245,15 @@ class SweepWorker(QThread):
     def stop(self):
         self.is_running = False
 
-class HighPrecisionWorker(QThread):
-    finished = pyqtSignal(dict)
-    progress = pyqtSignal(int)
-
-    def __init__(self, module, duration_sec=3.0):
-        super().__init__()
-        self.module = module
-        self.duration_sec = duration_sec
-        self.is_running = True
-
-    def run(self):
-        sample_rate = self.module.audio_engine.sample_rate
-        num_snapshots = int(self.duration_sec * 5) # 5 snapshots per second (every 200ms)
-        
-        # Accumulators for Power Averaging
-        fund_power_acc = 0.0
-        res_power_acc = 0.0
-        harmonics_power_acc = []
-        fund_amp_acc = 0.0 # For THD denominator
-        
-        count = 0
-        
-        for i in range(num_snapshots):
-            if not self.is_running:
-                break
-                
-            # Request Capture
-            self.module.request_capture()
-            
-            # Wait for capture (poll)
-            timeout = 0
-            while not self.module.capture_ready and timeout < 50: # 500ms timeout
-                self.msleep(10)
-                timeout += 1
-                
-            if not self.module.capture_ready:
-                continue # Skip if failed
-                
-            data = self.module.captured_buffer
-            
-            results = AudioCalc.analyze_harmonics(
-                data, 
-                self.module.gen_frequency, 
-                self.module.window_type, 
-                sample_rate
-            )
-            
-            # Accumulate Powers (Mean Square)
-            fund_power_acc += results['raw_fund_rms']**2
-            res_power_acc += results['raw_res_rms']**2
-            fund_amp_acc += results['raw_fund_amp'] # Peak amplitude linear
-            
-            # Harmonics
-            raw_harmonics = results['raw_harmonics']
-            if len(harmonics_power_acc) == 0:
-                harmonics_power_acc = [h**2 for h in raw_harmonics]
-            else:
-                for j, h in enumerate(raw_harmonics):
-                    if j < len(harmonics_power_acc):
-                        harmonics_power_acc[j] += h**2
-            
-            count += 1
-            self.progress.emit(int((i + 1) / num_snapshots * 100))
-            
-            # Wait a bit before next capture to get fresh data
-            self.msleep(150) 
-
-        if count > 0:
-            # Calculate Averaged RMS
-            avg_fund_rms = np.sqrt(fund_power_acc / count)
-            avg_res_rms = np.sqrt(res_power_acc / count)
-            
-            # THD+N
-            if avg_fund_rms > 0:
-                thdn_linear = avg_res_rms / avg_fund_rms
-                thdn_db = 20 * np.log10(thdn_linear + 1e-12)
-            else:
-                thdn_linear = 0
-                thdn_db = -140.0
-                
-            thdn_percent = thdn_linear * 100
-            sinad_db = -thdn_db
-            
-            # THD
-            avg_fund_peak = fund_amp_acc / count
-            
-            avg_harmonics_power_sum = sum([p/count for p in harmonics_power_acc])
-            avg_harmonics_rms = np.sqrt(avg_harmonics_power_sum) 
-            
-            if avg_fund_peak > 0:
-                thd_linear = avg_harmonics_rms / avg_fund_peak
-                thd_db = 20 * np.log10(thd_linear + 1e-12)
-            else:
-                thd_linear = 0
-                thd_db = -140.0
-                
-            thd_percent = thd_linear * 100
-            
-            final_results = {
-                'thd_percent': thd_percent,
-                'thd_db': thd_db,
-                'thdn_percent': thdn_percent,
-                'thdn_db': thdn_db,
-                'sinad_db': sinad_db
-            }
-            
-            self.finished.emit(final_results)
-
-    def stop(self):
-        self.is_running = False
 
 class DistortionAnalyzerWidget(QWidget):
     def __init__(self, module: DistortionAnalyzer):
         super().__init__()
         self.module = module
         self.sweep_worker = None
-        self.hp_worker = None
+        self.module = module
+        self.sweep_worker = None
+        self.init_ui()
         self.init_ui()
         
         self.timer = QTimer()
@@ -335,7 +271,7 @@ class DistortionAnalyzerWidget(QWidget):
         mode_group = QGroupBox("Mode")
         mode_layout = QVBoxLayout()
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["Real-time", "Frequency Sweep", "Amplitude Sweep"])
+        self.mode_combo.addItems(["Real-time", "Frequency Sweep", "Amplitude Sweep", "IMD Measurement"])
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         mode_layout.addWidget(self.mode_combo)
         mode_group.setLayout(mode_layout)
@@ -401,6 +337,51 @@ class DistortionAnalyzerWidget(QWidget):
         sweep_widget.setLayout(sweep_layout)
         self.controls_stack.addWidget(sweep_widget)
         
+        # Page 3: IMD Controls
+        imd_widget = QWidget()
+        imd_layout = QFormLayout()
+        
+        self.imd_std_combo = QComboBox()
+        self.imd_std_combo.addItems(['smpte', 'ccif'])
+        self.imd_std_combo.currentTextChanged.connect(self.on_imd_std_changed)
+        imd_layout.addRow("Standard:", self.imd_std_combo)
+        
+        self.imd_f1_spin = QDoubleSpinBox()
+        self.imd_f1_spin.setRange(10, 20000)
+        self.imd_f1_spin.setValue(self.module.imd_f1)
+        self.imd_f1_spin.valueChanged.connect(lambda v: setattr(self.module, 'imd_f1', v))
+        imd_layout.addRow("Freq 1 (Hz):", self.imd_f1_spin)
+        
+        self.imd_f2_spin = QDoubleSpinBox()
+        self.imd_f2_spin.setRange(10, 24000)
+        self.imd_f2_spin.setValue(self.module.imd_f2)
+        self.imd_f2_spin.valueChanged.connect(lambda v: setattr(self.module, 'imd_f2', v))
+        imd_layout.addRow("Freq 2 (Hz):", self.imd_f2_spin)
+        
+        self.imd_ratio_spin = QDoubleSpinBox()
+        self.imd_ratio_spin.setRange(1, 10)
+        self.imd_ratio_spin.setValue(self.module.imd_ratio)
+        self.imd_ratio_spin.valueChanged.connect(lambda v: setattr(self.module, 'imd_ratio', v))
+        imd_layout.addRow("Ratio (F1:F2):", self.imd_ratio_spin)
+        
+        # Reuse Amplitude controls for IMD? Yes, but maybe duplicate for clarity or just switch back to RT page?
+        # Better to have dedicated amplitude here or shared. 
+        # For simplicity, let's add amplitude here too or rely on the fact that we can switch back.
+        # But user wants to adjust while in IMD mode.
+        # Let's add amplitude control here too.
+        
+        imd_amp_layout = QHBoxLayout()
+        self.imd_amp_spin = QDoubleSpinBox()
+        self.imd_amp_spin.setRange(-120, 0)
+        self.imd_amp_spin.setValue(-6)
+        self.imd_amp_spin.valueChanged.connect(self.on_imd_amp_changed)
+        imd_amp_layout.addWidget(self.imd_amp_spin)
+        imd_amp_layout.addWidget(QLabel("dBFS")) # Simplified for IMD
+        imd_layout.addRow("Amplitude:", imd_amp_layout)
+        
+        imd_widget.setLayout(imd_layout)
+        self.controls_stack.addWidget(imd_widget)
+        
         left_panel.addWidget(self.controls_stack)
         
         # Common Controls
@@ -421,13 +402,8 @@ class DistortionAnalyzerWidget(QWidget):
         self.action_btn.setStyleSheet("QPushButton:checked { background-color: #ccffcc; }")
         btn_layout.addWidget(self.action_btn)
         
-        self.hp_btn = QPushButton("High Precision Measurement")
-        self.hp_btn.clicked.connect(self.on_high_precision)
-        btn_layout.addWidget(self.hp_btn)
-        
-        self.hp_progress = QProgressBar()
-        self.hp_progress.setVisible(False)
-        btn_layout.addWidget(self.hp_progress)
+        self.action_btn.setStyleSheet("QPushButton:checked { background-color: #ccffcc; }")
+        btn_layout.addWidget(self.action_btn)
         
         left_panel.addLayout(btn_layout)
         
@@ -451,6 +427,19 @@ class DistortionAnalyzerWidget(QWidget):
         self.sinad_label.setStyleSheet("font-size: 18px; color: #55ffff;")
         meters_layout.addWidget(QLabel("SINAD:"))
         meters_layout.addWidget(self.sinad_label)
+        
+        # IMD Meter (Hidden by default)
+        self.imd_label = QLabel("-- %")
+        self.imd_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #ff55ff;")
+        self.imd_db_label = QLabel("-- dB")
+        self.imd_meter_widget = QWidget()
+        imd_meter_layout = QVBoxLayout(self.imd_meter_widget)
+        imd_meter_layout.setContentsMargins(0,0,0,0)
+        imd_meter_layout.addWidget(QLabel("IMD:"))
+        imd_meter_layout.addWidget(self.imd_label)
+        imd_meter_layout.addWidget(self.imd_db_label)
+        meters_layout.addWidget(self.imd_meter_widget)
+        self.imd_meter_widget.setVisible(False)
         
         self.meters_group.setLayout(meters_layout)
         left_panel.addWidget(self.meters_group)
@@ -522,15 +511,22 @@ class DistortionAnalyzerWidget(QWidget):
 
     def on_mode_changed(self, idx):
         mode = self.mode_combo.currentText()
+        self.module.mode = mode # Update mode in module
+        
         if mode == "Real-time":
             self.controls_stack.setCurrentIndex(0)
             self.meters_group.setVisible(True)
-            self.hp_btn.setVisible(True)
+            self.set_meters_mode('thd')
             self.tabs.setCurrentIndex(0)
+        elif mode == "IMD Measurement":
+            self.controls_stack.setCurrentIndex(2)
+            self.meters_group.setVisible(True)
+            self.set_meters_mode('imd')
+            self.tabs.setCurrentIndex(0)
+            self.on_imd_std_changed(self.imd_std_combo.currentText()) # Init controls
         else:
             self.controls_stack.setCurrentIndex(1)
             self.meters_group.setVisible(False)
-            self.hp_btn.setVisible(False)
             self.tabs.setCurrentIndex(2)
             
             if mode == "Frequency Sweep":
@@ -642,32 +638,36 @@ class DistortionAnalyzerWidget(QWidget):
             self.timer.stop()
             self.action_btn.setText("Start Measurement")
 
-    def on_high_precision(self):
-        self.module.start_analysis() # Ensure running
-        self.hp_btn.setEnabled(False)
-        self.action_btn.setEnabled(False)
-        self.hp_progress.setVisible(True)
-        self.hp_progress.setValue(0)
-        
-        self.hp_worker = HighPrecisionWorker(self.module)
-        self.hp_worker.progress.connect(self.hp_progress.setValue)
-        self.hp_worker.finished.connect(self.on_hp_finished)
-        self.hp_worker.start()
+    def set_meters_mode(self, mode):
+        if mode == 'thd':
+            self.thdn_label.setVisible(True)
+            self.thdn_db_label.setVisible(True)
+            self.thd_label.setVisible(True)
+            self.sinad_label.setVisible(True)
+            self.imd_meter_widget.setVisible(False)
+        else:
+            self.thdn_label.setVisible(False)
+            self.thdn_db_label.setVisible(False)
+            self.thd_label.setVisible(False)
+            self.sinad_label.setVisible(False)
+            self.imd_meter_widget.setVisible(True)
 
-    def on_hp_finished(self, results):
-        self.hp_btn.setEnabled(True)
-        self.action_btn.setEnabled(True)
-        self.hp_progress.setVisible(False)
-        
-        # Update Meters with high precision results
-        self.thdn_label.setText(f"{results['thdn_percent']:.4f} %")
-        self.thdn_db_label.setText(f"{results['thdn_db']:.2f} dB")
-        self.thd_label.setText(f"{results['thd_percent']:.4f} %")
-        self.sinad_label.setText(f"{results['sinad_db']:.2f} dB")
-        
-        # Stop if it was only for HP
-        if not self.action_btn.isChecked():
-            self.module.stop_analysis()
+    def on_imd_std_changed(self, text):
+        self.module.imd_standard = text
+        if text == 'smpte':
+            self.module.imd_f1 = 60.0
+            self.module.imd_f2 = 7000.0
+            self.imd_ratio_spin.setEnabled(True)
+        else: # ccif
+            self.module.imd_f1 = 19000.0
+            self.module.imd_f2 = 20000.0
+            self.imd_ratio_spin.setEnabled(False)
+            
+        self.imd_f1_spin.setValue(self.module.imd_f1)
+        self.imd_f2_spin.setValue(self.module.imd_f2)
+
+    def on_imd_amp_changed(self, val):
+        self.module.gen_amplitude = 10**(val/20)
 
     def start_sweep(self, mode):
         self.module.start_analysis() # Ensure audio is running
@@ -725,32 +725,52 @@ class DistortionAnalyzerWidget(QWidget):
         sample_rate = self.module.audio_engine.sample_rate
         
         # Perform Analysis
-        results = AudioCalc.analyze_harmonics(
-            data, 
-            self.module.gen_frequency, 
-            self.module.window_type, 
-            sample_rate
-        )
-        self.module.current_result = results
-        
-        # Update Meters
-        self.thdn_label.setText(f"{results['thdn_percent']:.4f} %")
-        self.thdn_db_label.setText(f"{results['thdn_db']:.2f} dB")
-        self.thd_label.setText(f"{results['thd_percent']:.4f} %")
-        self.sinad_label.setText(f"{results['sinad_db']:.2f} dB")
-        
-        # Update Harmonics Table
-        self.harmonics_table.setRowCount(len(results['harmonics']))
-        for i, h in enumerate(results['harmonics']):
-            self.harmonics_table.setItem(i, 0, QTableWidgetItem(str(h['order'])))
-            self.harmonics_table.setItem(i, 1, QTableWidgetItem(f"{h['frequency']:.1f}"))
-            self.harmonics_table.setItem(i, 2, QTableWidgetItem(f"{h['amplitude_dbr']:.2f}"))
-            self.harmonics_table.setItem(i, 3, QTableWidgetItem(f"{h['amplitude_linear']:.6f}"))
-        
-        # Update Spectrum Plot
-        window = get_window(self.module.window_type, len(data))
-        fft_data = np.fft.rfft(data * window)
-        mag = 20 * np.log10(np.abs(fft_data) / len(data) * 2 + 1e-12)
-        freqs = np.fft.rfftfreq(len(data), 1/sample_rate)
-        
-        self.spectrum_curve.setData(freqs[1:], mag[1:])
+        # Perform Analysis
+        if self.module.mode == "IMD Measurement":
+            window = get_window(self.module.window_type, len(data))
+            fft_data = np.fft.rfft(data * window)
+            mag = np.abs(fft_data) * (2 / np.sum(window)) # Linear magnitude for IMD calc
+            freqs = np.fft.rfftfreq(len(data), 1/sample_rate)
+            
+            if self.module.imd_standard == 'smpte':
+                res = AudioCalc.calculate_imd_smpte(mag, freqs, self.module.imd_f1, self.module.imd_f2)
+            else:
+                res = AudioCalc.calculate_imd_ccif(mag, freqs, self.module.imd_f1, self.module.imd_f2)
+                
+            self.imd_label.setText(f"{res['imd']:.4f} %")
+            self.imd_db_label.setText(f"{res['imd_db']:.2f} dB")
+            
+            # For plotting, convert to dBFS
+            mag_db = 20 * np.log10(mag + 1e-12)
+            self.spectrum_curve.setData(freqs[1:], mag_db[1:])
+            
+        else:
+            results = AudioCalc.analyze_harmonics(
+                data, 
+                self.module.gen_frequency, 
+                self.module.window_type, 
+                sample_rate
+            )
+            self.module.current_result = results
+            
+            # Update Meters
+            self.thdn_label.setText(f"{results['thdn_percent']:.4f} %")
+            self.thdn_db_label.setText(f"{results['thdn_db']:.2f} dB")
+            self.thd_label.setText(f"{results['thd_percent']:.4f} %")
+            self.sinad_label.setText(f"{results['sinad_db']:.2f} dB")
+            
+            # Update Harmonics Table
+            self.harmonics_table.setRowCount(len(results['harmonics']))
+            for i, h in enumerate(results['harmonics']):
+                self.harmonics_table.setItem(i, 0, QTableWidgetItem(str(h['order'])))
+                self.harmonics_table.setItem(i, 1, QTableWidgetItem(f"{h['frequency']:.1f}"))
+                self.harmonics_table.setItem(i, 2, QTableWidgetItem(f"{h['amplitude_dbr']:.2f}"))
+                self.harmonics_table.setItem(i, 3, QTableWidgetItem(f"{h['amplitude_linear']:.6f}"))
+            
+            # Update Spectrum Plot
+            window = get_window(self.module.window_type, len(data))
+            fft_data = np.fft.rfft(data * window)
+            mag = 20 * np.log10(np.abs(fft_data) / len(data) * 2 + 1e-12)
+            freqs = np.fft.rfftfreq(len(data), 1/sample_rate)
+            
+            self.spectrum_curve.setData(freqs[1:], mag[1:])
