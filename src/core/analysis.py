@@ -50,6 +50,9 @@ class AudioCalc:
         bin_width = sampling_rate / N
         search_width = 1.5 * bin_width # Slightly more than 1 bin width to be safe
         
+        if not np.isfinite(freq_guess):
+            return freq_guess
+            
         bounds = (freq_guess - search_width, freq_guess + search_width)
         res = minimize_scalar(get_residual_rms, bounds=bounds, method='bounded')
         return res.x
@@ -65,6 +68,9 @@ class AudioCalc:
         
         # 1. Optimize Frequency
         best_freq = AudioCalc.optimize_frequency(signal, sampling_rate, freq_guess)
+        
+        if not np.isfinite(best_freq):
+            return -140.0, 0.0, 0.0
         
         # 2. Get Final Residual
         w = 2 * np.pi * best_freq
