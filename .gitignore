@@ -43,6 +43,7 @@ ehthumbs.db
 # Ignore test result files
 *.csv
 *.png
+!src/assets/*.png
 
 # Calibration settings
 calibration_settings.ini
