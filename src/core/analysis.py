@@ -234,3 +234,65 @@ class AudioCalc:
             'raw_harmonics': harmonic_amplitudes_linear,
             'raw_fund_amp': max_amplitude
         }
+
+    @staticmethod
+    def _find_peak(mag, freqs, target_freq, width=20.0):
+        mask = (freqs >= target_freq - width) & (freqs <= target_freq + width)
+        if not np.any(mask):
+            return 0.0
+        return np.max(mag[mask])
+
+    @staticmethod
+    def calculate_imd_smpte(mag, freqs, f1, f2, num_sidebands=3):
+        # SMPTE: f1 (low), f2 (high). IMD products at f2 +/- n*f1
+        amp_f2 = AudioCalc._find_peak(mag, freqs, f2, width=max(50.0, f1*0.1))
+        
+        if amp_f2 < 1e-6:
+            return {'imd': 0.0, 'imd_db': -100.0}
+            
+        sum_sq_sidebands = 0.0
+        for n in range(1, num_sidebands + 1):
+            sb_upper = f2 + n * f1
+            sb_lower = f2 - n * f1
+            
+            amp_upper = AudioCalc._find_peak(mag, freqs, sb_upper)
+            amp_lower = AudioCalc._find_peak(mag, freqs, sb_lower)
+            
+            sum_sq_sidebands += amp_upper**2 + amp_lower**2
+            
+        imd = np.sqrt(sum_sq_sidebands) / amp_f2
+        return {
+            'imd': imd * 100,
+            'imd_db': 20 * np.log10(imd) if imd > 1e-9 else -100.0
+        }
+
+    @staticmethod
+    def calculate_imd_ccif(mag, freqs, f1, f2):
+        # CCIF: f1, f2 close (e.g. 19k, 20k). 
+        # d2 = f2 - f1
+        # d3 = 2f1 - f2, 2f2 - f1
+        
+        amp_f1 = AudioCalc._find_peak(mag, freqs, f1)
+        amp_f2 = AudioCalc._find_peak(mag, freqs, f2)
+        total_amp = amp_f1 + amp_f2
+        
+        if total_amp < 1e-6:
+            return {'imd': 0.0, 'imd_db': -100.0}
+            
+        # d2
+        d2_freq = abs(f2 - f1)
+        amp_d2 = AudioCalc._find_peak(mag, freqs, d2_freq)
+        
+        # d3
+        d3_low = 2*f1 - f2
+        d3_high = 2*f2 - f1
+        amp_d3_low = AudioCalc._find_peak(mag, freqs, d3_low) if d3_low > 0 else 0
+        amp_d3_high = AudioCalc._find_peak(mag, freqs, d3_high)
+        
+        distortion_sum_sq = amp_d2**2 + amp_d3_low**2 + amp_d3_high**2
+        imd = np.sqrt(distortion_sum_sq) / total_amp
+        
+        return {
+            'imd': imd * 100,
+            'imd_db': 20 * np.log10(imd) if imd > 1e-9 else -100.0
+        }
