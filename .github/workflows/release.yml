@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+        # Pin setuptools to avoid distutils issues if necessary
+        # pip install "setuptools<70.0.0" 
+
+    - name: Convert Icon
+      run: |
+        magick app_icon.png -define icon:auto-resize=256,128,64,48,32,16 app_icon.ico
+
+    - name: Build with PyInstaller
+      run: |
+        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.ico --add-data "src;src" --exclude-module matplotlib --collect-all backports main_gui.py
+
+    - name: Release Windows
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: dist/Audio_Measurement_Tools.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libasound2-dev libxcb-cursor0
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install "setuptools<70.0.0"
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build standalone binary with PyInstaller
+      run: |
+        mkdir -p libs
+        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.png --add-data "src:src" --exclude-module matplotlib --collect-all backports main_gui.py
+
+    - name: Build AppImage
+      run: |
+        chmod +x build_appimage.sh
+        ./build_appimage.sh
+
+    - name: Release Linux
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: Audio_Measurement_Tools-*.AppImage
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

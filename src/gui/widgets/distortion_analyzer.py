@@ -27,6 +27,7 @@ class DistortionAnalyzer(MeasurementModule):
         self.gen_frequency = 1000.0
         self._gen_amplitude = 0.5 # Linear 0-1
         self.output_channel = 0 # 0: Left, 1: Right
+        self.input_channel = 0 # 0: Left, 1: Right
         self.output_enabled = True
         
         # Analysis Settings
@@ -128,7 +129,7 @@ class DistortionAnalyzer(MeasurementModule):
                 pass
             
             # Capture Input
-            capture_ch = self.output_channel if self.output_enabled else 0
+            capture_ch = self.input_channel
             
             if indata.shape[1] > capture_ch:
                 new_data = indata[:, capture_ch]
@@ -399,10 +400,17 @@ class DistortionAnalyzerWidget(QWidget):
         # Common Controls
         common_group = QGroupBox("Settings")
         common_layout = QFormLayout()
+        
+        self.in_channel_combo = QComboBox()
+        self.in_channel_combo.addItems(["Left (Ch 1)", "Right (Ch 2)"])
+        self.in_channel_combo.currentIndexChanged.connect(self.on_in_channel_changed)
+        common_layout.addRow("Input Ch:", self.in_channel_combo)
+        
         self.channel_combo = QComboBox()
         self.channel_combo.addItems(["Left (Ch 1)", "Right (Ch 2)"])
         self.channel_combo.currentIndexChanged.connect(self.on_channel_changed)
         common_layout.addRow("Output Ch:", self.channel_combo)
+        
         common_group.setLayout(common_layout)
         left_panel.addWidget(common_group)
         
@@ -742,6 +750,9 @@ class DistortionAnalyzerWidget(QWidget):
 
     def on_channel_changed(self, idx):
         self.module.output_channel = idx
+
+    def on_in_channel_changed(self, idx):
+        self.module.input_channel = idx
 
     def update_realtime_analysis(self):
         if not self.module.is_running:
