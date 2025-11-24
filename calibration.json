@@ -1,4 +1,5 @@
 {
     "input_sensitivity": 0.7908533826553578,
-    "output_gain": 0.18578686132179548
+    "output_gain": 0.18578686132179548,
+    "frequency_calibration": 1.0000045915469926
 }
