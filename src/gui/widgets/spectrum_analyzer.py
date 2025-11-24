@@ -215,7 +215,6 @@ class SpectrumAnalyzerWidget(QWidget):
         self.window_combo = QComboBox()
         self.window_combo.addItems(['hanning', 'hamming', 'blackman', 'bartlett', 'rect'])
         self.window_combo.currentTextChanged.connect(self.on_window_changed)
-        self.window_combo.currentTextChanged.connect(self.on_window_changed)
         row1_layout.addWidget(self.window_combo)
 
         # Weighting Selection
