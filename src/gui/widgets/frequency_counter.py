@@ -3,7 +3,7 @@ import time
 import pyqtgraph as pg
 from collections import deque
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, 
-                             QComboBox, QGroupBox, QFormLayout, QFrame, QPushButton)
+                             QComboBox, QGroupBox, QFormLayout, QFrame, QPushButton, QTabWidget)
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QFont
 
@@ -25,12 +25,16 @@ class FrequencyCounter(MeasurementModule):
         
         # State
         self.input_buffer = np.zeros(self.buffer_size)
-        self.history_len = 100
+        self.history_len = 2000 # Increased for Allan Plot
         self.freq_history = deque(maxlen=self.history_len)
         self.time_history = deque(maxlen=self.history_len)
         self.start_time = 0
         self.current_freq = 0.0
         self.current_amp_db = -100.0
+        self.std_dev = 0.0
+        self.allan_deviation = 0.0
+        self.allan_taus = []
+        self.allan_devs = []
         
     @property
     def name(self) -> str:
@@ -97,10 +101,37 @@ class FrequencyCounter(MeasurementModule):
                 self.callback_id = None
             self.is_running = False
 
+    def set_update_interval(self, interval_ms):
+        was_running = self.is_running
+        if was_running:
+            self.stop_analysis()
+            
+        self.update_interval_ms = interval_ms
+        
+        # Adjust buffer size to capture enough samples for the interval
+        # Minimum buffer size for good FFT resolution is also a factor, 
+        # but for sine fit we just need enough cycles.
+        # Let's aim for exactly the interval length, or slightly more.
+        # We need to know sample rate. If not running, guess 48000 or use current engine rate.
+        sr = self.audio_engine.sample_rate
+        if sr < 1000: sr = 48000 # Fallback
+        
+        # Calculate needed samples
+        needed_samples = int(sr * interval_ms / 1000)
+        
+        # Ensure a minimum size (e.g. 8192 for fast updates)
+        self.buffer_size = max(8192, needed_samples)
+        
+        if was_running:
+            self.start_analysis()
+
     def process(self):
         if not self.is_running:
             return None
             
+        # Ensure buffer is full enough for the requested interval?
+        # With ring buffer, it's always "full" with something (zeros initially).
+        
         data = self.input_buffer.copy()
         sr = self.audio_engine.sample_rate
         
@@ -135,6 +166,73 @@ class FrequencyCounter(MeasurementModule):
                 return coarse_freq
         else:
             return coarse_freq
+
+    def calculate_stats(self):
+        if len(self.freq_history) < 2:
+            self.std_dev = 0.0
+            self.allan_deviation = 0.0
+            return
+
+        data = np.array(self.freq_history)
+        
+        # Standard Deviation (Jitter)
+        self.std_dev = np.std(data, ddof=1)
+        
+        # Allan Deviation (Tau = 1 sample)
+        diffs = np.diff(data)
+        self.allan_deviation = np.sqrt(0.5 * np.mean(diffs**2))
+
+    def calculate_allan_plot_data(self):
+        """
+        Calculates Allan Deviation for multiple Tau values.
+        Tau is in units of update_interval.
+        """
+        if len(self.freq_history) < 10:
+            return [], []
+
+        data = np.array(self.freq_history)
+        n = len(data)
+        
+        taus = []
+        devs = []
+        
+        # Calculate for Tau = 1, 2, 4, 8, ... up to N/2
+        # m is the averaging factor (Tau = m * dt)
+        
+        max_m = n // 2
+        m = 1
+        while m <= max_m:
+            # Create averaged data
+            # We need non-overlapping averages of length m
+            # But standard Allan Variance definition uses adjacent averages
+            # Formula: sigma_y^2(tau) = 0.5 * < (y_{i+1} - y_i)^2 >
+            # where y_i are averages over tau
+            
+            # Efficient implementation:
+            # Reshape data to (N//m, m) and take mean along axis 1
+            # This gives us the sequence of averages y_k
+            
+            num_samples = (n // m) * m
+            if num_samples < 2 * m:
+                break
+                
+            y = data[:num_samples].reshape(-1, m).mean(axis=1)
+            
+            if len(y) < 2:
+                break
+                
+            diffs = np.diff(y)
+            sigma = np.sqrt(0.5 * np.mean(diffs**2))
+            
+            tau_seconds = m * (self.update_interval_ms / 1000.0)
+            taus.append(tau_seconds)
+            devs.append(sigma)
+            
+            m *= 2
+            
+        self.allan_taus = taus
+        self.allan_devs = devs
+        return taus, devs
 
 class FrequencyCounterWidget(QWidget):
     def __init__(self, module: FrequencyCounter):
@@ -173,6 +271,19 @@ class FrequencyCounterWidget(QWidget):
         display_layout.addWidget(self.amp_label)
         
         layout.addWidget(display_frame)
+
+        # --- Stats Display ---
+        stats_layout = QHBoxLayout()
+        
+        self.std_label = QLabel("Std Dev: -- Hz")
+        self.std_label.setStyleSheet("color: #aaa; font-size: 14px;")
+        stats_layout.addWidget(self.std_label)
+        
+        self.allan_label = QLabel("Allan Dev: -- Hz")
+        self.allan_label.setStyleSheet("color: #aaa; font-size: 14px;")
+        stats_layout.addWidget(self.allan_label)
+        
+        display_layout.addLayout(stats_layout)
         
         # --- Controls ---
         controls_layout = QHBoxLayout()
@@ -200,7 +311,12 @@ class FrequencyCounterWidget(QWidget):
         speed_layout = QHBoxLayout()
         speed_layout.addWidget(QLabel("Update Rate:"))
         self.speed_combo = QComboBox()
-        self.speed_combo.addItems(["Fast (10Hz)", "Slow (2Hz)"])
+        self.speed_combo.addItem("Fast (10Hz)", 100)
+        self.speed_combo.addItem("Slow (2Hz)", 500)
+        self.speed_combo.addItem("1 Sec (1Hz)", 1000)
+        self.speed_combo.addItem("2 Sec (0.5Hz)", 2000)
+        self.speed_combo.addItem("5 Sec (0.2Hz)", 5000)
+        self.speed_combo.addItem("10 Sec (0.1Hz)", 10000)
         self.speed_combo.currentIndexChanged.connect(self.on_speed_changed)
         speed_layout.addWidget(self.speed_combo)
         controls_layout.addLayout(speed_layout)
@@ -214,22 +330,36 @@ class FrequencyCounterWidget(QWidget):
         controls_layout.addStretch()
         layout.addLayout(controls_layout)
         
-        # --- History Plot ---
+        # --- Tabs ---
+        self.tab_widget = QTabWidget()
+        layout.addWidget(self.tab_widget)
+        
+        # Tab 1: Frequency Drift
         self.plot_widget = pg.PlotWidget(title="Frequency Drift")
         self.plot_widget.setLabel('left', 'Frequency', units='Hz')
         self.plot_widget.setLabel('bottom', 'Time', units='s')
         self.plot_widget.showGrid(x=True, y=True)
         self.curve = self.plot_widget.plot(pen='y')
-        layout.addWidget(self.plot_widget)
+        self.tab_widget.addTab(self.plot_widget, "Frequency Drift")
+        
+        # Tab 2: Allan Deviation
+        self.allan_plot = pg.PlotWidget(title="Allan Deviation")
+        self.allan_plot.setLabel('left', 'Sigma_y(tau)')
+        self.allan_plot.setLabel('bottom', 'Tau', units='s')
+        self.allan_plot.showGrid(x=True, y=True)
+        self.allan_plot.setLogMode(x=True, y=True)
+        self.allan_curve = self.allan_plot.plot(pen='c', symbol='o', symbolSize=5)
+        self.tab_widget.addTab(self.allan_plot, "Allan Deviation")
         
         self.setLayout(layout)
 
     def on_speed_changed(self, idx):
-        if idx == 0: # Fast
-            self.module.update_interval_ms = 100
-        else: # Slow
-            self.module.update_interval_ms = 500
-        self.timer.setInterval(self.module.update_interval_ms)
+        interval_ms = self.speed_combo.currentData()
+        if interval_ms is None:
+            return
+            
+        self.module.set_update_interval(interval_ms)
+        self.timer.setInterval(interval_ms)
 
     def on_run_toggle(self, checked):
         if checked:
@@ -257,6 +387,28 @@ class FrequencyCounterWidget(QWidget):
             self.module.freq_history.append(freq)
             self.module.time_history.append(t)
             
-            self.curve.setData(list(self.module.time_history), list(self.module.freq_history))
+            # Update Stats
+            self.module.calculate_stats()
+            self.std_label.setText(f"Std Dev: {self.module.std_dev:.5f} Hz")
+            self.allan_label.setText(f"Allan Dev: {self.module.allan_deviation:.5f} Hz")
+            
+            # Update Plots based on visibility
+            current_tab = self.tab_widget.currentIndex()
+            
+            if current_tab == 0: # Frequency Drift
+                self.curve.setData(list(self.module.time_history), list(self.module.freq_history))
+            
+            elif current_tab == 1: # Allan Deviation
+                # Update Allan Plot
+                # For fast updates, limit to approx 2Hz (every 500ms) to save CPU
+                # For slow updates (>= 1000ms), update every time
+                should_update = self.module.update_interval_ms >= 1000 or (int(time.time() * 10) % 5 == 0)
+                
+                if len(self.module.freq_history) > 10 and should_update:
+                    taus, devs = self.module.calculate_allan_plot_data()
+                    if len(taus) > 0:
+                        self.allan_curve.setData(taus, devs)
         else:
             self.freq_label.setText("---.----- Hz")
+            self.std_label.setText("Std Dev: -- Hz")
+            self.allan_label.setText("Allan Dev: -- Hz")
