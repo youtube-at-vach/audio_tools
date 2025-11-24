@@ -36,20 +36,25 @@ class ConfigManager:
                 "input_device": None,
                 "output_device": None,
                 "sample_rate": 48000,
-                "block_size": 1024
+                "block_size": 1024,
+                "input_channels": "stereo",
+                "output_channels": "stereo"
             }
         }
 
-    def get_last_devices(self):
-        """Returns (input_device_name, output_device_name)."""
-        audio_cfg = self.config.get("audio", {})
-        return audio_cfg.get("input_device"), audio_cfg.get("output_device")
+    def get_audio_config(self):
+        """Returns a dictionary of audio configuration."""
+        return self.config.get("audio", self._default_config()["audio"])
 
-    def set_last_devices(self, input_name, output_name):
-        """Updates the last used devices."""
+    def set_audio_config(self, input_name, output_name, sample_rate, block_size, in_ch, out_ch):
+        """Updates the audio configuration."""
         if "audio" not in self.config:
             self.config["audio"] = {}
         
         self.config["audio"]["input_device"] = input_name
         self.config["audio"]["output_device"] = output_name
+        self.config["audio"]["sample_rate"] = sample_rate
+        self.config["audio"]["block_size"] = block_size
+        self.config["audio"]["input_channels"] = in_ch
+        self.config["audio"]["output_channels"] = out_ch
         self.save_config()

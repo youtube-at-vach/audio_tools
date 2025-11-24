@@ -24,11 +24,13 @@ class MainWindow(QMainWindow):
         self.config_manager = ConfigManager()
         self.audio_engine = AudioEngine()
         
-        # Load saved devices
-        last_in, last_out = self.config_manager.get_last_devices()
+        # Load saved config
+        audio_cfg = self.config_manager.get_audio_config()
+        last_in = audio_cfg.get('input_device')
+        last_out = audio_cfg.get('output_device')
         
         # Default IDs
-        in_id, out_id = 3, 3 # Fallback to UAC-232 if not found or first run
+        in_id, out_id = 3, 3 # Fallback
         
         if last_in or last_out:
             # Find IDs by name
@@ -51,8 +53,20 @@ class MainWindow(QMainWindow):
 
         try:
             self.audio_engine.set_devices(in_id, out_id)
+            
+            # Apply other settings
+            sr = audio_cfg.get('sample_rate', 48000)
+            self.audio_engine.set_sample_rate(sr)
+            
+            bs = audio_cfg.get('block_size', 1024)
+            self.audio_engine.set_block_size(bs)
+            
+            in_ch = audio_cfg.get('input_channels', 'stereo')
+            out_ch = audio_cfg.get('output_channels', 'stereo')
+            self.audio_engine.set_channel_mode(in_ch, out_ch)
+            
         except Exception as e:
-            print(f"Failed to set devices: {e}")
+            print(f"Failed to set devices/settings: {e}")
             # Try default if specific failed
             try:
                 self.audio_engine.set_devices(None, None)

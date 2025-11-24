@@ -440,7 +440,15 @@ class SettingsWidget(QWidget):
                 # Save to config
                 in_name = self.input_combo.currentText().split(": ", 1)[1]
                 out_name = self.output_combo.currentText().split(": ", 1)[1]
-                self.config_manager.set_last_devices(in_name, out_name)
+                
+                self.config_manager.set_audio_config(
+                    in_name, 
+                    out_name, 
+                    self.audio_engine.sample_rate,
+                    self.audio_engine.block_size,
+                    self.audio_engine.input_channel_mode,
+                    self.audio_engine.output_channel_mode
+                )
                 
                 QMessageBox.information(self, "Success", f"Devices set to Input: {input_idx}, Output: {output_idx}")
             except Exception as e:
@@ -450,6 +458,17 @@ class SettingsWidget(QWidget):
         try:
             rate = int(text)
             self.audio_engine.set_sample_rate(rate)
+            
+            # Save config
+            if self.input_combo.currentIndex() >= 0:
+                in_name = self.input_combo.currentText().split(": ", 1)[1]
+                out_name = self.output_combo.currentText().split(": ", 1)[1]
+                self.config_manager.set_audio_config(
+                    in_name, out_name, rate, 
+                    self.audio_engine.block_size,
+                    self.audio_engine.input_channel_mode,
+                    self.audio_engine.output_channel_mode
+                )
         except ValueError:
             pass
 
@@ -457,6 +476,18 @@ class SettingsWidget(QWidget):
         try:
             size = int(text)
             self.audio_engine.set_block_size(size)
+            
+            # Save config
+            if self.input_combo.currentIndex() >= 0:
+                in_name = self.input_combo.currentText().split(": ", 1)[1]
+                out_name = self.output_combo.currentText().split(": ", 1)[1]
+                self.config_manager.set_audio_config(
+                    in_name, out_name, 
+                    self.audio_engine.sample_rate,
+                    size,
+                    self.audio_engine.input_channel_mode,
+                    self.audio_engine.output_channel_mode
+                )
         except ValueError:
             pass
 
@@ -464,3 +495,14 @@ class SettingsWidget(QWidget):
         in_mode = self.in_ch_combo.currentText().lower()
         out_mode = self.out_ch_combo.currentText().lower()
         self.audio_engine.set_channel_mode(in_mode, out_mode)
+        
+        # Save config
+        if self.input_combo.currentIndex() >= 0:
+            in_name = self.input_combo.currentText().split(": ", 1)[1]
+            out_name = self.output_combo.currentText().split(": ", 1)[1]
+            self.config_manager.set_audio_config(
+                in_name, out_name, 
+                self.audio_engine.sample_rate,
+                self.audio_engine.block_size,
+                in_mode, out_mode
+            )
