@@ -36,7 +36,7 @@ jobs:
         # Create libs directory if it doesn't exist (though not strictly needed for system-wide pyinstaller)
         mkdir -p libs
         # Run PyInstaller
-        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.png --add-data "src:src" --add-data "legacy:legacy" --collect-all backports main_gui.py
+        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.png --add-data "src:src" --exclude-module matplotlib --collect-all backports main_gui.py
 
     - name: Build AppImage
       run: |
