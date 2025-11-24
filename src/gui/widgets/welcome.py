@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QFrame
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap, QFont
 import os
+from src.core.utils import resource_path
 
 class WelcomeWidget(QWidget):
     def __init__(self):
@@ -16,7 +17,14 @@ class WelcomeWidget(QWidget):
         # Image Container
         image_label = QLabel()
         # Load image from assets
-        assets_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', 'welcome.png')
+        # We assume 'src/assets/welcome.png' relative to the bundle root or source root
+        assets_path = resource_path('src/assets/welcome.png')
+        
+        # Fallback for dev environment if running from inside src or similar
+        if not os.path.exists(assets_path):
+             # Try relative to this file
+             assets_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', 'welcome.png')
+
         if os.path.exists(assets_path):
             pixmap = QPixmap(assets_path)
             # Resize to fit width, keeping aspect ratio, or just display centered
