@@ -16,7 +16,6 @@ class NetworkAnalyzerSignals(QObject):
     sweep_finished = pyqtSignal()
     progress = pyqtSignal(int)
     latency_result = pyqtSignal(float)
-    latency_result = pyqtSignal(float)
     error = pyqtSignal(str)
 
 class PlayRecSession:
@@ -24,6 +23,7 @@ class PlayRecSession:
         self.audio_engine = audio_engine
         self.output_data = output_data
         self.total_frames = len(output_data)
+        self.input_channels = input_channels
         self.input_data = np.zeros((self.total_frames, input_channels), dtype=np.float32)
         self.current_frame = 0
         self.is_complete = False
@@ -56,32 +56,21 @@ class PlayRecSession:
             chunk = min(frames, remaining)
             
             # Output
-            # Handle stereo output mapping
-            # output_data is expected to be (N, 2)
             outdata[:chunk, :] = self.output_data[self.current_frame:self.current_frame+chunk, :]
             if chunk < frames:
                 outdata[chunk:, :] = 0
                 
             # Input
-            # Capture specified input channels (default 1, usually ch 0)
-            # indata is (frames, channels)
-            # We want to store into input_data (total_frames, input_channels)
-            
-            # Determine which input channel to capture. 
-            # For now, let's assume we capture channel 0 (Left) as per original code.
-            # If input_channels > 1, we might need more logic.
-            # Original code: recorded = rec_data[:, 0]
-            
             if indata.shape[1] > 0:
-                self.input_data[self.current_frame:self.current_frame+chunk, 0] = indata[:chunk, 0]
+                # Capture requested number of channels
+                ch_to_copy = min(self.input_channels, indata.shape[1])
+                self.input_data[self.current_frame:self.current_frame+chunk, :ch_to_copy] = indata[:chunk, :ch_to_copy]
             
             self.current_frame += chunk
             
             if self.current_frame >= self.total_frames:
                 self.is_complete = True
                 self.completion_event.set()
-                # We can't unregister here easily without deadlock or complex logic, 
-                # so we rely on the main thread to call stop() after wait() returns.
 
 class SweepWorker(QThread):
     def __init__(self, analyzer):
@@ -139,6 +128,10 @@ class NetworkAnalyzer(MeasurementModule):
         self.latency_sec = 0.0
         self.num_averages = 1
         
+        # Routing
+        self.output_channel = 'STEREO' # 'L', 'R', 'STEREO'
+        self.input_mode = 'L' # 'L', 'R', 'XFER'
+        
         # Fast Sweep Parameters
         self.sweep_mode = "Stepped Sine" # or "Fast Chirp"
         self.chirp_duration = 1.0
@@ -146,8 +139,6 @@ class NetworkAnalyzer(MeasurementModule):
         self.worker = None
         self.calibration_worker = None
         
-        # Calibration (Reference Trace)
-        # Format: {'freqs': np.array, 'mags': np.array, 'phases': np.array}
         self.reference_trace = None
 
     @property
@@ -156,7 +147,7 @@ class NetworkAnalyzer(MeasurementModule):
 
     @property
     def description(self) -> str:
-        return "Bode Plot (Gain & Phase) with Latency Compensation"
+        return "Bode Plot (Gain & Phase) with XFER support"
 
     def run(self, args: argparse.Namespace):
         print("CLI not implemented")
@@ -164,54 +155,38 @@ class NetworkAnalyzer(MeasurementModule):
     def get_widget(self):
         return NetworkAnalyzerWidget(self)
 
-    def run_play_rec(self, output_data):
+    def run_play_rec(self, output_data, input_channels=1):
         """
-        Helper to run a play/record session using AudioEngine.
+        Helper to run a play/record session.
         output_data: (N, 2) numpy array
-        Returns: (N, 1) numpy array (recorded data)
+        Returns: (N, input_channels) numpy array
         """
-        session = PlayRecSession(self.audio_engine, output_data)
+        session = PlayRecSession(self.audio_engine, output_data, input_channels)
         session.start()
-        
-        # Wait for completion
-        # We need to handle potential aborts from workers
-        # But here we are blocking the worker thread, which is fine.
-        # However, we should verify if we need to check for worker cancellation?
-        # The session.wait() blocks.
-        
         session.wait()
         session.stop()
-        
         return session.input_data
 
     def calibrate_latency(self):
-        """
-        Measures loopback latency using a chirp signal.
-        """
+        """Measures loopback latency using a chirp signal."""
         sample_rate = self.audio_engine.sample_rate
         duration = 0.5
         
-        # Generate Chirp
         t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
         chirp = scipy.signal.chirp(t, f0=20, t1=duration, f1=10000, method='logarithmic')
         chirp *= self.amplitude
         
         try:
-            # Prepare stereo output (duplicate mono chirp)
             out_data = np.zeros((len(chirp), 2), dtype=np.float32)
             out_data[:, 0] = chirp
             out_data[:, 1] = chirp
             
             print("Playing chirp for latency calibration...")
             
-            # Use AudioEngine
-            rec_data = self.run_play_rec(out_data)
-            
-            # Analyze
-            # Cross-correlate reference (chirp) with recorded signal (channel 0)
+            # Always capture 1 channel for latency cal (assume Ch 0 loopback)
+            rec_data = self.run_play_rec(out_data, input_channels=1)
             recorded = rec_data[:, 0]
             
-            # Simple peak finding in cross-correlation
             correlation = scipy.signal.correlate(recorded, chirp, mode='full')
             lags = scipy.signal.correlation_lags(len(recorded), len(chirp), mode='full')
             lag = lags[np.argmax(correlation)]
@@ -219,7 +194,6 @@ class NetworkAnalyzer(MeasurementModule):
             latency_samples = lag
             self.latency_sec = latency_samples / sample_rate
             
-            # Sanity check: latency shouldn't be negative or huge
             if self.latency_sec < 0:
                 self.latency_sec = 0
                 
@@ -232,12 +206,10 @@ class NetworkAnalyzer(MeasurementModule):
     def start_sweep(self):
         if self.worker and self.worker.isRunning():
             return
-            
         if self.sweep_mode == "Fast Chirp":
             self.worker = FastSweepWorker(self)
         else:
             self.worker = SweepWorker(self)
-            
         self.worker.start()
 
     def start_calibration(self):
@@ -250,6 +222,15 @@ class NetworkAnalyzer(MeasurementModule):
         if self.worker:
             self.worker.stop()
             self.worker.wait()
+
+    def _prepare_output_buffer(self, signal):
+        """Prepares stereo output buffer based on routing."""
+        out_data = np.zeros((len(signal), 2), dtype=np.float32)
+        if self.output_channel in ['L', 'STEREO']:
+            out_data[:, 0] = signal
+        if self.output_channel in ['R', 'STEREO']:
+            out_data[:, 1] = signal
+        return out_data
 
     def _execute_fast_sweep(self, worker):
         sample_rate = self.audio_engine.sample_rate
@@ -266,33 +247,14 @@ class NetworkAnalyzer(MeasurementModule):
         phase = (w1 * T / L) * (np.exp(t * L / T) - 1)
         chirp = self.amplitude * np.sin(phase)
         
-        # Apply Tapering (Tukey Window) to reduce ringing
-        # Fade in/out over 5% of duration
         window = scipy.signal.windows.tukey(num_samples, alpha=0.05)
         chirp *= window
         
         # 2. Generate Inverse Filter
-        # The inverse filter must compensate for the pink spectrum of the log chirp (-3dB/oct).
-        # It needs to have a blue spectrum (+3dB/oct).
-        # Since we time-reverse the chirp (High->Low freq), the envelope must start High and end Low.
-        # This means the pre-reversed envelope (Low->High freq) must GROW with frequency.
-        # Envelope m(t) = exp(t * L / T)
-        
         inv_envelope = np.exp(t * L / T)
         inv_filter = inv_envelope * np.sin(phase)
-        
-        # Apply window to inverse filter as well to avoid edge artifacts
         inv_filter *= window
-        
-        inv_filter = np.flip(inv_filter) # Time reverse
-        
-        # Normalize Inverse Filter
-        # We want the convolution of chirp and inv_filter to have a peak of 1.0 (0dB) for a unity gain system.
-        # Peak of autocorrelation of chirp * inv_filter
-        # Let's calculate the scaling factor.
-        # Ideally: scale = 1 / max(fftconvolve(chirp, inv_filter))
-        # But we can just normalize the inverse filter by its energy or similar.
-        # Let's do a quick pre-calculation of the normalization factor.
+        inv_filter = np.flip(inv_filter)
         
         test_conv = scipy.signal.fftconvolve(chirp, inv_filter, mode='full')
         norm_factor = np.max(np.abs(test_conv))
@@ -300,77 +262,114 @@ class NetworkAnalyzer(MeasurementModule):
             inv_filter /= norm_factor
         
         # 3. Play and Record
-        
-        # Padding for latency and decay
-        padding_sec = 1.0 # Generous padding
+        padding_sec = 1.0
         padding_samples = int(padding_sec * sample_rate)
         
-        out_data = np.zeros((len(chirp) + padding_samples, 2), dtype=np.float32)
-        out_data[:len(chirp), 0] = chirp
-        out_data[:len(chirp), 1] = chirp
+        # Prepare output
+        out_signal = np.concatenate([chirp, np.zeros(padding_samples)])
+        out_data = self._prepare_output_buffer(out_signal)
         
         self.signals.progress.emit(10)
-        
         if not worker.is_running: return
         
-        # Use AudioEngine
-        rec_data = self.run_play_rec(out_data)
-        recorded = rec_data[:, 0]
+        # Determine input channels
+        input_ch_count = 2 if self.input_mode == 'XFER' else 1
+        
+        rec_data = self.run_play_rec(out_data, input_channels=input_ch_count)
         
         self.signals.progress.emit(50)
-        
         if not worker.is_running: return
 
-        # 4. Deconvolution (Convolution with Inverse Filter)
-        # Use FFT convolution for speed
-        ir = scipy.signal.fftconvolve(recorded, inv_filter, mode='full')
-        
-        # 5. Find Impulse Response Peak and Window it
-        peak_idx = np.argmax(np.abs(ir))
-        
-        # Window the IR
-        # We want to capture the main impulse.
-        # Center around peak.
-        
-        pre_peak_samples = int(0.01 * sample_rate) # 10ms before
-        post_peak_samples = int(0.5 * sample_rate) # 500ms after
-        
-        start_win = max(0, peak_idx - pre_peak_samples)
-        end_win = min(len(ir), peak_idx + post_peak_samples)
-        
-        ir_windowed = ir[start_win:end_win]
-        
-        # 6. FFT to get Frequency Response
-        H = np.fft.rfft(ir_windowed)
-        freqs = np.fft.rfftfreq(len(ir_windowed), d=1/sample_rate)
-        
-        # 7. Extract Magnitude and Phase
-        mask = (freqs >= self.start_freq) & (freqs <= self.end_freq)
-        valid_freqs = freqs[mask]
-        valid_H = H[mask]
-        
-        # Magnitude in dB
-        # Since we normalized the inverse filter, a unity gain system should give ~1.0 magnitude (0dB).
-        mag_db = 20 * np.log10(np.abs(valid_H) + 1e-12)
-        
-        phase_rad = np.angle(valid_H)
-        phase_rad = np.unwrap(phase_rad)
-        
-        # Compensate for the window shift
-        # The peak was at 'peak_idx'. We started window at 'start_win'.
-        # The effective delay in the windowed buffer is 'peak_idx - start_win'.
-        # We want to remove this delay to get phase relative to the impulse peak.
-        
-        delay_samples = peak_idx - start_win
-        phase_rad += 2 * np.pi * valid_freqs * (delay_samples / sample_rate)
-        
-        # Wrap to -180, 180
-        phase_deg = np.degrees(phase_rad)
-        phase_deg = (phase_deg + 180) % 360 - 180
-        
-        # Emit points
+        # 4. Process
+        def get_ir(signal):
+            return scipy.signal.fftconvolve(signal, inv_filter, mode='full')
+            
+        if self.input_mode == 'XFER':
+            # XFER Mode: Ref = Ch0, Meas = Ch1
+            # We assume Ch0 is Reference (e.g. Source Loopback) and Ch1 is Measurement (DUT)
+            # Or user can physically patch it.
+            # Standard XFER: H = Meas / Ref
+            
+            ref_sig = rec_data[:, 0]
+            meas_sig = rec_data[:, 1]
+            
+            ir_ref = get_ir(ref_sig)
+            ir_meas = get_ir(meas_sig)
+            
+            # Find peak in Ref to align
+            peak_idx = np.argmax(np.abs(ir_ref))
+            
+            # Window both
+            pre = int(0.01 * sample_rate)
+            post = int(0.5 * sample_rate)
+            start = max(0, peak_idx - pre)
+            end = min(len(ir_ref), peak_idx + post)
+            
+            # Ensure same length
+            len_win = end - start
+            
+            win_ref = ir_ref[start:end]
+            win_meas = ir_meas[start:end] # Use same window for Meas
+            
+            H_ref = np.fft.rfft(win_ref)
+            H_meas = np.fft.rfft(win_meas)
+            freqs = np.fft.rfftfreq(len_win, d=1/sample_rate)
+            
+            # Transfer Function
+            # Avoid div by zero
+            with np.errstate(divide='ignore', invalid='ignore'):
+                H_xfer = H_meas / H_ref
+                H_xfer = np.nan_to_num(H_xfer)
+                
+            # Mask
+            mask = (freqs >= self.start_freq) & (freqs <= self.end_freq)
+            valid_freqs = freqs[mask]
+            valid_H = H_xfer[mask]
+            
+            mag_db = 20 * np.log10(np.abs(valid_H) + 1e-12)
+            phase_rad = np.angle(valid_H)
+            phase_rad = np.unwrap(phase_rad)
+            phase_deg = np.degrees(phase_rad)
+            phase_deg = (phase_deg + 180) % 360 - 180
+            
+        else:
+            # Single Channel Mode
+            ch_idx = 1 if self.input_mode == 'R' else 0
+            # If we recorded 1 channel, it's at index 0
+            if rec_data.shape[1] == 1:
+                sig = rec_data[:, 0]
+            else:
+                sig = rec_data[:, ch_idx]
+                
+            ir = get_ir(sig)
+            peak_idx = np.argmax(np.abs(ir))
+            
+            pre = int(0.01 * sample_rate)
+            post = int(0.5 * sample_rate)
+            start = max(0, peak_idx - pre)
+            end = min(len(ir), peak_idx + post)
+            
+            ir_win = ir[start:end]
+            H = np.fft.rfft(ir_win)
+            freqs = np.fft.rfftfreq(len(ir_win), d=1/sample_rate)
+            
+            mask = (freqs >= self.start_freq) & (freqs <= self.end_freq)
+            valid_freqs = freqs[mask]
+            valid_H = H[mask]
+            
+            mag_db = 20 * np.log10(np.abs(valid_H) + 1e-12)
+            phase_rad = np.angle(valid_H)
+            phase_rad = np.unwrap(phase_rad)
+            
+            # Latency Comp
+            delay_samples = peak_idx - start
+            phase_rad += 2 * np.pi * valid_freqs * (delay_samples / sample_rate)
+            
+            phase_deg = np.degrees(phase_rad)
+            phase_deg = (phase_deg + 180) % 360 - 180
+
+        # Emit
         step = max(1, len(valid_freqs) // 500)
-        
         for i in range(0, len(valid_freqs), step):
             if not worker.is_running: break
             self.signals.update_plot.emit(valid_freqs[i], mag_db[i], phase_deg[i])
@@ -379,128 +378,104 @@ class NetworkAnalyzer(MeasurementModule):
 
     def _execute_sweep(self, worker):
         sample_rate = self.audio_engine.sample_rate
-        
-        # Generate Frequencies
         freqs = self._generate_log_freqs(self.start_freq, self.end_freq, self.steps_per_octave)
         total_steps = len(freqs)
         
-        import sounddevice as sd
+        input_ch_count = 2 if self.input_mode == 'XFER' else 1
         
         for i, freq in enumerate(freqs):
-            if not worker.is_running:
-                break
+            if not worker.is_running: break
             
-            avg_mag_linear = 0.0
-            avg_phase_vector = 0.0 + 0.0j
+            avg_mag = 0.0
+            avg_phase = 0.0 + 0.0j
             
-            # Averaging Loop
             for _ in range(self.num_averages):
-                if not worker.is_running:
-                    break
+                if not worker.is_running: break
 
-                # Generate Tone
                 num_samples = int(sample_rate * self.duration_per_step)
                 t = np.arange(num_samples) / sample_rate
                 tone = self.amplitude * np.cos(2 * np.pi * freq * t)
                 
-                # Padding for latency
-                # We need to ensure we capture the full tone after it travels through the loopback
-                # Latency can be up to self.latency_sec. Add a safety buffer.
-                safety_buffer_sec = 0.1
-                padding_samples = int((self.latency_sec + safety_buffer_sec) * sample_rate)
+                padding = int((self.latency_sec + 0.1) * sample_rate)
+                out_signal = np.concatenate([tone, np.zeros(padding)])
+                out_data = self._prepare_output_buffer(out_signal)
                 
-                # Output: Tone + Silence
-                out_data = np.zeros((len(tone) + padding_samples, 2), dtype=np.float32)
-                out_data[:len(tone), 0] = tone
-                out_data[:len(tone), 1] = tone
+                rec_data = self.run_play_rec(out_data, input_channels=input_ch_count)
                 
-                # Play/Record
-                rec_data = self.run_play_rec(out_data)
-                recorded = rec_data[:, 0]
-                
-                # Extract the relevant segment based on latency
-                # We expect the signal to start at latency_sec
                 start_idx = int(self.latency_sec * sample_rate)
                 end_idx = start_idx + len(tone)
+                if end_idx > len(rec_data): end_idx = len(rec_data)
                 
-                if end_idx > len(recorded):
-                    # Should not happen with sufficient padding, but clamp just in case
-                    end_idx = len(recorded)
+                if self.input_mode == 'XFER':
+                    # XFER Analysis
+                    ref_seg = rec_data[start_idx:end_idx, 0]
+                    meas_seg = rec_data[start_idx:end_idx, 1]
+                    tone_seg = tone[:len(ref_seg)]
                     
-                recorded_segment = recorded[start_idx:end_idx]
-                
-                # If segment is shorter than tone (due to clamping), truncate tone too
-                if len(recorded_segment) < len(tone):
-                    tone_segment = tone[:len(recorded_segment)]
+                    mag_ref, phase_ref = self._analyze_tone(ref_seg, tone_seg, freq, sample_rate, comp_latency=False)
+                    mag_meas, phase_meas = self._analyze_tone(meas_seg, tone_seg, freq, sample_rate, comp_latency=False)
+                    
+                    # H = Meas / Ref
+                    mag_ratio = mag_meas / (mag_ref + 1e-12)
+                    phase_diff = phase_meas - phase_ref
+                    
+                    avg_mag += mag_ratio
+                    avg_phase += np.exp(1j * np.radians(phase_diff))
+                    
                 else:
-                    tone_segment = tone
-                
-                # Analyze
-                mag_linear, phase_deg = self._analyze_tone(recorded_segment, tone_segment, freq, sample_rate)
-                
-                avg_mag_linear += mag_linear
-                # Convert phase to vector for averaging
-                avg_phase_vector += np.exp(1j * np.radians(phase_deg))
+                    # Single Channel
+                    ch_idx = 1 if self.input_mode == 'R' else 0
+                    if rec_data.shape[1] == 1: ch_idx = 0
+                    
+                    seg = rec_data[start_idx:end_idx, ch_idx]
+                    tone_seg = tone[:len(seg)]
+                    
+                    mag, phase = self._analyze_tone(seg, tone_seg, freq, sample_rate, comp_latency=True)
+                    
+                    avg_mag += mag
+                    avg_phase += np.exp(1j * np.radians(phase))
             
-            # Finalize Average
-            avg_mag_linear /= self.num_averages
-            avg_phase_vector /= self.num_averages
+            avg_mag /= self.num_averages
+            avg_phase /= self.num_averages
             
-            final_mag_db = 20 * np.log10(avg_mag_linear) if avg_mag_linear > 1e-9 else -100
-            final_phase_deg = np.degrees(np.angle(avg_phase_vector))
+            final_mag_db = 20 * np.log10(avg_mag + 1e-12)
+            final_phase_deg = np.degrees(np.angle(avg_phase))
             
             self.signals.update_plot.emit(freq, final_mag_db, final_phase_deg)
             self.signals.progress.emit(int((i + 1) / total_steps * 100))
 
     def _generate_log_freqs(self, start, end, steps_per_oct):
+        if start >= end:
+            return [start]
         freqs = []
         curr = start
         while curr < end:
             freqs.append(curr)
             curr *= 2 ** (1 / steps_per_oct)
-        if freqs[-1] < end:
+        if not freqs or freqs[-1] < end:
             freqs.append(end)
         return freqs
 
-    def _analyze_tone(self, recorded, reference, freq, sample_rate):
-        # Apply Window
+    def _analyze_tone(self, recorded, reference, freq, sample_rate, comp_latency=True):
         window = scipy.signal.windows.hann(len(recorded))
         rec_windowed = recorded * window
         
-        # FFT
         fft_rec = np.fft.rfft(rec_windowed)
-        freqs = np.fft.rfftfreq(len(recorded), d=1/sample_rate)
-        
-        # Find Peak
         idx = np.argmax(np.abs(fft_rec))
-        peak_freq = freqs[idx]
         
-        # Magnitude
-        # Scale for window and RMS
         mag_linear = np.abs(fft_rec[idx]) * 2 / np.sum(window)
-        
-        # Phase
-        # Phase of recorded signal at peak
         phase_rec = np.angle(fft_rec[idx])
         
-        # Since we time-shifted the recorded signal by 'latency_sec' (by extracting the segment),
-        # we have already compensated for the integer sample delay.
-        # However, there might be a fractional sample delay left.
-        # fractional_delay = latency_sec * sample_rate - int(latency_sec * sample_rate)
-        # phase_correction = 2 * pi * freq * (fractional_delay / sample_rate)
+        if comp_latency:
+            latency_samples = self.latency_sec * sample_rate
+            fractional_sec = (latency_samples - int(latency_samples)) / sample_rate
+            phase_delay_comp = 2 * np.pi * freq * fractional_sec
+            phase_sys_rad = phase_rec + phase_delay_comp
+        else:
+            phase_sys_rad = phase_rec
         
-        latency_samples = self.latency_sec * sample_rate
-        fractional_samples = latency_samples - int(latency_samples)
-        fractional_sec = fractional_samples / sample_rate
-        
-        phase_delay_comp = 2 * np.pi * freq * fractional_sec
-        phase_sys_rad = phase_rec + phase_delay_comp
-        
-        # Wrap to -pi, pi
         phase_sys_rad = (phase_sys_rad + np.pi) % (2 * np.pi) - np.pi
-        phase_sys_deg = np.degrees(phase_sys_rad)
-        
-        return mag_linear, phase_sys_deg
+        return mag_linear, np.degrees(phase_sys_rad)
 
 class NetworkAnalyzerWidget(QWidget):
     def __init__(self, module: NetworkAnalyzer):
@@ -526,12 +501,26 @@ class NetworkAnalyzerWidget(QWidget):
         controls_group.setFixedWidth(300)
         form = QFormLayout()
         
-        # Mode Selector
+        # Mode
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["Stepped Sine", "Fast Chirp"])
         self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
-        form.addRow("Mode:", self.mode_combo)
+        form.addRow("Sweep Mode:", self.mode_combo)
         
+        # Routing
+        self.out_combo = QComboBox()
+        self.out_combo.addItems(["Left", "Right", "Stereo"])
+        self.out_combo.setCurrentText("Stereo")
+        self.out_combo.currentTextChanged.connect(self.on_routing_changed)
+        form.addRow("Output Ch:", self.out_combo)
+        
+        self.in_combo = QComboBox()
+        self.in_combo.addItems(["Left (Ch1)", "Right (Ch2)", "XFER (Ref=L, Meas=R)"])
+        self.in_combo.setCurrentText("Left (Ch1)")
+        self.in_combo.currentTextChanged.connect(self.on_routing_changed)
+        form.addRow("Input Mode:", self.in_combo)
+        
+        # Freqs
         self.start_spin = QDoubleSpinBox()
         self.start_spin.setRange(10, 20000); self.start_spin.setValue(20)
         self.start_spin.valueChanged.connect(lambda v: setattr(self.module, 'start_freq', v))
@@ -554,8 +543,7 @@ class NetworkAnalyzerWidget(QWidget):
         self.duration_spin.valueChanged.connect(lambda v: setattr(self.module, 'chirp_duration', v))
         self.duration_label = QLabel("Duration (s):")
         form.addRow(self.duration_label, self.duration_spin)
-        self.duration_label.hide()
-        self.duration_spin.hide()
+        self.duration_label.hide(); self.duration_spin.hide()
         
         self.amp_spin = QDoubleSpinBox()
         self.amp_spin.setRange(0, 1); self.amp_spin.setValue(0.5); self.amp_spin.setSingleStep(0.1)
@@ -573,7 +561,6 @@ class NetworkAnalyzerWidget(QWidget):
         self.smooth_combo.currentTextChanged.connect(self.refresh_plots)
         form.addRow("Smoothing:", self.smooth_combo)
         
-        # Unit Selector
         self.unit_combo = QComboBox()
         self.unit_combo.addItems(["dBFS", "dBV", "dBu", "Vrms", "Vpeak"])
         self.unit_combo.currentTextChanged.connect(self.refresh_plots)
@@ -582,28 +569,23 @@ class NetworkAnalyzerWidget(QWidget):
         self.lat_btn = QPushButton("Calibrate Latency")
         self.lat_btn.clicked.connect(self.calibrate)
         form.addRow(self.lat_btn)
-        
         self.lat_label = QLabel("Latency: 0.00 ms")
         form.addRow(self.lat_label)
         
         controls_group.setLayout(form)
         
-        # Calibration Group
+        # Calibration
         cal_group = QGroupBox("Calibration")
         cal_layout = QFormLayout()
-        
         self.store_ref_btn = QPushButton("Store Reference")
         self.store_ref_btn.clicked.connect(self.on_store_reference)
         cal_layout.addRow(self.store_ref_btn)
-        
         self.clear_ref_btn = QPushButton("Clear Reference")
         self.clear_ref_btn.clicked.connect(self.on_clear_reference)
         cal_layout.addRow(self.clear_ref_btn)
-        
         self.apply_ref_check = QCheckBox("Apply Reference")
         self.apply_ref_check.toggled.connect(self.on_apply_reference_changed)
         cal_layout.addRow(self.apply_ref_check)
-        
         cal_group.setLayout(cal_layout)
         
         # Buttons
@@ -612,10 +594,8 @@ class NetworkAnalyzerWidget(QWidget):
         self.start_btn.setCheckable(True)
         self.start_btn.clicked.connect(self.on_start_stop)
         btn_layout.addWidget(self.start_btn)
-        
         self.progress_bar = QProgressBar()
         btn_layout.addWidget(self.progress_bar)
-        
         btn_layout.addStretch()
         
         left_layout = QVBoxLayout()
@@ -626,7 +606,6 @@ class NetworkAnalyzerWidget(QWidget):
         
         # Plots
         plot_layout = QVBoxLayout()
-        
         self.mag_plot = pg.PlotWidget(title="Magnitude Response")
         self.mag_plot.setLabel('left', 'Magnitude', units='dB')
         self.mag_plot.setLabel('bottom', 'Frequency', units='Hz')
@@ -655,6 +634,21 @@ class NetworkAnalyzerWidget(QWidget):
             self.steps_label.hide(); self.steps_spin.hide()
             self.duration_label.show(); self.duration_spin.show()
 
+    def on_routing_changed(self, val):
+        out_map = {"Left": "L", "Right": "R", "Stereo": "STEREO"}
+        in_map = {"Left (Ch1)": "L", "Right (Ch2)": "R", "XFER (Ref=L, Meas=R)": "XFER"}
+        
+        self.module.output_channel = out_map.get(self.out_combo.currentText(), "STEREO")
+        self.module.input_mode = in_map.get(self.in_combo.currentText(), "L")
+        
+        # Update UI hints
+        if self.module.input_mode == 'XFER':
+            self.mag_plot.setTitle("Transfer Function (Meas / Ref)")
+            self.unit_combo.setEnabled(False) # XFER is always relative dB
+        else:
+            self.mag_plot.setTitle("Magnitude Response")
+            self.unit_combo.setEnabled(True)
+
     def calibrate(self):
         self.lat_btn.setEnabled(False)
         self.lat_label.setText("Calibrating...")
@@ -663,11 +657,14 @@ class NetworkAnalyzerWidget(QWidget):
     def on_latency_result(self, lat):
         self.lat_label.setText(f"Latency: {lat*1000:.2f} ms")
         self.lat_btn.setEnabled(True)
+    
+    def on_error(self, msg):
+        print(f"Error: {msg}")
+        self.start_btn.setChecked(False)
+        self.start_btn.setText("Start Sweep")
 
     def on_store_reference(self):
-        if not self.freqs:
-            return
-        
+        if not self.freqs: return
         self.module.reference_trace = {
             'freqs': np.array(self.freqs),
             'mags': np.array(self.mags),
@@ -678,7 +675,6 @@ class NetworkAnalyzerWidget(QWidget):
     def on_clear_reference(self):
         self.module.reference_trace = None
         self.refresh_plots()
-        print("Reference trace cleared.")
 
     def on_apply_reference_changed(self, checked):
         self.refresh_plots()
@@ -696,6 +692,10 @@ class NetworkAnalyzerWidget(QWidget):
             self.module.stop_sweep()
             self.start_btn.setText("Start Sweep")
 
+    def on_sweep_finished(self):
+        self.start_btn.setChecked(False)
+        self.start_btn.setText("Start Sweep")
+
     def update_plot(self, freq, mag, phase):
         self.freqs.append(freq)
         self.mags.append(mag)
@@ -703,116 +703,80 @@ class NetworkAnalyzerWidget(QWidget):
         self.refresh_plots()
 
     def refresh_plots(self):
-        if not self.freqs:
-            return
-            
+        if not self.freqs: return
+        
         smooth_mode = self.smooth_combo.currentText()
         unit = self.unit_combo.currentText()
         
         mags_to_plot = np.array(self.mags)
         phases_to_plot = np.array(self.phases)
         
-        # Unit Conversion
-        # self.mags is in dBFS
-        # Convert to Linear (Full Scale ratio)
-        mags_linear = 10 ** (mags_to_plot / 20)
-        
-        # Get Input Sensitivity (Volts for 0dBFS)
-        # Default to 1.0 if not available
-        try:
-            input_sensitivity = self.module.audio_engine.calibration.input_sensitivity
-        except:
-            input_sensitivity = 1.0
-            
-        if unit == "dBFS":
+        if self.module.input_mode == 'XFER':
+            # XFER is already in dB relative
             y_values = mags_to_plot
-            self.mag_plot.setLabel('left', 'Magnitude', units='dBFS')
-        elif unit == "dBV":
-            # dBV = 20 * log10(Vrms)
-            # Vpeak = linear * input_sensitivity
-            # Vrms = Vpeak / sqrt(2)
-            v_peak = mags_linear * input_sensitivity
-            v_rms = v_peak / np.sqrt(2)
-            y_values = 20 * np.log10(v_rms + 1e-12)
-            self.mag_plot.setLabel('left', 'Magnitude', units='dBV')
-        elif unit == "dBu":
-            # dBu = 20 * log10(Vrms / 0.7746)
-            v_peak = mags_linear * input_sensitivity
-            v_rms = v_peak / np.sqrt(2)
-            y_values = 20 * np.log10((v_rms + 1e-12) / 0.7746)
-            self.mag_plot.setLabel('left', 'Magnitude', units='dBu')
-        elif unit == "Vrms":
-            v_peak = mags_linear * input_sensitivity
-            y_values = v_peak / np.sqrt(2)
-            self.mag_plot.setLabel('left', 'Magnitude', units='V')
-        elif unit == "Vpeak":
-            y_values = mags_linear * input_sensitivity
-            self.mag_plot.setLabel('left', 'Magnitude', units='V')
+            self.mag_plot.setLabel('left', 'Gain', units='dB')
         else:
-            y_values = mags_to_plot
-            
-        # Apply Reference if enabled
+            # Standard conversion logic (same as before)
+            mags_linear = 10 ** (mags_to_plot / 20)
+            try:
+                input_sensitivity = self.module.audio_engine.calibration.input_sensitivity
+            except:
+                input_sensitivity = 1.0
+                
+            if unit == "dBFS":
+                y_values = mags_to_plot
+                self.mag_plot.setLabel('left', 'Magnitude', units='dBFS')
+            elif unit == "dBV":
+                v_peak = mags_linear * input_sensitivity
+                v_rms = v_peak / np.sqrt(2)
+                y_values = 20 * np.log10(v_rms + 1e-12)
+                self.mag_plot.setLabel('left', 'Magnitude', units='dBV')
+            elif unit == "dBu":
+                v_peak = mags_linear * input_sensitivity
+                v_rms = v_peak / np.sqrt(2)
+                y_values = 20 * np.log10((v_rms + 1e-12) / 0.7746)
+                self.mag_plot.setLabel('left', 'Magnitude', units='dBu')
+            elif unit == "Vrms":
+                v_peak = mags_linear * input_sensitivity
+                y_values = v_peak / np.sqrt(2)
+                self.mag_plot.setLabel('left', 'Magnitude', units='V')
+            elif unit == "Vpeak":
+                y_values = mags_linear * input_sensitivity
+                self.mag_plot.setLabel('left', 'Magnitude', units='V')
+            else:
+                y_values = mags_to_plot
+        
+        # Apply Reference
         if self.apply_ref_check.isChecked() and self.module.reference_trace is not None:
             ref = self.module.reference_trace
-            ref_freqs = ref['freqs']
-            ref_mags = ref['mags'] # dBFS
-            ref_phases = ref['phases']
-            
-            # Interpolate reference to current frequencies
-            if len(ref_freqs) > 1:
-                interp_mags_dbfs = np.interp(self.freqs, ref_freqs, ref_mags)
-                interp_phases = np.interp(self.freqs, ref_freqs, ref_phases)
+            if len(ref['freqs']) > 1:
+                interp_mags = np.interp(self.freqs, ref['freqs'], ref['mags'])
                 
-                # Calculate Reference in Target Unit
-                ref_mags_linear = 10 ** (interp_mags_dbfs / 20)
-                
-                if unit == "dBFS":
-                    ref_y = interp_mags_dbfs
-                elif unit == "dBV":
-                    v_peak = ref_mags_linear * input_sensitivity
-                    v_rms = v_peak / np.sqrt(2)
-                    ref_y = 20 * np.log10(v_rms + 1e-12)
-                elif unit == "dBu":
-                    v_peak = ref_mags_linear * input_sensitivity
-                    v_rms = v_peak / np.sqrt(2)
-                    ref_y = 20 * np.log10((v_rms + 1e-12) / 0.7746)
-                elif unit == "Vrms":
-                    v_peak = ref_mags_linear * input_sensitivity
-                    ref_y = v_peak / np.sqrt(2)
-                elif unit == "Vpeak":
-                    ref_y = ref_mags_linear * input_sensitivity
-                
-                # Normalize
-                if "dB" in unit:
-                    y_values = y_values - ref_y
+                # If XFER, just subtract dB
+                if self.module.input_mode == 'XFER':
+                    y_values -= interp_mags
                 else:
-                    # Linear division
-                    with np.errstate(divide='ignore', invalid='ignore'):
-                        y_values = y_values / ref_y
-                        y_values = np.nan_to_num(y_values)
-                
-                # Phase normalization
-                current_phases = np.array(phases_to_plot)
-                phases_to_plot = current_phases - interp_phases
-                phases_to_plot = (phases_to_plot + 180) % 360 - 180
-
-        if smooth_mode != "Off" and len(y_values) > 3:
-            window_size = 3
-            if smooth_mode == "Medium": window_size = 5
-            if smooth_mode == "Heavy": window_size = 9
-            
-            # Simple moving average
-            y_values = scipy.signal.savgol_filter(y_values, min(len(y_values), window_size), 1) if len(y_values) >= window_size else y_values
-            phases_to_plot = scipy.signal.savgol_filter(phases_to_plot, min(len(phases_to_plot), window_size), 1) if len(phases_to_plot) >= window_size else phases_to_plot
+                    # If not XFER, we need to handle units carefully
+                    # But usually reference is stored in dBFS (base unit)
+                    # So if we are displaying dB, we subtract.
+                    # If linear, we divide.
+                    if "dB" in unit:
+                        # We need to convert ref to target unit first?
+                        # Actually, if we store ref in dBFS, and current is in dBV,
+                        # Ref in dBV would be Ref_dBFS + Offset.
+                        # Current in dBV is Curr_dBFS + Offset.
+                        # Diff is Curr_dBFS - Ref_dBFS.
+                        # So simple subtraction works for dB units.
+                        y_values -= interp_mags
+                    else:
+                        # Linear
+                        ref_linear = 10 ** (interp_mags / 20)
+                        # Scale ref to unit?
+                        # Ratio = Curr_Linear / Ref_Linear
+                        # This is unitless.
+                        # So we display Ratio? Or normalized V?
+                        # Standard practice: Normalized Magnitude (Unitless or %)
+                        y_values /= (ref_linear + 1e-12)
 
         self.mag_curve.setData(self.freqs, y_values)
         self.phase_curve.setData(self.freqs, phases_to_plot)
-
-    def on_sweep_finished(self):
-        self.start_btn.setChecked(False)
-        self.start_btn.setText("Start Sweep")
-        self.progress_bar.setValue(100)
-
-    def on_error(self, msg):
-        print(f"Error: {msg}")
-        self.lat_btn.setEnabled(True)
