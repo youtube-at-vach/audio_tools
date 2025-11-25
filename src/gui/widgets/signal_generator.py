@@ -29,6 +29,10 @@ class SignalParameters:
     burst_on_cycles: int = 10
     burst_off_cycles: int = 90
     
+    # New Parameters
+    pulse_width: float = 50.0 # %
+    noise_amplitude: float = 0.1
+    
     # Internal state (not shared/copied usually, but kept here for simplicity per channel)
     _phase: float = 0.0
     _sweep_time: float = 0.0
@@ -288,6 +292,14 @@ class SignalGenerator(MeasurementModule):
                 signal = params.amplitude * (2 * np.abs(2 * ((phase_t * params.frequency) % 1) - 1) - 1)
             elif params.waveform == 'sawtooth':
                 signal = params.amplitude * (2 * ((phase_t * params.frequency) % 1) - 1)
+            elif params.waveform == 'pulse':
+                duty = params.pulse_width / 100.0
+                ramp = (phase_t * params.frequency) % 1
+                signal = params.amplitude * np.where(ramp < duty, 1.0, -1.0)
+            elif params.waveform == 'tone_noise':
+                tone = params.amplitude * np.sin(2 * np.pi * params.frequency * phase_t)
+                noise = params.noise_amplitude * np.random.uniform(-1, 1, size=frames)
+                signal = tone + noise
             
             return signal
 
@@ -404,7 +416,7 @@ class SignalGeneratorWidget(QWidget):
         
         # Waveform
         self.wave_combo = QComboBox()
-        self.wave_combo.addItems(['sine', 'square', 'triangle', 'sawtooth', 'noise', 'multitone', 'mls', 'burst'])
+        self.wave_combo.addItems(['sine', 'square', 'triangle', 'sawtooth', 'pulse', 'tone_noise', 'noise', 'multitone', 'mls', 'burst'])
         self.wave_combo.currentTextChanged.connect(self.on_wave_changed)
         basic_layout.addRow("Waveform:", self.wave_combo)
         
@@ -449,15 +461,39 @@ class SignalGeneratorWidget(QWidget):
         self.burst_off_spin.setDecimals(0); self.burst_off_spin.setRange(1, 10000); self.burst_off_spin.setValue(90)
         self.burst_off_spin.valueChanged.connect(lambda v: self.update_param('burst_off_cycles', int(v)))
         burst_form.addRow("Off Cycles:", self.burst_off_spin)
+
+        # 5. Pulse Params
+        self.pulse_widget = QWidget()
+        pulse_form = QFormLayout(self.pulse_widget)
+        self.pulse_width_spin = QDoubleSpinBox()
+        self.pulse_width_spin.setRange(0.1, 99.9)
+        self.pulse_width_spin.setValue(50.0)
+        self.pulse_width_spin.setSuffix("%")
+        self.pulse_width_spin.valueChanged.connect(lambda v: self.update_param('pulse_width', v))
+        pulse_form.addRow("Pulse Width:", self.pulse_width_spin)
+        
+        # 6. Tone+Noise Params
+        self.tn_widget = QWidget()
+        tn_form = QFormLayout(self.tn_widget)
+        self.noise_amp_spin = QDoubleSpinBox()
+        self.noise_amp_spin.setRange(0.0, 1.0)
+        self.noise_amp_spin.setSingleStep(0.01)
+        self.noise_amp_spin.setValue(0.1)
+        self.noise_amp_spin.valueChanged.connect(lambda v: self.update_param('noise_amplitude', v))
+        tn_form.addRow("Noise Amplitude:", self.noise_amp_spin)
         
         self.param_layout.addWidget(self.noise_widget)
         self.param_layout.addWidget(self.multitone_widget)
         self.param_layout.addWidget(self.mls_widget)
         self.param_layout.addWidget(self.burst_widget)
+        self.param_layout.addWidget(self.pulse_widget)
+        self.param_layout.addWidget(self.tn_widget)
         self.noise_widget.hide()
         self.multitone_widget.hide()
         self.mls_widget.hide()
         self.burst_widget.hide()
+        self.pulse_widget.hide()
+        self.tn_widget.hide()
         
         basic_layout.addRow(self.param_stack)
         
@@ -561,7 +597,10 @@ class SignalGeneratorWidget(QWidget):
         self.mt_count_spin.setValue(params.multitone_count)
         self.mls_order_combo.setCurrentText(str(params.mls_order))
         self.burst_on_spin.setValue(params.burst_on_cycles)
+        self.burst_on_spin.setValue(params.burst_on_cycles)
         self.burst_off_spin.setValue(params.burst_off_cycles)
+        self.pulse_width_spin.setValue(params.pulse_width)
+        self.noise_amp_spin.setValue(params.noise_amplitude)
         
         self.freq_spin.setValue(params.frequency)
         self.freq_slider.setValue(self._freq_to_slider(params.frequency))
@@ -581,7 +620,9 @@ class SignalGeneratorWidget(QWidget):
     def block_all_signals(self, block):
         widgets = [
             self.wave_combo, self.noise_combo, self.mt_count_spin, self.mls_order_combo,
-            self.burst_on_spin, self.burst_off_spin, self.freq_spin, self.freq_slider,
+            self.wave_combo, self.noise_combo, self.mt_count_spin, self.mls_order_combo,
+            self.burst_on_spin, self.burst_off_spin, self.pulse_width_spin, self.noise_amp_spin,
+            self.freq_spin, self.freq_slider,
             self.amp_spin, self.amp_slider, self.sweep_group, self.start_freq_spin,
             self.end_freq_spin, self.duration_spin, self.log_check
         ]
@@ -616,7 +657,10 @@ class SignalGeneratorWidget(QWidget):
         dst.multitone_count = src.multitone_count
         dst.mls_order = src.mls_order
         dst.burst_on_cycles = src.burst_on_cycles
+        dst.burst_on_cycles = src.burst_on_cycles
         dst.burst_off_cycles = src.burst_off_cycles
+        dst.pulse_width = src.pulse_width
+        dst.noise_amplitude = src.noise_amplitude
 
     def on_route_changed(self, btn):
         if self.route_l.isChecked():
@@ -632,12 +676,17 @@ class SignalGeneratorWidget(QWidget):
         self.noise_widget.hide()
         self.multitone_widget.hide()
         self.mls_widget.hide()
+        self.mls_widget.hide()
         self.burst_widget.hide()
+        self.pulse_widget.hide()
+        self.tn_widget.hide()
         
         if val == 'noise': self.noise_widget.show()
         elif val == 'multitone': self.multitone_widget.show()
         elif val == 'mls': self.mls_widget.show()
         elif val == 'burst': self.burst_widget.show()
+        elif val == 'pulse': self.pulse_widget.show()
+        elif val == 'tone_noise': self.tn_widget.show()
         
         use_freq = val not in ['noise', 'mls']
         self.freq_spin.setEnabled(use_freq)
