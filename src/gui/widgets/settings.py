@@ -50,7 +50,7 @@ class OutputCalibrationDialog(QDialog):
         meas_layout.addWidget(self.meas_spin)
         
         self.unit_combo = QComboBox()
-        self.unit_combo.addItems(["Vrms", "dBV", "dBu"])
+        self.unit_combo.addItems(["Vrms", "mVrms", "dBV", "dBu"])
         meas_layout.addWidget(self.unit_combo)
         layout.addLayout(meas_layout)
         
@@ -108,6 +108,8 @@ class OutputCalibrationDialog(QDialog):
             # Convert to Vpeak
             if unit == "Vrms":
                 v_peak = val * np.sqrt(2)
+            elif unit == "mVrms":
+                v_peak = (val / 1000.0) * np.sqrt(2)
             elif unit == "dBV":
                 v_rms = 10**(val/20)
                 v_peak = v_rms * np.sqrt(2)
@@ -170,7 +172,7 @@ class InputCalibrationDialog(QDialog):
         meas_layout.addWidget(self.meas_spin)
         
         self.unit_combo = QComboBox()
-        self.unit_combo.addItems(["Vrms", "dBV", "dBu"])
+        self.unit_combo.addItems(["Vrms", "mVrms", "dBV", "dBu"])
         meas_layout.addWidget(self.unit_combo)
         layout.addLayout(meas_layout)
         
@@ -226,6 +228,8 @@ class InputCalibrationDialog(QDialog):
             # Convert Known Voltage to Vpeak
             if unit == "Vrms":
                 v_peak = val * np.sqrt(2)
+            elif unit == "mVrms":
+                v_peak = (val / 1000.0) * np.sqrt(2)
             elif unit == "dBV":
                 v_rms = 10**(val/20)
                 v_peak = v_rms * np.sqrt(2)
@@ -368,31 +372,41 @@ class SettingsWidget(QWidget):
         
         # Input Sensitivity
         self.in_sens_edit = QLineEdit()
-        self.in_sens_edit.setText(f"{self.audio_engine.calibration.input_sensitivity:.4f}")
+        # self.in_sens_edit.setText(f"{self.audio_engine.calibration.input_sensitivity:.4f}") # Moved to update_in_sens_display
         self.in_sens_edit.editingFinished.connect(self.on_in_sens_changed)
         
+        self.in_sens_unit = QComboBox()
+        self.in_sens_unit.addItems(["V/FS", "mV/FS"])
+        self.in_sens_unit.currentIndexChanged.connect(self.update_in_sens_display)
+
         in_cal_btn = QPushButton(tr("Wizard"))
         in_cal_btn.clicked.connect(self.open_input_calibration)
         in_cal_layout = QHBoxLayout()
         in_cal_layout.setContentsMargins(0, 0, 0, 0)
         in_cal_layout.addWidget(self.in_sens_edit)
+        in_cal_layout.addWidget(self.in_sens_unit)
         in_cal_layout.addWidget(in_cal_btn)
         
-        cal_layout.addRow(tr("Input Sensitivity (V/FS):"), in_cal_layout)
+        cal_layout.addRow(tr("Input Sensitivity:"), in_cal_layout)
         
         # Output Gain
         self.out_gain_edit = QLineEdit()
-        self.out_gain_edit.setText(f"{self.audio_engine.calibration.output_gain:.4f}")
+        # self.out_gain_edit.setText(f"{self.audio_engine.calibration.output_gain:.4f}") # Moved to update_out_gain_display
         self.out_gain_edit.editingFinished.connect(self.on_out_gain_changed)
         
+        self.out_gain_unit = QComboBox()
+        self.out_gain_unit.addItems(["V/FS", "mV/FS"])
+        self.out_gain_unit.currentIndexChanged.connect(self.update_out_gain_display)
+
         out_cal_btn = QPushButton(tr("Wizard"))
         out_cal_btn.clicked.connect(self.open_output_calibration)
         out_cal_layout = QHBoxLayout()
         out_cal_layout.setContentsMargins(0, 0, 0, 0)
         out_cal_layout.addWidget(self.out_gain_edit)
+        out_cal_layout.addWidget(self.out_gain_unit)
         out_cal_layout.addWidget(out_cal_btn)
         
-        cal_layout.addRow(tr("Output Gain (V/FS):"), out_cal_layout)
+        cal_layout.addRow(tr("Output Gain:"), out_cal_layout)
         
         cal_group.setLayout(cal_layout)
         layout.addWidget(cal_group)
@@ -403,6 +417,8 @@ class SettingsWidget(QWidget):
         # Initialize
         self.refresh_devices()
         self.update_buffer_duration()
+        self.update_in_sens_display()
+        self.update_out_gain_display()
 
     def on_language_changed(self):
         lang = self.lang_combo.currentData()
@@ -415,27 +431,46 @@ class SettingsWidget(QWidget):
     def open_input_calibration(self):
         dlg = InputCalibrationDialog(self.audio_engine, self)
         if dlg.exec():
-            self.in_sens_edit.setText(str(self.audio_engine.calibration.input_sensitivity))
+            self.update_in_sens_display()
 
     def open_output_calibration(self):
         dlg = OutputCalibrationDialog(self.audio_engine, self)
         if dlg.exec():
-            self.out_gain_edit.setText(str(self.audio_engine.calibration.output_gain))
+            self.update_out_gain_display()
+
+    def update_in_sens_display(self):
+        val = self.audio_engine.calibration.input_sensitivity
+        if self.in_sens_unit.currentText() == "mV/FS":
+            val *= 1000.0
+        self.in_sens_edit.setText(f"{val:.4f}")
+
+    def update_out_gain_display(self):
+        val = self.audio_engine.calibration.output_gain
+        if self.out_gain_unit.currentText() == "mV/FS":
+            val *= 1000.0
+        self.out_gain_edit.setText(f"{val:.4f}")
 
     def on_in_sens_changed(self):
         try:
             val = float(self.in_sens_edit.text())
+            if self.in_sens_unit.currentText() == "mV/FS":
+                val /= 1000.0
             self.audio_engine.calibration.set_input_sensitivity(val)
+            # Refresh display to show canonical format or if rounding happened
+            self.update_in_sens_display() 
         except ValueError:
             # Revert if invalid
-            self.in_sens_edit.setText(str(self.audio_engine.calibration.input_sensitivity))
+            self.update_in_sens_display()
 
     def on_out_gain_changed(self):
         try:
             val = float(self.out_gain_edit.text())
+            if self.out_gain_unit.currentText() == "mV/FS":
+                val /= 1000.0
             self.audio_engine.calibration.set_output_gain(val)
+            self.update_out_gain_display()
         except ValueError:
-            self.out_gain_edit.setText(str(self.audio_engine.calibration.output_gain))
+            self.update_out_gain_display()
 
     def refresh_devices(self):
         devices = self.audio_engine.list_devices()
