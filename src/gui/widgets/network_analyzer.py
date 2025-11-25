@@ -123,7 +123,9 @@ class NetworkAnalyzer(MeasurementModule):
         self.start_freq = 20.0
         self.end_freq = 20000.0
         self.steps_per_octave = 12
+        self.steps_per_octave = 12
         self.amplitude = 0.5
+        self.gen_unit = 'Amplitude' # 'Amplitude', 'dBFS', 'dBV', 'dBu', 'Vrms', 'Vpeak'
         self.duration_per_step = 0.5
         self.latency_sec = 0.0
         self.num_averages = 1
@@ -167,6 +169,34 @@ class NetworkAnalyzer(MeasurementModule):
         session.stop()
         return session.input_data
 
+    def get_output_amplitude(self):
+        """Calculates linear amplitude (0-1) based on unit and calibration."""
+        val = self.amplitude
+        unit = self.gen_unit
+        cal = self.audio_engine.calibration
+        
+        target_v_peak = 0.0
+        
+        if unit == 'Amplitude':
+            return max(0.0, min(1.0, val))
+        elif unit == 'dBFS':
+            return 10 ** (val / 20)
+        elif unit == 'Vpeak':
+            target_v_peak = val
+        elif unit == 'Vrms':
+            target_v_peak = val * np.sqrt(2)
+        elif unit == 'dBV':
+            target_v_peak = 10 ** (val / 20) * np.sqrt(2) # dBV is ref 1 Vrms
+        elif unit == 'dBu':
+            target_v_peak = 10 ** (val / 20) * 0.7746 * np.sqrt(2)
+            
+        # Convert Voltage to Amplitude (0-1)
+        # output_gain is V_peak at 1.0 FS
+        if cal.output_gain <= 1e-9: return 0.0
+        
+        amp = target_v_peak / cal.output_gain
+        return max(0.0, min(1.0, amp))
+
     def calibrate_latency(self):
         """Measures loopback latency using a chirp signal."""
         sample_rate = self.audio_engine.sample_rate
@@ -174,7 +204,9 @@ class NetworkAnalyzer(MeasurementModule):
         
         t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
         chirp = scipy.signal.chirp(t, f0=20, t1=duration, f1=10000, method='logarithmic')
-        chirp *= self.amplitude
+        t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+        chirp = scipy.signal.chirp(t, f0=20, t1=duration, f1=10000, method='logarithmic')
+        chirp *= self.get_output_amplitude()
         
         try:
             out_data = np.zeros((len(chirp), 2), dtype=np.float32)
@@ -244,8 +276,9 @@ class NetworkAnalyzer(MeasurementModule):
         T = self.chirp_duration
         L = np.log(self.end_freq / self.start_freq)
         
+        
         phase = (w1 * T / L) * (np.exp(t * L / T) - 1)
-        chirp = self.amplitude * np.sin(phase)
+        chirp = self.get_output_amplitude() * np.sin(phase)
         
         window = scipy.signal.windows.tukey(num_samples, alpha=0.05)
         chirp *= window
@@ -393,8 +426,9 @@ class NetworkAnalyzer(MeasurementModule):
                 if not worker.is_running: break
 
                 num_samples = int(sample_rate * self.duration_per_step)
+                num_samples = int(sample_rate * self.duration_per_step)
                 t = np.arange(num_samples) / sample_rate
-                tone = self.amplitude * np.cos(2 * np.pi * freq * t)
+                tone = self.get_output_amplitude() * np.cos(2 * np.pi * freq * t)
                 
                 padding = int((self.latency_sec + 0.1) * sample_rate)
                 out_signal = np.concatenate([tone, np.zeros(padding)])
@@ -548,7 +582,15 @@ class NetworkAnalyzerWidget(QWidget):
         self.amp_spin = QDoubleSpinBox()
         self.amp_spin.setRange(0, 1); self.amp_spin.setValue(0.5); self.amp_spin.setSingleStep(0.1)
         self.amp_spin.valueChanged.connect(lambda v: setattr(self.module, 'amplitude', v))
-        form.addRow("Amplitude:", self.amp_spin)
+        
+        self.gen_unit_combo = QComboBox()
+        self.gen_unit_combo.addItems(['Amplitude', 'dBFS', 'dBV', 'dBu', 'Vrms', 'Vpeak'])
+        self.gen_unit_combo.currentTextChanged.connect(self.on_gen_unit_changed)
+        
+        amp_layout = QHBoxLayout()
+        amp_layout.addWidget(self.amp_spin)
+        amp_layout.addWidget(self.gen_unit_combo)
+        form.addRow("Amplitude:", amp_layout)
         
         self.avg_spin = QDoubleSpinBox()
         self.avg_spin.setDecimals(0)
@@ -648,6 +690,35 @@ class NetworkAnalyzerWidget(QWidget):
         else:
             self.mag_plot.setTitle("Magnitude Response")
             self.unit_combo.setEnabled(True)
+
+    def on_gen_unit_changed(self, unit):
+        self.module.gen_unit = unit
+        spin = self.amp_spin
+        spin.blockSignals(True)
+        
+        if unit == 'Amplitude':
+            spin.setRange(0, 1)
+            spin.setSingleStep(0.1)
+            spin.setSuffix("")
+            spin.setValue(0.5)
+        elif unit == 'dBFS':
+            spin.setRange(-120, 0)
+            spin.setSingleStep(1)
+            spin.setSuffix(" dB")
+            spin.setValue(-10)
+        elif unit in ['dBV', 'dBu']:
+            spin.setRange(-120, 20)
+            spin.setSingleStep(1)
+            spin.setSuffix(" dB")
+            spin.setValue(-10)
+        elif unit in ['Vrms', 'Vpeak']:
+            spin.setRange(0, 100)
+            spin.setSingleStep(0.1)
+            spin.setSuffix(" V")
+            spin.setValue(1.0)
+            
+        self.module.amplitude = spin.value()
+        spin.blockSignals(False)
 
     def calibrate(self):
         self.lat_btn.setEnabled(False)
@@ -777,6 +848,13 @@ class NetworkAnalyzerWidget(QWidget):
                         # So we display Ratio? Or normalized V?
                         # Standard practice: Normalized Magnitude (Unitless or %)
                         y_values /= (ref_linear + 1e-12)
+                        
+            # Phase Subtraction
+            if len(ref['phases']) > 1:
+                interp_phases = np.interp(self.freqs, ref['freqs'], ref['phases'])
+                phases_to_plot -= interp_phases
+                # Wrap to [-180, 180]
+                phases_to_plot = (phases_to_plot + 180) % 360 - 180
 
         self.mag_curve.setData(self.freqs, y_values)
         self.phase_curve.setData(self.freqs, phases_to_plot)

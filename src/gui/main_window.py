@@ -92,7 +92,6 @@ class MainWindow(QMainWindow):
             Oscilloscope(self.audio_engine),
             LockInAmplifier(self.audio_engine),
             FrequencyCounter(self.audio_engine),
-            FrequencyCounter(self.audio_engine),
             Spectrogram(self.audio_engine),
             BoxcarAverager(self.audio_engine)
         ]
