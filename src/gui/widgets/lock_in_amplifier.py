@@ -24,7 +24,9 @@ class LockInAmplifier(MeasurementModule):
         # Settings
         self.gen_frequency = 1000.0
         self.gen_amplitude = 0.5 # Linear 0-1
+        self.gen_amplitude = 0.5 # Linear 0-1
         self.output_channel = 0 # 0: Left, 1: Right
+        self.external_mode = False
         
         self.signal_channel = 0 # 0: Left, 1: Right
         self.ref_channel = 1    # 0: Left, 1: Right
@@ -94,11 +96,13 @@ class LockInAmplifier(MeasurementModule):
             
             # Fill Output Buffer
             outdata.fill(0)
-            if self.output_channel == 2: # Stereo
-                if outdata.shape[1] >= 1: outdata[:, 0] = signal
-                if outdata.shape[1] >= 2: outdata[:, 1] = signal
-            elif outdata.shape[1] > self.output_channel:
-                outdata[:, self.output_channel] = signal
+            
+            if not self.external_mode:
+                if self.output_channel == 2: # Stereo
+                    if outdata.shape[1] >= 1: outdata[:, 0] = signal
+                    if outdata.shape[1] >= 2: outdata[:, 1] = signal
+                elif outdata.shape[1] > self.output_channel:
+                    outdata[:, self.output_channel] = signal
 
         self.callback_id = self.audio_engine.register_callback(callback)
 
@@ -284,6 +288,13 @@ class LockInAmplifierWidget(QWidget):
         self.toggle_btn.clicked.connect(self.on_toggle)
         self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; font-weight: bold; padding: 10px; } QPushButton:checked { background-color: #ffcccc; }")
         settings_layout.addRow(self.toggle_btn)
+        
+        settings_layout.addRow(self.toggle_btn)
+        
+        # External Mode
+        self.ext_mode_check = QCheckBox("External Mode (No Output)")
+        self.ext_mode_check.toggled.connect(self.on_ext_mode_toggled)
+        settings_layout.addRow(self.ext_mode_check)
         
         settings_layout.addRow(QLabel("<b>Output Generator</b>"))
         
@@ -610,6 +621,15 @@ class LockInAmplifierWidget(QWidget):
 
     def on_ref_ch_changed(self, idx):
         self.module.ref_channel = idx
+
+    def on_ext_mode_toggled(self, checked):
+        self.module.external_mode = checked
+        
+        # Disable/Enable Generator Controls
+        self.freq_spin.setEnabled(not checked)
+        self.amp_spin.setEnabled(not checked)
+        self.gen_unit_combo.setEnabled(not checked)
+        self.out_ch_combo.setEnabled(not checked)
 
     def on_time_changed(self, idx):
         if idx == 0: self.module.buffer_size = 2048
