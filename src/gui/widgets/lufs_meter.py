@@ -116,6 +116,16 @@ class LufsMeter(MeasurementModule):
             self.peak_hold_l = max(self.peak_hold_l, self.peak_l)
             self.peak_hold_r = max(self.peak_hold_r, self.peak_r)
             
+            # Crest Factor (Peak dB - RMS dB)
+            self.crest_l = self.peak_l - self.rms_l
+            self.crest_r = self.peak_r - self.rms_r
+            
+            # Crest Factor (Peak dB - RMS dB)
+            # Ensure we don't subtract -100 from -100 resulting in 0 if both are silence, which is fine.
+            # But if RMS is -100 and Peak is -90, CF is 10.
+            self.crest_l = self.peak_l - self.rms_l
+            self.crest_r = self.peak_r - self.rms_r
+            
             # --- LUFS Calculation (Mono K-weighted) ---
             # Average channels for mono K-weighting input (Simplified)
             mono_input = (l_channel + r_channel) / 2
@@ -209,7 +219,13 @@ class LufsMeterWidget(QWidget):
         
         self.l_peak_label = QLabel("Pk: -INF")
         self.l_peak_label.setStyleSheet("color: red; font-size: 10px;")
+        self.l_peak_label = QLabel("Pk: -INF")
+        self.l_peak_label.setStyleSheet("color: red; font-size: 10px;")
         grid.addWidget(self.l_peak_label, 3, 1, Qt.AlignmentFlag.AlignHCenter)
+        
+        self.l_cf_label = QLabel("CF: 0.0")
+        self.l_cf_label.setStyleSheet("color: cyan; font-size: 10px;")
+        grid.addWidget(self.l_cf_label, 4, 1, Qt.AlignmentFlag.AlignHCenter)
 
         # Right
         grid.addWidget(QLabel("R"), 0, 2)
@@ -225,7 +241,13 @@ class LufsMeterWidget(QWidget):
         
         self.r_peak_label = QLabel("Pk: -INF")
         self.r_peak_label.setStyleSheet("color: red; font-size: 10px;")
+        self.r_peak_label = QLabel("Pk: -INF")
+        self.r_peak_label.setStyleSheet("color: red; font-size: 10px;")
         grid.addWidget(self.r_peak_label, 3, 3, Qt.AlignmentFlag.AlignHCenter)
+        
+        self.r_cf_label = QLabel("CF: 0.0")
+        self.r_cf_label.setStyleSheet("color: cyan; font-size: 10px;")
+        grid.addWidget(self.r_cf_label, 4, 3, Qt.AlignmentFlag.AlignHCenter)
         
         # Spacer
         grid.setColumnMinimumWidth(4, 30)
@@ -309,7 +331,11 @@ class LufsMeterWidget(QWidget):
         self.r_val_label.setText(f"{rms_r:.1f}")
         
         self.l_peak_label.setText(f"Pk: {peak_hold_l:.1f}")
+        self.l_peak_label.setText(f"Pk: {peak_hold_l:.1f}")
         self.r_peak_label.setText(f"Pk: {peak_hold_r:.1f}")
+        
+        self.l_cf_label.setText(f"CF: {self.module.crest_l:.1f}")
+        self.r_cf_label.setText(f"CF: {self.module.crest_r:.1f}")
         
         # Update LUFS
         m_lufs = self.module.momentary_lufs

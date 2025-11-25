@@ -20,7 +20,6 @@ class Spectrogram(MeasurementModule):
         self.window_type = 'hann'
         self.channel_mode = 'Left' # 'Left', 'Right', 'Average'
         self.history_length = 500 # Number of time steps to keep
-        self.formant_enhancement = False
         self.sweep_speed_index = 0 # 0: Fast, 1: Medium, 2: Slow, 3: Meteor
         
         # State
@@ -148,11 +147,6 @@ class SpectrogramWidget(QWidget):
         self.cmap_combo.currentTextChanged.connect(self.on_cmap_changed)
         controls_layout.addWidget(self.cmap_combo)
         
-        # Formant Enhancement
-        self.formant_check = QCheckBox("Formant")
-        self.formant_check.toggled.connect(self.on_formant_toggled)
-        controls_layout.addWidget(self.formant_check)
-        
         # Sweep Speed
         controls_layout.addWidget(QLabel("Speed:"))
         self.speed_combo = QComboBox()
@@ -212,9 +206,6 @@ class SpectrogramWidget(QWidget):
     def on_cmap_changed(self, val):
         self.hist.gradient.loadPreset(val)
 
-    def on_formant_toggled(self, checked):
-        self.module.formant_enhancement = checked
-        
     def on_speed_changed(self, idx):
         self.module.sweep_speed_index = idx
         # Reset accumulator on speed change to avoid mixing
@@ -235,10 +226,6 @@ class SpectrogramWidget(QWidget):
             sig = raw_data[:, 1]
         else:
             sig = np.mean(raw_data, axis=1)
-            
-        # Formant Enhancement (Pre-emphasis)
-        if self.module.formant_enhancement:
-            sig = lfilter([1, -0.97], [1], sig)
             
         # Windowing
         window = get_window(self.module.window_type, len(sig))
