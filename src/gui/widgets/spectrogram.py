@@ -3,8 +3,9 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
                              QComboBox, QCheckBox, QGroupBox, QSlider)
+from PyQt6.QtGui import QTransform
 from PyQt6.QtCore import QTimer, Qt
-from scipy.signal import get_window
+from scipy.signal import get_window, lfilter
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 
@@ -19,11 +20,17 @@ class Spectrogram(MeasurementModule):
         self.window_type = 'hann'
         self.channel_mode = 'Left' # 'Left', 'Right', 'Average'
         self.history_length = 500 # Number of time steps to keep
+        self.formant_enhancement = False
+        self.sweep_speed_index = 0 # 0: Fast, 1: Medium, 2: Slow, 3: Meteor
         
         # State
         self.input_buffer = np.zeros(self.fft_size) # For overlap processing
-        self.spectrogram_data = np.zeros((self.history_length, self.fft_size // 2 + 1))
+        self.spectrogram_data = np.full((self.history_length, self.fft_size // 2 + 1), -120.0)
         self.callback_id = None
+        
+        # Accumulator for Sweep Speed
+        self.accumulator = None
+        self.acc_count = 0
         
         # Ring buffer for incoming audio
         self.audio_buffer = np.zeros((self.fft_size * 2, 2)) # Keep enough for overlap
@@ -48,9 +55,11 @@ class Spectrogram(MeasurementModule):
         self.reset_buffers()
 
     def reset_buffers(self):
-        self.spectrogram_data = np.zeros((self.history_length, self.fft_size // 2 + 1))
+        self.spectrogram_data = np.full((self.history_length, self.fft_size // 2 + 1), -120.0)
         self.audio_buffer = np.zeros((self.fft_size * 2, 2))
         self.audio_buffer_pos = 0
+        self.accumulator = None
+        self.acc_count = 0
 
     def start_analysis(self):
         if self.is_running: return
@@ -136,7 +145,20 @@ class SpectrogramWidget(QWidget):
         self.cmap_combo = QComboBox()
         self.cmap_combo.addItems(['viridis', 'plasma', 'inferno', 'magma', 'cividis', 'turbo'])
         self.cmap_combo.currentTextChanged.connect(self.on_cmap_changed)
+        self.cmap_combo.currentTextChanged.connect(self.on_cmap_changed)
         controls_layout.addWidget(self.cmap_combo)
+        
+        # Formant Enhancement
+        self.formant_check = QCheckBox("Formant")
+        self.formant_check.toggled.connect(self.on_formant_toggled)
+        controls_layout.addWidget(self.formant_check)
+        
+        # Sweep Speed
+        controls_layout.addWidget(QLabel("Speed:"))
+        self.speed_combo = QComboBox()
+        self.speed_combo.addItems(['Fast (Realtime)', 'Medium (1m)', 'Slow (5m)', 'Meteor (10m)'])
+        self.speed_combo.currentIndexChanged.connect(self.on_speed_changed)
+        controls_layout.addWidget(self.speed_combo)
         
         controls_group.setLayout(controls_layout)
         layout.addWidget(controls_group)
@@ -190,6 +212,15 @@ class SpectrogramWidget(QWidget):
     def on_cmap_changed(self, val):
         self.hist.gradient.loadPreset(val)
 
+    def on_formant_toggled(self, checked):
+        self.module.formant_enhancement = checked
+        
+    def on_speed_changed(self, idx):
+        self.module.sweep_speed_index = idx
+        # Reset accumulator on speed change to avoid mixing
+        self.module.accumulator = None
+        self.module.acc_count = 0
+
     def update_spectrogram(self):
         if not self.module.is_running: return
         
@@ -204,6 +235,10 @@ class SpectrogramWidget(QWidget):
             sig = raw_data[:, 1]
         else:
             sig = np.mean(raw_data, axis=1)
+            
+        # Formant Enhancement (Pre-emphasis)
+        if self.module.formant_enhancement:
+            sig = lfilter([1, -0.97], [1], sig)
             
         # Windowing
         window = get_window(self.module.window_type, len(sig))
@@ -223,10 +258,39 @@ class SpectrogramWidget(QWidget):
         with np.errstate(divide='ignore'):
             mag_db = 20 * np.log10(mag + 1e-12)
             
+        # --- Accumulation Logic ---
+        if self.module.accumulator is None or self.module.accumulator.shape != mag_db.shape:
+            self.module.accumulator = mag_db
+            self.module.acc_count = 1
+        else:
+            # Max Hold Accumulation
+            self.module.accumulator = np.maximum(self.module.accumulator, mag_db)
+            self.module.acc_count += 1
+            
+        # Determine Target Frames based on Speed
+        # Update rate is 30ms.
+        # Fast: Update every frame (1)
+        # Medium: 1 min = 60s. 500 pixels. 0.12s/pixel. 30ms -> 4 frames.
+        # Slow: 5 min = 300s. 0.6s/pixel. 30ms -> 20 frames.
+        # Meteor: 10 min = 600s. 1.2s/pixel. 30ms -> 40 frames.
+        
+        target_frames = 1
+        if self.module.sweep_speed_index == 1: target_frames = 4
+        elif self.module.sweep_speed_index == 2: target_frames = 20
+        elif self.module.sweep_speed_index == 3: target_frames = 40
+        
+        if self.module.acc_count < target_frames:
+            return # Wait for more data
+            
+        # Push to Spectrogram
+        final_mag_db = self.module.accumulator
+        self.module.accumulator = None # Reset
+        self.module.acc_count = 0
+            
         # Update Spectrogram Data
         # Roll history
         self.module.spectrogram_data = np.roll(self.module.spectrogram_data, -1, axis=0)
-        self.module.spectrogram_data[-1] = mag_db
+        self.module.spectrogram_data[-1] = final_mag_db
         
         # Update Image
         # ImageItem expects (width, height) where width is x-axis.
@@ -251,6 +315,6 @@ class SpectrogramWidget(QWidget):
         y_scale = nyquist / (self.module.spectrogram_data.shape[1])
         
         self.img.resetTransform()
-        self.img.scale(1, y_scale)
+        self.img.setTransform(QTransform().scale(1, y_scale))
         self.plot.setLimits(yMin=0, yMax=nyquist)
         self.plot.setYRange(0, nyquist)
