@@ -14,6 +14,7 @@ from src.gui.widgets.lock_in_amplifier import LockInAmplifier
 from src.gui.widgets.welcome import WelcomeWidget
 from src.gui.widgets.frequency_counter import FrequencyCounter
 from src.gui.widgets.spectrogram import Spectrogram
+from src.gui.widgets.boxcar_averager import BoxcarAverager
 from src.core.localization import get_manager, tr
 
 class MainWindow(QMainWindow):
@@ -91,7 +92,9 @@ class MainWindow(QMainWindow):
             Oscilloscope(self.audio_engine),
             LockInAmplifier(self.audio_engine),
             FrequencyCounter(self.audio_engine),
-            Spectrogram(self.audio_engine)
+            FrequencyCounter(self.audio_engine),
+            Spectrogram(self.audio_engine),
+            BoxcarAverager(self.audio_engine)
         ]
         
         # Main layout container
