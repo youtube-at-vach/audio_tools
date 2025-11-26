@@ -25,6 +25,9 @@ class Oscilloscope(MeasurementModule):
         self.show_left = True
         self.show_right = True
         
+        # Math Mode
+        self.math_mode = 'Off' # 'Off', 'Derivative', 'Integral'
+        
         self.callback_id = None
         
     @property
@@ -203,10 +206,20 @@ class OscilloscopeWidget(QWidget):
         self.chk_left.toggled.connect(lambda x: setattr(self.module, 'show_left', x))
         controls_layout.addWidget(self.chk_left)
         
-        self.chk_right = QCheckBox("R")
-        self.chk_right.setChecked(True)
         self.chk_right.toggled.connect(lambda x: setattr(self.module, 'show_right', x))
         controls_layout.addWidget(self.chk_right)
+        
+        # Math Mode
+        controls_layout.addWidget(QLabel("Math:"))
+        self.math_combo = QComboBox()
+        self.math_combo.addItems(['Off', 'Derivative', 'Integral'])
+        self.math_combo.currentTextChanged.connect(self.on_math_changed)
+        controls_layout.addWidget(self.math_combo)
+        
+        # Cursors
+        self.chk_cursors = QCheckBox("Cursors")
+        self.chk_cursors.toggled.connect(self.on_cursors_toggled)
+        controls_layout.addWidget(self.chk_cursors)
 
         # Trigger Controls
         trigger_group = QGroupBox("Trigger")
@@ -261,6 +274,11 @@ class OscilloscopeWidget(QWidget):
         meas_group.setLayout(meas_layout)
         layout.addWidget(meas_group)
         
+        # --- Cursor Info ---
+        self.cursor_info_label = QLabel("Cursors: Off")
+        self.cursor_info_label.setStyleSheet("font-family: monospace; font-weight: bold; color: yellow;")
+        layout.addWidget(self.cursor_info_label)
+        
         # --- Plot ---
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setLabel('left', 'Amplitude', units='V')
@@ -272,10 +290,23 @@ class OscilloscopeWidget(QWidget):
         self.curve_r = self.plot_widget.plot(pen=pg.mkPen('#ff0000', width=2), name="Right")
         
         # Trigger Level Line
-        self.trig_line = pg.InfiniteLine(angle=0, movable=True, pen=pg.mkPen('y', style=Qt.PenStyle.DashLine))
-        self.trig_line.setPos(0.0)
         self.trig_line.sigPositionChanged.connect(self.on_trig_line_moved)
         self.plot_widget.addItem(self.trig_line)
+        
+        # Cursors (Hidden by default)
+        self.cursor_1 = pg.InfiniteLine(angle=90, movable=True, pen=pg.mkPen('c', width=1), label='C1', labelOpts={'position':0.1})
+        self.cursor_2 = pg.InfiniteLine(angle=90, movable=True, pen=pg.mkPen('m', width=1), label='C2', labelOpts={'position':0.1})
+        
+        self.cursor_1.sigPositionChanged.connect(self.update_cursor_info)
+        self.cursor_2.sigPositionChanged.connect(self.update_cursor_info)
+        
+        self.plot_widget.addItem(self.cursor_1)
+        self.plot_widget.addItem(self.cursor_2)
+        self.cursor_1.setVisible(False)
+        self.cursor_2.setVisible(False)
+        
+        # Math Curve
+        self.curve_math = self.plot_widget.plot(pen=pg.mkPen('w', width=2, style=Qt.PenStyle.DotLine), name="Math")
         
         layout.addWidget(self.plot_widget)
         self.setLayout(layout)
@@ -338,10 +369,67 @@ class OscilloscopeWidget(QWidget):
         self.module.trigger_level = val
         self.trig_line.setPos(val)
 
-    def on_trig_line_moved(self):
-        val = self.trig_line.value()
-        self.trig_level_spin.setValue(val)
         self.module.trigger_level = val
+        
+    def on_math_changed(self, val):
+        self.module.math_mode = val
+        
+    def on_cursors_toggled(self, checked):
+        self.cursor_1.setVisible(checked)
+        self.cursor_2.setVisible(checked)
+        if checked:
+            # Initialize positions if needed
+            if self.cursor_1.value() == 0 and self.cursor_2.value() == 0:
+                x_range = self.plot_widget.viewRange()[0]
+                center = (x_range[1] + x_range[0]) / 2
+                width = x_range[1] - x_range[0]
+                self.cursor_1.setPos(center - width/4)
+                self.cursor_2.setPos(center + width/4)
+        self.update_cursor_info()
+
+    def update_cursor_info(self):
+        if not self.chk_cursors.isChecked():
+            self.cursor_info_label.setText("Cursors: Off")
+            return
+            
+        t1 = self.cursor_1.value()
+        t2 = self.cursor_2.value()
+        dt = t2 - t1
+        freq = 1.0 / abs(dt) if dt != 0 else 0.0
+        
+        # Get Voltage at cursors (Interpolate)
+        # We need the current data to do this. 
+        # Since this is called on move, we might not have the exact latest data object here easily 
+        # without storing it. Let's store the latest displayed data in self.latest_data
+        
+        v1_str = ""
+        v2_str = ""
+        dv_str = ""
+        
+        if hasattr(self, 'latest_data') and self.latest_data is not None:
+            data = self.latest_data
+            t = self.latest_t
+            
+            # Interpolate
+            # Assuming Channel 0 (Left) is primary for cursor measurement if both active, 
+            # or use Trigger Source? Let's use Trigger Source or just Left.
+            # Let's use the first visible channel.
+            
+            target_data = None
+            if self.module.show_left:
+                target_data = data[:, 0]
+            elif self.module.show_right:
+                target_data = data[:, 1]
+                
+            if target_data is not None:
+                v1 = np.interp(t1, t, target_data)
+                v2 = np.interp(t2, t, target_data)
+                dv = v2 - v1
+                v1_str = f"V1: {v1:.3f}V"
+                v2_str = f"V2: {v2:.3f}V"
+                dv_str = f"dV: {dv:.3f}V"
+        
+        self.cursor_info_label.setText(f"T1: {t1*1000:.2f}ms {v1_str} | T2: {t2*1000:.2f}ms {v2_str} | dT: {dt*1000:.2f}ms ({freq:.1f}Hz) | {dv_str}")
 
     def update_plot(self):
         if not self.module.is_running:
@@ -367,6 +455,10 @@ class OscilloscopeWidget(QWidget):
             # Create time axis
             t = np.linspace(0, window_duration, len(data))
             
+            # Store for cursor interpolation
+            self.latest_data = data
+            self.latest_t = t
+            
             if self.module.show_left:
                 self.curve_l.setData(t, data[:, 0])
             else:
@@ -376,3 +468,42 @@ class OscilloscopeWidget(QWidget):
                 self.curve_r.setData(t, data[:, 1])
             else:
                 self.curve_r.setData([], [])
+                
+            # Math Processing
+            if self.module.math_mode != 'Off':
+                # Use Left channel for Math for now, or sum?
+                # Usually Math is Ch1 - Ch2 or similar.
+                # Here we do Diff/Int of Ch1 (Left) or Ch2 (Right) if Left is off.
+                
+                source_data = None
+                if self.module.show_left:
+                    source_data = data[:, 0]
+                elif self.module.show_right:
+                    source_data = data[:, 1]
+                    
+                if source_data is not None:
+                    if self.module.math_mode == 'Derivative':
+                        # diff = dV / dt
+                        # dt = window_duration / len(data)
+                        dt = t[1] - t[0] if len(t) > 1 else 1e-6
+                        math_data = np.gradient(source_data, dt)
+                        # Scale for visibility? Derivative of sine is cosine * w.
+                        # Can be large.
+                        
+                    elif self.module.math_mode == 'Integral':
+                        # int = sum(V * dt)
+                        dt = t[1] - t[0] if len(t) > 1 else 1e-6
+                        # cumulative trapezoid
+                        math_data = np.cumsum(source_data) * dt
+                        # Remove DC offset from integral (drift)
+                        math_data = math_data - np.mean(math_data)
+                        
+                    self.curve_math.setData(t, math_data)
+                else:
+                    self.curve_math.setData([], [])
+            else:
+                self.curve_math.setData([], [])
+                
+            # Update cursor info if they are on (to update voltage readings)
+            if self.chk_cursors.isChecked():
+                self.update_cursor_info()
