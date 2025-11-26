@@ -170,32 +170,9 @@ class NetworkAnalyzer(MeasurementModule):
         return session.input_data
 
     def get_output_amplitude(self):
-        """Calculates linear amplitude (0-1) based on unit and calibration."""
-        val = self.amplitude
-        unit = self.gen_unit
-        cal = self.audio_engine.calibration
-        
-        target_v_peak = 0.0
-        
-        if unit == 'Amplitude':
-            return max(0.0, min(1.0, val))
-        elif unit == 'dBFS':
-            return 10 ** (val / 20)
-        elif unit == 'Vpeak':
-            target_v_peak = val
-        elif unit == 'Vrms':
-            target_v_peak = val * np.sqrt(2)
-        elif unit == 'dBV':
-            target_v_peak = 10 ** (val / 20) * np.sqrt(2) # dBV is ref 1 Vrms
-        elif unit == 'dBu':
-            target_v_peak = 10 ** (val / 20) * 0.7746 * np.sqrt(2)
-            
-        # Convert Voltage to Amplitude (0-1)
-        # output_gain is V_peak at 1.0 FS
-        if cal.output_gain <= 1e-9: return 0.0
-        
-        amp = target_v_peak / cal.output_gain
-        return max(0.0, min(1.0, amp))
+        """Returns the linear amplitude (0-1) for signal generation."""
+        # self.amplitude is already stored as linear amplitude (0-1) by the widget
+        return max(0.0, min(1.0, self.amplitude))
 
     def calibrate_latency(self):
         """Measures loopback latency using a chirp signal."""
@@ -306,7 +283,7 @@ class NetworkAnalyzer(MeasurementModule):
         if not worker.is_running: return
         
         # Determine input channels
-        input_ch_count = 2 if self.input_mode == 'XFER' else 1
+        input_ch_count = 2 # Always capture stereo to avoid channel mapping issues
         
         rec_data = self.run_play_rec(out_data, input_channels=input_ch_count)
         
@@ -391,6 +368,10 @@ class NetworkAnalyzer(MeasurementModule):
             valid_H = H[mask]
             
             mag_db = 20 * np.log10(np.abs(valid_H) + 1e-12)
+            
+            # If not XFER, adjust for output amplitude to show Absolute Level
+            if self.input_mode != 'XFER':
+                mag_db += 20 * np.log10(self.get_output_amplitude() + 1e-12)
             phase_rad = np.angle(valid_H)
             phase_rad = np.unwrap(phase_rad)
             
@@ -414,7 +395,7 @@ class NetworkAnalyzer(MeasurementModule):
         freqs = self._generate_log_freqs(self.start_freq, self.end_freq, self.steps_per_octave)
         total_steps = len(freqs)
         
-        input_ch_count = 2 if self.input_mode == 'XFER' else 1
+        input_ch_count = 2 # Always capture stereo
         
         for i, freq in enumerate(freqs):
             if not worker.is_running: break
@@ -581,7 +562,7 @@ class NetworkAnalyzerWidget(QWidget):
         
         self.amp_spin = QDoubleSpinBox()
         self.amp_spin.setRange(0, 1); self.amp_spin.setValue(0.5); self.amp_spin.setSingleStep(0.1)
-        self.amp_spin.valueChanged.connect(lambda v: setattr(self.module, 'amplitude', v))
+        self.amp_spin.valueChanged.connect(self.on_amp_spin_changed)
         
         self.gen_unit_combo = QComboBox()
         self.gen_unit_combo.addItems(['Amplitude', 'dBFS', 'dBV', 'dBu', 'Vrms', 'Vpeak'])
@@ -693,32 +674,92 @@ class NetworkAnalyzerWidget(QWidget):
 
     def on_gen_unit_changed(self, unit):
         self.module.gen_unit = unit
-        spin = self.amp_spin
-        spin.blockSignals(True)
+        # Update display to show current amplitude in new unit
+        self.update_amp_display_value(self.module.amplitude)
+
+    def update_amp_display_value(self, amp_0_1):
+        unit = self.gen_unit_combo.currentText()
+        try:
+            gain = self.module.audio_engine.calibration.output_gain
+        except:
+            gain = 1.0
+        
+        self.amp_spin.blockSignals(True)
         
         if unit == 'Amplitude':
-            spin.setRange(0, 1)
-            spin.setSingleStep(0.1)
-            spin.setSuffix("")
-            spin.setValue(0.5)
+            self.amp_spin.setRange(0, 1.0)
+            self.amp_spin.setSingleStep(0.1)
+            self.amp_spin.setSuffix("")
+            self.amp_spin.setValue(amp_0_1)
         elif unit == 'dBFS':
-            spin.setRange(-120, 0)
-            spin.setSingleStep(1)
-            spin.setSuffix(" dB")
-            spin.setValue(-10)
-        elif unit in ['dBV', 'dBu']:
-            spin.setRange(-120, 20)
-            spin.setSingleStep(1)
-            spin.setSuffix(" dB")
-            spin.setValue(-10)
-        elif unit in ['Vrms', 'Vpeak']:
-            spin.setRange(0, 100)
-            spin.setSingleStep(0.1)
-            spin.setSuffix(" V")
-            spin.setValue(1.0)
+            self.amp_spin.setRange(-120, 0)
+            self.amp_spin.setSingleStep(1.0)
+            self.amp_spin.setSuffix(" dB")
+            val = 20 * np.log10(amp_0_1 + 1e-12)
+            self.amp_spin.setValue(val)
+        elif unit == 'dBV':
+            v_peak = amp_0_1 * gain
+            v_rms = v_peak / np.sqrt(2)
+            val = 20 * np.log10(v_rms + 1e-12)
+            self.amp_spin.setRange(-120, 20)
+            self.amp_spin.setSingleStep(1.0)
+            self.amp_spin.setSuffix(" dB")
+            self.amp_spin.setValue(val)
+        elif unit == 'dBu':
+            v_peak = amp_0_1 * gain
+            v_rms = v_peak / np.sqrt(2)
+            val = 20 * np.log10((v_rms + 1e-12) / 0.7746)
+            self.amp_spin.setRange(-120, 20)
+            self.amp_spin.setSingleStep(1.0)
+            self.amp_spin.setSuffix(" dB")
+            self.amp_spin.setValue(val)
+        elif unit == 'Vrms':
+            v_peak = amp_0_1 * gain
+            v_rms = v_peak / np.sqrt(2)
+            self.amp_spin.setRange(0, 100)
+            self.amp_spin.setSingleStep(0.1)
+            self.amp_spin.setSuffix(" V")
+            self.amp_spin.setValue(v_rms)
+        elif unit == 'Vpeak':
+            v_peak = amp_0_1 * gain
+            self.amp_spin.setRange(0, 100)
+            self.amp_spin.setSingleStep(0.1)
+            self.amp_spin.setSuffix(" V")
+            self.amp_spin.setValue(v_peak)
             
-        self.module.amplitude = spin.value()
-        spin.blockSignals(False)
+        self.amp_spin.blockSignals(False)
+
+    def on_amp_spin_changed(self, val):
+        unit = self.gen_unit_combo.currentText()
+        try:
+            gain = self.module.audio_engine.calibration.output_gain
+        except:
+            gain = 1.0
+            
+        amp_0_1 = 0.0
+        
+        if unit == 'Amplitude':
+            amp_0_1 = val
+        elif unit == 'dBFS':
+            amp_0_1 = 10**(val/20)
+        elif unit == 'dBV':
+            v_rms = 10**(val/20)
+            v_peak = v_rms * np.sqrt(2)
+            amp_0_1 = v_peak / gain
+        elif unit == 'dBu':
+            v_rms = 0.7746 * 10**(val/20)
+            v_peak = v_rms * np.sqrt(2)
+            amp_0_1 = v_peak / gain
+        elif unit == 'Vrms':
+            v_peak = val * np.sqrt(2)
+            amp_0_1 = v_peak / gain
+        elif unit == 'Vpeak':
+            amp_0_1 = val / gain
+            
+        if amp_0_1 > 1.0: amp_0_1 = 1.0
+        elif amp_0_1 < 0.0: amp_0_1 = 0.0
+            
+        self.module.amplitude = amp_0_1
 
     def calibrate(self):
         self.lat_btn.setEnabled(False)
