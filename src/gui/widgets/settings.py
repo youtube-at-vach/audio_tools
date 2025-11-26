@@ -299,6 +299,27 @@ class SettingsWidget(QWidget):
         lang_group.setLayout(lang_layout)
         layout.addWidget(lang_group)
 
+        # Appearance Settings
+        appearance_group = QGroupBox(tr("Appearance"))
+        appearance_layout = QFormLayout()
+        
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItem(tr("System"), "system")
+        self.theme_combo.addItem(tr("Light"), "light")
+        self.theme_combo.addItem(tr("Dark"), "dark")
+        
+        # Set current theme
+        current_theme = self.config_manager.get_theme()
+        idx = self.theme_combo.findData(current_theme)
+        if idx >= 0:
+            self.theme_combo.setCurrentIndex(idx)
+        
+        self.theme_combo.currentIndexChanged.connect(self.on_theme_changed)
+        appearance_layout.addRow(tr("Theme") + ":", self.theme_combo)
+        
+        appearance_group.setLayout(appearance_layout)
+        layout.addWidget(appearance_group)
+
         # Device Selection Group
         dev_group = QGroupBox(tr("Audio Devices"))
         dev_layout = QFormLayout()
@@ -427,6 +448,19 @@ class SettingsWidget(QWidget):
             if lang != self.config_manager.get_language():
                 self.config_manager.set_language(lang)
                 QMessageBox.information(self, tr("Restart Required"), tr("Please restart the application to apply language changes."))
+
+    def on_theme_changed(self):
+        theme = self.theme_combo.currentData()
+        if theme:
+            # Only save if changed
+            if theme != self.config_manager.get_theme():
+                self.config_manager.set_theme(theme)
+                # Apply theme immediately if ThemeManager is available
+                from PyQt6.QtWidgets import QApplication
+                app = QApplication.instance()
+                if hasattr(app, 'theme_manager'):
+                    app.theme_manager.set_theme(theme)
+
 
     def open_input_calibration(self):
         dlg = InputCalibrationDialog(self.audio_engine, self)
