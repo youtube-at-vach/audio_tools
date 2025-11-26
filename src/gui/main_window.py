@@ -177,7 +177,16 @@ class MainWindow(QMainWindow):
         
         # CPU Load
         cpu = status['cpu_load'] * 100
-        self.cpu_label.setText(f"CPU: {cpu:.1f}%")
+        flags = status.get('status_flags')
+        
+        if flags:
+            self.cpu_label.setText(f"CPU: {cpu:.1f}% [{flags}]")
+            self.cpu_label.setStyleSheet("color: red; font-weight: bold;")
+            self.cpu_label.setToolTip(f"Audio Buffer Error: {flags}")
+        else:
+            self.cpu_label.setText(f"CPU: {cpu:.1f}%")
+            self.cpu_label.setStyleSheet("")
+            self.cpu_label.setToolTip("CPU Load of Audio Thread")
         
         # Clients
         self.clients_label.setText(f"Clients: {status['active_clients']}")
