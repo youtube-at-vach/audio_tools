@@ -35,11 +35,24 @@ jobs:
       run: |
         pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.ico --add-data "src;src" --exclude-module matplotlib --collect-all backports main_gui.py
 
+    - name: Extract CHANGELOG for version
+      id: changelog
+      shell: bash
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/}
+        # Extract content between version header and next version header
+        sed -n "/## \[${VERSION#v}\]/,/## \[/p" CHANGELOG.md | sed '$d' > release_notes.md
+        # If empty, use a default message
+        if [ ! -s release_notes.md ]; then
+          echo "Release $VERSION" > release_notes.md
+        fi
+
     - name: Release Windows
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
         files: dist/Audio_Measurement_Tools.exe
+        body_path: release_notes.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -75,10 +88,22 @@ jobs:
         chmod +x build_appimage.sh
         ./build_appimage.sh
 
+    - name: Extract CHANGELOG for version
+      id: changelog
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/}
+        # Extract content between version header and next version header
+        sed -n "/## \[${VERSION#v}\]/,/## \[/p" CHANGELOG.md | sed '$d' > release_notes.md
+        # If empty, use a default message
+        if [ ! -s release_notes.md ]; then
+          echo "Release $VERSION" > release_notes.md
+        fi
+
     - name: Release Linux
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
         files: Audio_Measurement_Tools-*.AppImage
+        body_path: release_notes.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
