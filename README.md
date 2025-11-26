@@ -10,14 +10,15 @@ PythonとPyQt6で構築されており、高精度な信号生成、解析、測
 
 1.  **Signal Generator**: 正弦波、矩形波、ノイズ、スイープ信号などを生成。
 2.  **Spectrum Analyzer**: 高速FFTによるリアルタイムスペクトル解析。
-3.  **Oscilloscope**: 波形の時間軸表示とトリガー機能。
-4.  **Distortion Analyzer**: THD, THD+N, SINAD, IMD (SMPTE/CCIF) の測定。
-5.  **Network Analyzer**: 周波数特性（ゲイン・位相）の測定。
-6.  **Lock-in Amplifier**: 微小信号の位相敏感検波 (LIA)。
-7.  **Frequency Counter**: 高精度な周波数測定とアラン分散プロット。
-8.  **Lufs Meter**: ラウドネス (LUFS) のリアルタイム測定。
-9.  **IMD Analyzer**: 相互変調歪みの専用解析ツール。
-10. **Loopback Finder**: オーディオデバイスの遅延測定。
+3.  **LUFS Meter**: ラウドネス (LUFS) のリアルタイム測定。
+4.  **Loopback Finder**: オーディオデバイスの遅延測定。
+5.  **Distortion Analyzer**: THD, THD+N, SINAD, IMD (SMPTE/CCIF) の測定。
+6.  **Network Analyzer**: 周波数特性（ゲイン・位相）の測定。
+7.  **Oscilloscope**: 波形の時間軸表示とトリガー機能。
+8.  **Lock-in Amplifier**: 微小信号の位相敏感検波 (LIA)。
+9.  **Frequency Counter**: 高精度な周波数測定とアラン分散プロット。
+10. **Spectrogram**: 時間-周波数表示のスペクトログラム。
+11. **Boxcar Averager**: ボックスカー平均によるノイズ低減。
 
 ### 🌍 多言語対応 (Localization)
 世界中の主要な言語をサポートしています。設定画面から切り替え可能です。
