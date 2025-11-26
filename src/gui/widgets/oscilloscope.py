@@ -146,121 +146,12 @@ class OscilloscopeWidget(QWidget):
         self.timer.setInterval(30) # 30ms refresh
 
     def init_ui(self):
-        layout = QVBoxLayout()
+        main_layout = QHBoxLayout()
         
-        # --- Controls ---
-        controls_group = QGroupBox("Oscilloscope Controls")
-        controls_layout = QHBoxLayout()
+        # --- Left Panel (Display) ---
+        left_layout = QVBoxLayout()
         
-        # Start/Stop
-        self.toggle_btn = QPushButton("Start")
-        self.toggle_btn.setCheckable(True)
-        self.toggle_btn.clicked.connect(self.on_toggle)
-        self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; } QPushButton:checked { background-color: #ffcccc; }")
-        controls_layout.addWidget(self.toggle_btn)
-        
-        # Timebase
-        controls_layout.addWidget(QLabel("Time/Div:"))
-        self.timebase_combo = QComboBox()
-        # Assuming 10 divisions horizontally. 
-        # Options: 1ms, 2ms, 5ms, 10ms, 20ms, 50ms, 100ms
-        self.timebase_options = {
-            "10 us": 0.00001, "20 us": 0.00002, "50 us": 0.00005,
-            "100 us": 0.0001, "200 us": 0.0002, "500 us": 0.0005,
-            "1 ms": 0.001, "2 ms": 0.002, "5 ms": 0.005, 
-            "10 ms": 0.01, "20 ms": 0.02, "50 ms": 0.05, "100 ms": 0.1
-        }
-        self.timebase_combo.addItems(self.timebase_options.keys())
-        self.timebase_combo.setCurrentText("10 ms")
-        self.timebase_combo.currentTextChanged.connect(self.on_timebase_changed)
-        controls_layout.addWidget(self.timebase_combo)
-
-        # Vertical Scale (Gain)
-        controls_layout.addWidget(QLabel("Vertical Scale:"))
-        self.vscale_combo = QComboBox()
-        self.vscale_options = {
-            "0.1x": 0.1, "0.2x": 0.2, "0.5x": 0.5, 
-            "1.0x": 1.0, "2.0x": 2.0, "5.0x": 5.0, "10.0x": 10.0,
-            "20.0x": 20.0, "50.0x": 50.0, "100.0x": 100.0, 
-            "200.0x": 200.0, "500.0x": 500.0, "1000.0x": 1000.0
-        }
-        self.vscale_keys = list(self.vscale_options.keys())
-        self.vscale_combo.addItems(self.vscale_keys)
-        self.vscale_combo.setCurrentText("1.0x")
-        self.vscale_combo.currentTextChanged.connect(self.on_vscale_changed)
-        controls_layout.addWidget(self.vscale_combo)
-        
-        # Vertical Scale Slider
-        self.vscale_slider = QSlider(Qt.Orientation.Horizontal)
-        self.vscale_slider.setRange(0, len(self.vscale_keys) - 1)
-        self.vscale_slider.setFixedWidth(100)
-        self.vscale_slider.valueChanged.connect(self.on_vscale_slider_changed)
-        # Set initial value
-        if "1.0x" in self.vscale_keys:
-            self.vscale_slider.setValue(self.vscale_keys.index("1.0x"))
-        controls_layout.addWidget(self.vscale_slider)
-        
-        # Channels
-        self.chk_left = QCheckBox("L")
-        self.chk_left.setChecked(True)
-        self.chk_left.toggled.connect(lambda x: setattr(self.module, 'show_left', x))
-        controls_layout.addWidget(self.chk_left)
-        
-        self.chk_right = QCheckBox("R")
-        self.chk_right.setChecked(True)
-        self.chk_right.toggled.connect(lambda x: setattr(self.module, 'show_right', x))
-        controls_layout.addWidget(self.chk_right)
-        
-        # Math Mode
-        controls_layout.addWidget(QLabel("Math:"))
-        self.math_combo = QComboBox()
-        self.math_combo.addItems(['Off', 'Derivative', 'Integral'])
-        self.math_combo.currentTextChanged.connect(self.on_math_changed)
-        controls_layout.addWidget(self.math_combo)
-        
-        # Cursors
-        self.chk_cursors = QCheckBox("Cursors")
-        self.chk_cursors.toggled.connect(self.on_cursors_toggled)
-        controls_layout.addWidget(self.chk_cursors)
-
-        # Trigger Controls
-        trigger_group = QGroupBox("Trigger")
-        trigger_layout = QHBoxLayout()
-        
-        trigger_layout.addWidget(QLabel("Source:"))
-        self.trig_source_combo = QComboBox()
-        self.trig_source_combo.addItems(["Left", "Right"])
-        self.trig_source_combo.currentIndexChanged.connect(self.on_trig_source_changed)
-        trigger_layout.addWidget(self.trig_source_combo)
-        
-        trigger_layout.addWidget(QLabel("Slope:"))
-        self.trig_slope_combo = QComboBox()
-        self.trig_slope_combo.addItems(["Rising", "Falling"])
-        self.trig_slope_combo.currentTextChanged.connect(self.on_trig_slope_changed)
-        trigger_layout.addWidget(self.trig_slope_combo)
-        
-        trigger_layout.addWidget(QLabel("Mode:"))
-        self.trig_mode_combo = QComboBox()
-        self.trig_mode_combo.addItems(["Auto", "Normal"])
-        self.trig_mode_combo.currentTextChanged.connect(self.on_trig_mode_changed)
-        trigger_layout.addWidget(self.trig_mode_combo)
-        
-        trigger_layout.addWidget(QLabel("Level:"))
-        self.trig_level_spin = QDoubleSpinBox()
-        self.trig_level_spin.setRange(-1.0, 1.0)
-        self.trig_level_spin.setSingleStep(0.1)
-        self.trig_level_spin.setValue(0.0)
-        self.trig_level_spin.valueChanged.connect(self.on_trig_level_changed)
-        trigger_layout.addWidget(self.trig_level_spin)
-        
-        trigger_group.setLayout(trigger_layout)
-        controls_layout.addWidget(trigger_group)
-        
-        controls_layout.addStretch()
-        controls_group.setLayout(controls_layout)
-        layout.addWidget(controls_group)
-        
-        # --- Measurements ---
+        # Measurements
         meas_group = QGroupBox("Measurements")
         meas_layout = QHBoxLayout()
         
@@ -274,14 +165,14 @@ class OscilloscopeWidget(QWidget):
         
         meas_layout.addStretch()
         meas_group.setLayout(meas_layout)
-        layout.addWidget(meas_group)
+        left_layout.addWidget(meas_group)
         
-        # --- Cursor Info ---
+        # Cursor Info
         self.cursor_info_label = QLabel("Cursors: Off")
         self.cursor_info_label.setStyleSheet("font-family: monospace; font-weight: bold; color: yellow;")
-        layout.addWidget(self.cursor_info_label)
+        left_layout.addWidget(self.cursor_info_label)
         
-        # --- Plot ---
+        # Plot
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setLabel('left', 'Amplitude', units='V')
         self.plot_widget.setLabel('bottom', 'Time', units='s')
@@ -291,11 +182,7 @@ class OscilloscopeWidget(QWidget):
         self.curve_l = self.plot_widget.plot(pen=pg.mkPen('#00ff00', width=2), name="Left")
         self.curve_r = self.plot_widget.plot(pen=pg.mkPen('#ff0000', width=2), name="Right")
         
-        # # Trigger Level Line
-        # self.trig_line.sigPositionChanged.connect(self.on_trig_line_moved)
-        # self.plot_widget.addItem(self.trig_line)
-        
-        # Cursors (Hidden by default)
+        # Cursors
         self.cursor_1 = pg.InfiniteLine(angle=90, movable=True, pen=pg.mkPen('c', width=1), label='C1', labelOpts={'position':0.1})
         self.cursor_2 = pg.InfiniteLine(angle=90, movable=True, pen=pg.mkPen('m', width=1), label='C2', labelOpts={'position':0.1})
         
@@ -310,8 +197,192 @@ class OscilloscopeWidget(QWidget):
         # Math Curve
         self.curve_math = self.plot_widget.plot(pen=pg.mkPen('w', width=2, style=Qt.PenStyle.DotLine), name="Math")
         
-        layout.addWidget(self.plot_widget)
-        self.setLayout(layout)
+        left_layout.addWidget(self.plot_widget)
+        main_layout.addLayout(left_layout, stretch=1) # Give priority to plot
+        
+        # --- Right Panel (Controls) ---
+        right_widget = QWidget()
+        right_widget.setFixedWidth(250) # Fixed width for controls
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 1. General Controls
+        gen_group = QGroupBox("General")
+        gen_layout = QVBoxLayout()
+        
+        # Start/Stop
+        self.toggle_btn = QPushButton("Start")
+        self.toggle_btn.setCheckable(True)
+        self.toggle_btn.clicked.connect(self.on_toggle)
+        self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; } QPushButton:checked { background-color: #ffcccc; }")
+        gen_layout.addWidget(self.toggle_btn)
+        
+        # Timebase
+        hbox_tb = QHBoxLayout()
+        hbox_tb.addWidget(QLabel("Time/Div:"))
+        self.timebase_combo = QComboBox()
+        self.timebase_options = {
+            "10 us": 0.00001, "20 us": 0.00002, "50 us": 0.00005,
+            "100 us": 0.0001, "200 us": 0.0002, "500 us": 0.0005,
+            "1 ms": 0.001, "2 ms": 0.002, "5 ms": 0.005, 
+            "10 ms": 0.01, "20 ms": 0.02, "50 ms": 0.05, "100 ms": 0.1
+        }
+        self.timebase_keys = list(self.timebase_options.keys())
+        self.timebase_combo.addItems(self.timebase_keys)
+        self.timebase_combo.setCurrentText("10 ms")
+        self.timebase_combo.currentTextChanged.connect(self.on_timebase_changed)
+        hbox_tb.addWidget(self.timebase_combo)
+        gen_layout.addLayout(hbox_tb)
+        
+        # Timebase Slider
+        self.timebase_slider = QSlider(Qt.Orientation.Horizontal)
+        self.timebase_slider.setRange(0, len(self.timebase_keys) - 1)
+        self.timebase_slider.valueChanged.connect(self.on_timebase_slider_changed)
+        if "10 ms" in self.timebase_keys:
+            self.timebase_slider.setValue(self.timebase_keys.index("10 ms"))
+        gen_layout.addWidget(self.timebase_slider)
+        
+        gen_group.setLayout(gen_layout)
+        right_layout.addWidget(gen_group)
+        
+        # 2. Vertical Controls
+        vert_group = QGroupBox("Vertical")
+        vert_layout = QVBoxLayout()
+        
+        hbox_scale = QHBoxLayout()
+        hbox_scale.addWidget(QLabel("Scale:"))
+        self.vscale_combo = QComboBox()
+        self.vscale_options = {
+            "0.01x": 0.01, "0.02x": 0.02, "0.05x": 0.05,
+            "0.1x": 0.1, "0.2x": 0.2, "0.5x": 0.5, 
+            "1.0x": 1.0, "2.0x": 2.0, "5.0x": 5.0, "10.0x": 10.0,
+            "20.0x": 20.0, "50.0x": 50.0, "100.0x": 100.0, 
+            "200.0x": 200.0, "500.0x": 500.0, "1000.0x": 1000.0,
+            "2000.0x": 2000.0, "5000.0x": 5000.0, "10000.0x": 10000.0
+        }
+        self.vscale_keys = list(self.vscale_options.keys())
+        self.vscale_combo.addItems(self.vscale_keys)
+        self.vscale_combo.setCurrentText("1.0x")
+        self.vscale_combo.currentTextChanged.connect(self.on_vscale_changed)
+        hbox_scale.addWidget(self.vscale_combo)
+        vert_layout.addLayout(hbox_scale)
+        
+        self.vscale_slider = QSlider(Qt.Orientation.Horizontal)
+        self.vscale_slider.setRange(0, len(self.vscale_keys) - 1)
+        self.vscale_slider.valueChanged.connect(self.on_vscale_slider_changed)
+        if "1.0x" in self.vscale_keys:
+            self.vscale_slider.setValue(self.vscale_keys.index("1.0x"))
+        vert_layout.addWidget(self.vscale_slider)
+        
+        hbox_ch = QHBoxLayout()
+        self.chk_left = QCheckBox("Left Ch")
+        self.chk_left.setChecked(True)
+        self.chk_left.toggled.connect(lambda x: setattr(self.module, 'show_left', x))
+        hbox_ch.addWidget(self.chk_left)
+        
+        self.chk_right = QCheckBox("Right Ch")
+        self.chk_right.setChecked(True)
+        self.chk_right.toggled.connect(lambda x: setattr(self.module, 'show_right', x))
+        hbox_ch.addWidget(self.chk_right)
+        vert_layout.addLayout(hbox_ch)
+        
+        vert_group.setLayout(vert_layout)
+        right_layout.addWidget(vert_group)
+        
+        # 3. Trigger Controls
+        trig_group = QGroupBox("Trigger")
+        trig_layout = QVBoxLayout()
+        
+        hbox_src = QHBoxLayout()
+        hbox_src.addWidget(QLabel("Source:"))
+        self.trig_source_combo = QComboBox()
+        self.trig_source_combo.addItems(["Left", "Right"])
+        self.trig_source_combo.currentIndexChanged.connect(self.on_trig_source_changed)
+        hbox_src.addWidget(self.trig_source_combo)
+        trig_layout.addLayout(hbox_src)
+        
+        hbox_slope = QHBoxLayout()
+        hbox_slope.addWidget(QLabel("Slope:"))
+        self.trig_slope_combo = QComboBox()
+        self.trig_slope_combo.addItems(["Rising", "Falling"])
+        self.trig_slope_combo.currentTextChanged.connect(self.on_trig_slope_changed)
+        hbox_slope.addWidget(self.trig_slope_combo)
+        trig_layout.addLayout(hbox_slope)
+        
+        hbox_mode = QHBoxLayout()
+        hbox_mode.addWidget(QLabel("Mode:"))
+        self.trig_mode_combo = QComboBox()
+        self.trig_mode_combo.addItems(["Auto", "Normal"])
+        self.trig_mode_combo.currentTextChanged.connect(self.on_trig_mode_changed)
+        hbox_mode.addWidget(self.trig_mode_combo)
+        trig_layout.addLayout(hbox_mode)
+        
+        hbox_lvl = QHBoxLayout()
+        hbox_lvl.addWidget(QLabel("Level:"))
+        self.trig_level_spin = QDoubleSpinBox()
+        self.trig_level_spin.setRange(-1.0, 1.0)
+        self.trig_level_spin.setSingleStep(0.1)
+        self.trig_level_spin.setValue(0.0)
+        self.trig_level_spin.valueChanged.connect(self.on_trig_level_changed)
+        hbox_lvl.addWidget(self.trig_level_spin)
+        trig_layout.addLayout(hbox_lvl)
+        
+        trig_group.setLayout(trig_layout)
+        right_layout.addWidget(trig_group)
+        
+        # 4. Tools
+        tools_group = QGroupBox("Tools")
+        tools_layout = QVBoxLayout()
+        
+        hbox_math = QHBoxLayout()
+        hbox_math.addWidget(QLabel("Math:"))
+        self.math_combo = QComboBox()
+        self.math_combo.addItems(['Off', 'A + B', 'A - B', 'A * B', 'A / B', 'Derivative', 'Integral'])
+        self.math_combo.currentTextChanged.connect(self.on_math_changed)
+        hbox_math.addWidget(self.math_combo)
+        tools_layout.addLayout(hbox_math)
+        
+        self.chk_cursors = QCheckBox("Enable Cursors")
+        self.chk_cursors.toggled.connect(self.on_cursors_toggled)
+        tools_layout.addWidget(self.chk_cursors)
+        
+        tools_group.setLayout(tools_layout)
+        right_layout.addWidget(tools_group)
+        
+        # Math Curve
+        # Create a new ViewBox for Math
+        self.math_view = pg.ViewBox()
+        self.plot_widget.plotItem.scene().addItem(self.math_view)
+        # Link X axis
+        self.math_view.setXLink(self.plot_widget.plotItem)
+        
+        # Add Right Axis
+        # Remove default right axis if it exists, then add our custom one
+        if self.plot_widget.plotItem.getAxis('right') is not None:
+            self.plot_widget.plotItem.layout.removeItem(self.plot_widget.plotItem.getAxis('right'))
+        self.axis_math = pg.AxisItem('right')
+        self.axis_math.linkToView(self.math_view)
+        self.axis_math.setLabel('Math', color='#ffffff')
+        self.plot_widget.plotItem.layout.addItem(self.axis_math, 2, 2) # Row 2, Col 2 for right axis
+        self.axis_math.hide() # Hide by default
+        
+        # Update View Geometry on resize
+        self.plot_widget.plotItem.vb.sigResized.connect(self.update_math_view_geometry)
+        
+        self.curve_math = pg.PlotCurveItem(pen=pg.mkPen('w', width=2, style=Qt.PenStyle.DotLine), name="Math")
+        self.math_view.addItem(self.curve_math)
+        
+        right_layout.addStretch()
+        main_layout.addWidget(right_widget)
+        
+        self.setLayout(main_layout)
+
+    def update_math_view_geometry(self):
+        # This function ensures the math_view's geometry matches the main plot's viewbox
+        # so that the linked X-axis works correctly and the math curve overlays properly.
+        self.math_view.setGeometry(self.plot_widget.plotItem.vb.sceneBoundingRect())
+        # This line is crucial for the linked X-axis to update its range when the main plot's X-axis changes.
+        self.math_view.linkedViewChanged(self.plot_widget.plotItem.vb, self.math_view.XAxis)
 
     def on_toggle(self, checked):
         if checked:
@@ -328,6 +399,18 @@ class OscilloscopeWidget(QWidget):
         # We display 10 divisions usually. So window is 10 * val
         self.module.timebase = val * 10 
         self.plot_widget.setXRange(0, self.module.timebase)
+        
+        # Sync slider
+        if text in self.timebase_keys:
+            idx = self.timebase_keys.index(text)
+            if self.timebase_slider.value() != idx:
+                self.timebase_slider.setValue(idx)
+
+    def on_timebase_slider_changed(self, idx):
+        if 0 <= idx < len(self.timebase_keys):
+            key = self.timebase_keys[idx]
+            if self.timebase_combo.currentText() != key:
+                self.timebase_combo.setCurrentText(key)
 
     def on_vscale_slider_changed(self, idx):
         if 0 <= idx < len(self.vscale_keys):
@@ -375,6 +458,12 @@ class OscilloscopeWidget(QWidget):
         
     def on_math_changed(self, val):
         self.module.math_mode = val
+        if val == 'Off':
+            self.axis_math.hide()
+            self.curve_math.setData([], []) # Clear math curve when off
+        else:
+            self.axis_math.show()
+            self.axis_math.setLabel(f"Math ({val})", color='#ffffff')
         
     def on_cursors_toggled(self, checked):
         self.cursor_1.setVisible(checked)
@@ -473,34 +562,42 @@ class OscilloscopeWidget(QWidget):
                 
             # Math Processing
             if self.module.math_mode != 'Off':
-                # Use Left channel for Math for now, or sum?
-                # Usually Math is Ch1 - Ch2 or similar.
-                # Here we do Diff/Int of Ch1 (Left) or Ch2 (Right) if Left is off.
+                math_data = None
                 
-                source_data = None
-                if self.module.show_left:
-                    source_data = data[:, 0]
-                elif self.module.show_right:
-                    source_data = data[:, 1]
+                # A = Left, B = Right
+                A = data[:, 0]
+                B = data[:, 1]
+                
+                mode = self.module.math_mode
+                
+                if mode == 'A + B':
+                    math_data = A + B
+                elif mode == 'A - B':
+                    math_data = A - B
+                elif mode == 'A * B':
+                    math_data = A * B
+                elif mode == 'A / B':
+                    # Avoid division by zero
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        math_data = np.divide(A, B)
+                        math_data[~np.isfinite(math_data)] = 0 # Replace inf/nan with 0
+                elif mode == 'Derivative': # Derivative of A (Left)
+                    dt = t[1] - t[0] if len(t) > 1 else 1e-6
+                    math_data = np.gradient(A, dt)
+                elif mode == 'Integral': # Integral of A (Left)
+                    dt = t[1] - t[0] if len(t) > 1 else 1e-6
+                    math_data = np.cumsum(A) * dt
+                    math_data = math_data - np.mean(math_data)
                     
-                if source_data is not None:
-                    if self.module.math_mode == 'Derivative':
-                        # diff = dV / dt
-                        # dt = window_duration / len(data)
-                        dt = t[1] - t[0] if len(t) > 1 else 1e-6
-                        math_data = np.gradient(source_data, dt)
-                        # Scale for visibility? Derivative of sine is cosine * w.
-                        # Can be large.
-                        
-                    elif self.module.math_mode == 'Integral':
-                        # int = sum(V * dt)
-                        dt = t[1] - t[0] if len(t) > 1 else 1e-6
-                        # cumulative trapezoid
-                        math_data = np.cumsum(source_data) * dt
-                        # Remove DC offset from integral (drift)
-                        math_data = math_data - np.mean(math_data)
-                        
+                if math_data is not None:
                     self.curve_math.setData(t, math_data)
+                    # Auto-scale Math View
+                    mn, mx = np.min(math_data), np.max(math_data)
+                    if mn == mx:
+                        mn -= 0.1
+                        mx += 0.1
+                    padding = (mx - mn) * 0.1
+                    self.math_view.setYRange(mn - padding, mx + padding)
                 else:
                     self.curve_math.setData([], [])
             else:
