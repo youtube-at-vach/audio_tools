@@ -40,6 +40,13 @@ class DistortionAnalyzer(MeasurementModule):
         self.imd_f2 = 7000.0
         self.imd_ratio = 4.0 # 4:1 for SMPTE
         
+        # Multi-tone Settings
+        self.multitone_count = 31
+        self.multitone_min = 20.0
+        self.multitone_max = 20000.0
+        self._multitone_phases = None
+        self._multitone_freqs = None
+        
         # Playback state
         self._phase_f1 = 0.0
         self._phase_f1 = 0.0
@@ -115,6 +122,8 @@ class DistortionAnalyzer(MeasurementModule):
                 # Check signal type
                 if self.signal_type == 'smpte' or self.signal_type == 'ccif':
                     sine_wave = self._generate_dual_tone(frames, sample_rate)
+                elif self.signal_type == 'multitone':
+                    sine_wave = self._generate_multitone(frames, sample_rate)
                 else:
                     t = (np.arange(frames) + phase) / sample_rate
                     phase += frames
@@ -178,6 +187,57 @@ class DistortionAnalyzer(MeasurementModule):
         self._phase_f2 = (self._phase_f2 + frames * phase_inc_f2) % (2 * np.pi)
         
         signal = amp_f1 * np.sin(phases_f1) + amp_f2 * np.sin(phases_f2)
+        return signal
+
+    def _generate_multitone(self, frames, sample_rate):
+        # Generate log-spaced frequencies
+        if self._multitone_freqs is None or len(self._multitone_freqs) != self.multitone_count:
+            self._multitone_freqs = np.logspace(np.log10(self.multitone_min), np.log10(self.multitone_max), self.multitone_count)
+            # Random phases
+            self._multitone_phases = np.random.uniform(0, 2*np.pi, self.multitone_count)
+            
+        # Amplitude per tone
+        # To keep peak roughly constant, amp per tone ~ Total / N (conservative)
+        # Or Total / sqrt(N) (constant RMS).
+        # Let's use Total / sqrt(N) but scale down slightly to avoid clipping due to crest factor.
+        # Crest factor for random phase multitone is approx 10-12dB (3-4x).
+        # So if we want peak 1.0, RMS should be ~0.25.
+        # Total RMS = sqrt(N * amp_per_tone^2 / 2).
+        # 0.25 = sqrt(N) * amp_per_tone / 1.414
+        # amp_per_tone = 0.25 * 1.414 / sqrt(N) = 0.35 / sqrt(N)
+        # Let's just use self.gen_amplitude / sqrt(N) and let user adjust volume.
+        
+        amp_per_tone = self.gen_amplitude / np.sqrt(self.multitone_count)
+        
+        t = np.arange(frames) / sample_rate
+        signal = np.zeros(frames)
+        
+        for i, f in enumerate(self._multitone_freqs):
+            phase = self._multitone_phases[i]
+            # Continuous phase update
+            # We need to track phase state for each tone?
+            # For simplicity in this block-based generation without state tracking per tone:
+            # We can't easily do continuous phase for 31 tones without 31 state variables.
+            # BUT, if we just use t relative to start of stream?
+            # We don't have absolute time passed in callback easily (we have 'time' but it's system time).
+            # Let's add state tracking.
+            
+            # Actually, let's just use a static buffer approach if possible?
+            # No, we need continuous generation.
+            # Let's use a simple state array.
+            pass
+            
+        # Re-implement with state array
+        if not hasattr(self, '_multitone_phase_state') or len(self._multitone_phase_state) != self.multitone_count:
+            self._multitone_phase_state = np.random.uniform(0, 2*np.pi, self.multitone_count)
+            
+        t_idx = np.arange(frames)
+        for i, f in enumerate(self._multitone_freqs):
+            inc = 2 * np.pi * f / sample_rate
+            phases = self._multitone_phase_state[i] + t_idx * inc
+            signal += amp_per_tone * np.sin(phases)
+            self._multitone_phase_state[i] = (self._multitone_phase_state[i] + frames * inc) % (2 * np.pi)
+            
         return signal
 
     def stop_analysis(self):
@@ -304,7 +364,7 @@ class DistortionAnalyzerWidget(QWidget):
         
         # Output Mode
         self.out_mode_combo = QComboBox()
-        self.out_mode_combo.addItems(["Off (External Source)", "Sine Wave", "SMPTE IMD", "CCIF IMD"])
+        self.out_mode_combo.addItems(["Off (External Source)", "Sine Wave", "SMPTE IMD", "CCIF IMD", "Multi-tone"])
         self.out_mode_combo.currentIndexChanged.connect(self.on_out_mode_changed)
         rt_layout.addRow("Signal Generator:", self.out_mode_combo)
         
@@ -350,7 +410,34 @@ class DistortionAnalyzerWidget(QWidget):
         imd_gen_layout.addRow("Ratio (F1:F2):", self.imd_ratio_spin)
         
         imd_gen_widget.setLayout(imd_gen_layout)
+        imd_gen_widget.setLayout(imd_gen_layout)
         self.gen_stack.addWidget(imd_gen_widget)
+        
+        # 3. Multi-tone Settings
+        mt_gen_widget = QWidget()
+        mt_gen_layout = QFormLayout()
+        mt_gen_layout.setContentsMargins(0,0,0,0)
+        
+        self.mt_count_spin = QSpinBox()
+        self.mt_count_spin.setRange(3, 100)
+        self.mt_count_spin.setValue(self.module.multitone_count)
+        self.mt_count_spin.valueChanged.connect(lambda v: setattr(self.module, 'multitone_count', v))
+        mt_gen_layout.addRow("Tone Count:", self.mt_count_spin)
+        
+        self.mt_min_spin = QDoubleSpinBox()
+        self.mt_min_spin.setRange(10, 20000)
+        self.mt_min_spin.setValue(self.module.multitone_min)
+        self.mt_min_spin.valueChanged.connect(lambda v: setattr(self.module, 'multitone_min', v))
+        mt_gen_layout.addRow("Min Freq:", self.mt_min_spin)
+        
+        self.mt_max_spin = QDoubleSpinBox()
+        self.mt_max_spin.setRange(10, 24000)
+        self.mt_max_spin.setValue(self.module.multitone_max)
+        self.mt_max_spin.valueChanged.connect(lambda v: setattr(self.module, 'multitone_max', v))
+        mt_gen_layout.addRow("Max Freq:", self.mt_max_spin)
+        
+        mt_gen_widget.setLayout(mt_gen_layout)
+        self.gen_stack.addWidget(mt_gen_widget)
         
         rt_layout.addRow(self.gen_stack)
         
@@ -457,9 +544,23 @@ class DistortionAnalyzerWidget(QWidget):
         imd_meter_layout.setContentsMargins(0,0,0,0)
         imd_meter_layout.addWidget(QLabel("IMD:"))
         imd_meter_layout.addWidget(self.imd_label)
+        imd_meter_layout.addWidget(self.imd_label)
         imd_meter_layout.addWidget(self.imd_db_label)
         meters_layout.addWidget(self.imd_meter_widget)
         self.imd_meter_widget.setVisible(False)
+        
+        # TD+N Meter (Multi-tone)
+        self.tdn_label = QLabel("-- %")
+        self.tdn_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #55ff55;")
+        self.tdn_db_label = QLabel("-- dB")
+        self.tdn_meter_widget = QWidget()
+        tdn_meter_layout = QVBoxLayout(self.tdn_meter_widget)
+        tdn_meter_layout.setContentsMargins(0,0,0,0)
+        tdn_meter_layout.addWidget(QLabel("TD+N:"))
+        tdn_meter_layout.addWidget(self.tdn_label)
+        tdn_meter_layout.addWidget(self.tdn_db_label)
+        meters_layout.addWidget(self.tdn_meter_widget)
+        self.tdn_meter_widget.setVisible(False)
         
         self.meters_group.setLayout(meters_layout)
         left_panel.addWidget(self.meters_group)
@@ -604,7 +705,14 @@ class DistortionAnalyzerWidget(QWidget):
                 self.module.imd_f2 = 20000.0
                 self.imd_f1_spin.setValue(19000.0)
                 self.imd_f2_spin.setValue(20000.0)
+                self.imd_f2_spin.setValue(20000.0)
                 self.imd_ratio_spin.setEnabled(False)
+            elif idx == 4: # Multi-tone
+                self.module.signal_type = 'multitone'
+                self.gen_stack.setCurrentIndex(2)
+                self.set_meters_mode('multitone')
+                # Reset freqs to trigger regen
+                self.module._multitone_freqs = None
 
     def on_unit_changed(self, unit):
         # Update spin box range/value based on current amplitude
@@ -688,12 +796,21 @@ class DistortionAnalyzerWidget(QWidget):
             self.thd_label.setVisible(True)
             self.sinad_label.setVisible(True)
             self.imd_meter_widget.setVisible(False)
-        else:
+            self.tdn_meter_widget.setVisible(False)
+        elif mode == 'multitone':
+            self.thdn_label.setVisible(False)
+            self.thdn_db_label.setVisible(False)
+            self.thd_label.setVisible(False)
+            self.sinad_label.setVisible(False)
+            self.imd_meter_widget.setVisible(False)
+            self.tdn_meter_widget.setVisible(True)
+        else: # imd
             self.thdn_label.setVisible(False)
             self.thdn_db_label.setVisible(False)
             self.thd_label.setVisible(False)
             self.sinad_label.setVisible(False)
             self.imd_meter_widget.setVisible(True)
+            self.tdn_meter_widget.setVisible(False)
 
 
     def start_sweep(self, mode):
@@ -778,6 +895,21 @@ class DistortionAnalyzerWidget(QWidget):
             self.imd_db_label.setText(f"{res['imd_db']:.2f} dB")
             
             # For plotting, convert to dBFS
+            mag_db = 20 * np.log10(mag + 1e-12)
+            self.spectrum_curve.setData(freqs[1:], mag_db[1:])
+            
+        elif self.module.signal_type == 'multitone':
+            window = get_window(self.module.window_type, len(data))
+            fft_data = np.fft.rfft(data * window)
+            mag = np.abs(fft_data) * (2 / np.sum(window))
+            freqs = np.fft.rfftfreq(len(data), 1/sample_rate)
+            
+            # Ensure we have tone freqs
+            if self.module._multitone_freqs is not None:
+                res = AudioCalc.calculate_multitone_tdn(mag, freqs, self.module._multitone_freqs)
+                self.tdn_label.setText(f"{res['tdn']:.4f} %")
+                self.tdn_db_label.setText(f"{res['tdn_db']:.2f} dB")
+            
             mag_db = 20 * np.log10(mag + 1e-12)
             self.spectrum_curve.setData(freqs[1:], mag_db[1:])
             

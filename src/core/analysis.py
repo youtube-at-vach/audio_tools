@@ -302,3 +302,46 @@ class AudioCalc:
             'imd': imd * 100,
             'imd_db': 20 * np.log10(imd) if imd > 1e-9 else -100.0
         }
+
+    @staticmethod
+    def calculate_multitone_tdn(mag, freqs, tone_freqs, window_width_pct=0.05):
+        """
+        Calculates Multi-tone TD+N.
+        mag: Linear magnitude spectrum
+        freqs: Frequency bins
+        tone_freqs: List of expected tone frequencies
+        """
+        # Use a mask to identify bins belonging to tones
+        is_tone_bin = np.zeros(len(mag), dtype=bool)
+        
+        for f in tone_freqs:
+            # Find peak near f
+            width = max(10.0, f * window_width_pct)
+            mask_search = (freqs >= f - width) & (freqs <= f + width)
+            
+            if np.any(mask_search):
+                subset_idxs = np.where(mask_search)[0]
+                subset_mag = mag[subset_idxs]
+                local_peak_idx_rel = np.argmax(subset_mag)
+                peak_idx = subset_idxs[local_peak_idx_rel]
+                
+                # Mark bins around peak as tone
+                # Blackman-Harris main lobe is approx +/- 4 bins
+                start = max(0, peak_idx - 4)
+                end = min(len(mag), peak_idx + 5)
+                is_tone_bin[start:end] = True
+                
+        # Calculate Energies
+        # We can sum squares directly
+        tone_energy = np.sum(mag[is_tone_bin]**2)
+        noise_energy = np.sum(mag[~is_tone_bin]**2)
+        
+        if tone_energy <= 1e-12:
+            return {'tdn': 0.0, 'tdn_db': -100.0}
+            
+        tdn = np.sqrt(noise_energy / tone_energy)
+        
+        return {
+            'tdn': tdn * 100,
+            'tdn_db': 20 * np.log10(tdn) if tdn > 1e-9 else -100.0
+        }
