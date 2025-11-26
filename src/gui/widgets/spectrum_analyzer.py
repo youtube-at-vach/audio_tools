@@ -190,7 +190,7 @@ class SpectrumAnalyzerWidget(QWidget):
         # Mode Selection
         row1_layout.addWidget(QLabel("Mode:"))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(['Spectrum', 'Cross Spectrum'])
+        self.mode_combo.addItems(['Spectrum', 'PSD', 'Cross Spectrum'])
         self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
         row1_layout.addWidget(self.mode_combo)
 
@@ -348,6 +348,8 @@ class SpectrumAnalyzerWidget(QWidget):
             freq = 10**x
             
             unit = "dBV" if self.module.use_physical_units else "dBFS"
+            if self.module.analysis_mode == 'PSD':
+                unit += "/√Hz"
             self.cursor_label.setText(f"Cursor: {freq:.1f} Hz, {y:.1f} {unit}")
             self.v_line.setPos(x)
             self.h_line.setPos(y)
@@ -376,6 +378,12 @@ class SpectrumAnalyzerWidget(QWidget):
             self.channel_combo.setEnabled(False)
         else:
             self.channel_combo.setEnabled(True)
+            
+        # Update Y-axis label
+        unit = "dBV" if self.module.use_physical_units else "dBFS"
+        if val == 'PSD':
+            unit += "/√Hz"
+        self.plot_widget.setLabel('left', 'Magnitude', units=unit)
 
     def on_channel_changed(self, val):
         self.module.channel_mode = val
@@ -418,7 +426,10 @@ class SpectrumAnalyzerWidget(QWidget):
 
     def on_physical_units_changed(self, checked):
         self.module.use_physical_units = checked
+        self.module.use_physical_units = checked
         unit = "dBV" if checked else "dBFS"
+        if self.module.analysis_mode == 'PSD':
+            unit += "/√Hz"
         self.plot_widget.setLabel('left', 'Magnitude', units=unit)
         # Reset peak to avoid mixing units
         self.module._peak_magnitude = None
@@ -536,6 +547,34 @@ class SpectrumAnalyzerWidget(QWidget):
                 # Convert to dB
                 magnitude = 20 * np.log10(mag_linear + 1e-12)
                 
+            elif self.module.analysis_mode == 'PSD':
+                # Multitaper PSD (Voltage Noise Density)
+                # Calculate average PSD across tapers
+                psd_accum_0 = np.zeros(len(freqs))
+                psd_accum_1 = np.zeros(len(freqs))
+                
+                for k in range(K):
+                    w = windows[k]
+                    fft_0 = np.fft.rfft(data[:, 0] * w)
+                    psd_accum_0 += np.abs(fft_0)**2
+                    fft_1 = np.fft.rfft(data[:, 1] * w)
+                    psd_accum_1 += np.abs(fft_1)**2
+                
+                psd_avg_0 = psd_accum_0 / K
+                psd_avg_1 = psd_accum_1 / K
+                
+                # Combine channels (average power)
+                psd_total = (psd_avg_0 + psd_avg_1) / 2
+                
+                # Normalize to V/rtHz
+                # psd_total is approx sigma^2 (Power) if window energy is 1.
+                # Density = Power * 2 / fs (Single-sided)
+                # V_density = sqrt(Density)
+                
+                mag_linear = np.sqrt(psd_total * 2 / sample_rate)
+                
+                magnitude = 20 * np.log10(mag_linear + 1e-12)
+                
             elif self.module.analysis_mode == 'Cross Spectrum':
                 # Average Cross Spectrum over K windows
                 cs_accum = np.zeros(len(freqs), dtype=complex)
@@ -568,8 +607,8 @@ class SpectrumAnalyzerWidget(QWidget):
                 mag_linear = np.sqrt(np.abs(avg_cs)) / np.sqrt(len(data))
                 magnitude = 20 * np.log10(mag_linear + 1e-12)
 
-            # Temporal Averaging for Spectrum Mode
-            if self.module.analysis_mode == 'Spectrum':
+            # Temporal Averaging for Spectrum/PSD Mode
+            if self.module.analysis_mode in ['Spectrum', 'PSD']:
                 if self.module._avg_magnitude is None:
                     self.module._avg_magnitude = mag_linear
                 else:
@@ -660,6 +699,71 @@ class SpectrumAnalyzerWidget(QWidget):
                 magnitude_linear = self.module._avg_magnitude
                 magnitude = 20 * np.log10(magnitude_linear + 1e-12)
                 
+            elif self.module.analysis_mode == 'PSD':
+                # Power Spectral Density (Voltage Noise Density)
+                # We want V/rtHz.
+                # Currently mag_mono is Peak Amplitude (V_peak).
+                # We need to convert to V_rms/rtHz.
+                
+                # 1. Convert Peak to RMS
+                # mag_rms = mag_mono / sqrt(2)
+                
+                # 2. Normalize by Noise Bandwidth (NBW)
+                # NBW = fs * sum(w^2) / (sum(w)^2)
+                # LSD = mag_rms / sqrt(NBW)
+                
+                # Combining with existing normalization:
+                # mag_mono = |X| * (2 / sum(w))
+                # LSD = (|X| * (2 / sum(w)) / sqrt(2)) / sqrt(fs * sum(w^2) / sum(w)^2)
+                #     = |X| * sqrt(2)/sum(w) * sum(w) / sqrt(fs * sum(w^2))
+                #     = |X| * sqrt(2) / sqrt(fs * sum(w^2))
+                #     = |X| * sqrt(2 / (fs * sum(w^2)))
+                
+                # Alternatively, using mag_mono directly:
+                # LSD = (mag_mono / sqrt(2)) / sqrt(fs * sum(w^2) / sum(w)^2)
+                #     = mag_mono * sum(w) / sqrt(2 * fs * sum(w^2))
+                
+                sum_w = np.sum(window)
+                sum_w2 = np.sum(window**2)
+                fs = sample_rate
+                
+                # Conversion factor from Peak Amplitude to V/rtHz
+                psd_factor = sum_w / np.sqrt(2 * fs * sum_w2)
+                
+                mag_stereo = np.abs(fft_data)
+                
+                # Apply standard normalization first to get Peak Amplitude
+                mag_stereo = mag_stereo * norm_factor
+                
+                # Apply PSD factor
+                mag_stereo = mag_stereo * psd_factor
+                
+                # Channel Selection
+                if self.module.channel_mode == 'Left':
+                    mag_mono = mag_stereo[:, 0]
+                elif self.module.channel_mode == 'Right':
+                    mag_mono = mag_stereo[:, 1]
+                elif self.module.channel_mode == 'Average':
+                    # Average the Power (V^2/Hz), then sqrt
+                    # mag_stereo is V/rtHz. Square to get V^2/Hz.
+                    pow_stereo = mag_stereo**2
+                    avg_pow = np.mean(pow_stereo, axis=1)
+                    mag_mono = np.sqrt(avg_pow)
+                elif self.module.channel_mode == 'Dual':
+                    # Not fully supported in display yet, fallback to Left
+                    mag_mono = mag_stereo[:, 0]
+                else:
+                    mag_mono = mag_stereo[:, 0]
+                
+                # Averaging
+                if self.module._avg_magnitude is None or self.module._avg_magnitude.shape != mag_mono.shape:
+                    self.module._avg_magnitude = mag_mono
+                else:
+                    alpha = self.module.averaging
+                    self.module._avg_magnitude = alpha * self.module._avg_magnitude + (1 - alpha) * mag_mono
+                
+                magnitude_linear = self.module._avg_magnitude
+                magnitude = 20 * np.log10(magnitude_linear + 1e-12)
                 
             elif self.module.analysis_mode == 'Cross Spectrum':
                 # Cross Spectrum
