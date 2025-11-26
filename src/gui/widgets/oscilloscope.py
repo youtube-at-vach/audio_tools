@@ -2,10 +2,11 @@ import argparse
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QComboBox, QCheckBox, QSlider, QGroupBox, QDoubleSpinBox)
+                             QComboBox, QCheckBox, QSlider, QGroupBox, QDoubleSpinBox, QStackedWidget, QFormLayout)
 from PyQt6.QtCore import QTimer, Qt
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
+from src.core.analysis import AudioCalc
 
 class Oscilloscope(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -27,6 +28,12 @@ class Oscilloscope(MeasurementModule):
         
         # Math Mode
         self.math_mode = 'Off' # 'Off', 'Derivative', 'Integral'
+        
+        # Filter Settings
+        self.filter_type = 'None' # 'None', 'LPF', 'HPF', 'BPF'
+        self.filter_cutoff = 1000.0 # For LPF/HPF
+        self.filter_low = 1000.0 # For BPF
+        self.filter_high = 2000.0 # For BPF
         
         self.callback_id = None
         
@@ -349,6 +356,57 @@ class OscilloscopeWidget(QWidget):
         tools_group.setLayout(tools_layout)
         right_layout.addWidget(tools_group)
         
+        # 5. Filter Controls
+        filter_group = QGroupBox("Filter")
+        filter_layout = QVBoxLayout()
+        
+        hbox_ft = QHBoxLayout()
+        hbox_ft.addWidget(QLabel("Type:"))
+        self.filter_combo = QComboBox()
+        self.filter_combo.addItems(['None', 'LPF', 'HPF', 'BPF'])
+        self.filter_combo.currentTextChanged.connect(self.on_filter_type_changed)
+        hbox_ft.addWidget(self.filter_combo)
+        filter_layout.addLayout(hbox_ft)
+        
+        self.filter_stack = QStackedWidget()
+        
+        # None Page
+        self.filter_stack.addWidget(QWidget())
+        
+        # LPF/HPF Page
+        lpf_widget = QWidget()
+        lpf_layout = QFormLayout()
+        lpf_layout.setContentsMargins(0,0,0,0)
+        self.cutoff_spin = QDoubleSpinBox()
+        self.cutoff_spin.setRange(10, 24000)
+        self.cutoff_spin.setValue(self.module.filter_cutoff)
+        self.cutoff_spin.valueChanged.connect(lambda v: setattr(self.module, 'filter_cutoff', v))
+        lpf_layout.addRow("Cutoff (Hz):", self.cutoff_spin)
+        lpf_widget.setLayout(lpf_layout)
+        self.filter_stack.addWidget(lpf_widget)
+        
+        # BPF Page
+        bpf_widget = QWidget()
+        bpf_layout = QFormLayout()
+        bpf_layout.setContentsMargins(0,0,0,0)
+        self.bpf_low_spin = QDoubleSpinBox()
+        self.bpf_low_spin.setRange(10, 24000)
+        self.bpf_low_spin.setValue(self.module.filter_low)
+        self.bpf_low_spin.valueChanged.connect(lambda v: setattr(self.module, 'filter_low', v))
+        bpf_layout.addRow("Low (Hz):", self.bpf_low_spin)
+        
+        self.bpf_high_spin = QDoubleSpinBox()
+        self.bpf_high_spin.setRange(10, 24000)
+        self.bpf_high_spin.setValue(self.module.filter_high)
+        self.bpf_high_spin.valueChanged.connect(lambda v: setattr(self.module, 'filter_high', v))
+        bpf_layout.addRow("High (Hz):", self.bpf_high_spin)
+        bpf_widget.setLayout(bpf_layout)
+        self.filter_stack.addWidget(bpf_widget)
+        
+        filter_layout.addWidget(self.filter_stack)
+        filter_group.setLayout(filter_layout)
+        right_layout.addWidget(filter_group)
+        
         # Math Curve
         # Create a new ViewBox for Math
         self.math_view = pg.ViewBox()
@@ -522,6 +580,15 @@ class OscilloscopeWidget(QWidget):
         
         self.cursor_info_label.setText(f"T1: {t1*1000:.2f}ms {v1_str} | T2: {t2*1000:.2f}ms {v2_str} | dT: {dt*1000:.2f}ms ({freq:.1f}Hz) | {dv_str}")
 
+    def on_filter_type_changed(self, text):
+        self.module.filter_type = text
+        if text == 'None':
+            self.filter_stack.setCurrentIndex(0)
+        elif text == 'BPF':
+            self.filter_stack.setCurrentIndex(2)
+        else:
+            self.filter_stack.setCurrentIndex(1) # LPF/HPF share same widget
+
     def update_plot(self):
         if not self.module.is_running:
             return
@@ -530,6 +597,29 @@ class OscilloscopeWidget(QWidget):
         data = self.module.get_display_data(window_duration)
         
         if data is not None:
+            # Apply Filter if enabled
+            sr = self.module.audio_engine.sample_rate
+            if self.module.filter_type != 'None':
+                # Filter both channels
+                # Note: filtering short segments might have transient artifacts at edges.
+                # Ideally we filter the continuous buffer, but for visualization this might be acceptable
+                # if the segment is long enough or if we accept the edge effects.
+                # get_display_data returns a copy, so we can modify it.
+                
+                # To reduce edge artifacts, we could fetch a bit more data, filter, then trim?
+                # get_display_data logic is complex with trigger.
+                # Let's try direct filtering first.
+                
+                if self.module.filter_type == 'LPF':
+                    data[:, 0] = AudioCalc.lowpass_filter(data[:, 0], sr, self.module.filter_cutoff)
+                    data[:, 1] = AudioCalc.lowpass_filter(data[:, 1], sr, self.module.filter_cutoff)
+                elif self.module.filter_type == 'HPF':
+                    data[:, 0] = AudioCalc.highpass_filter(data[:, 0], sr, self.module.filter_cutoff)
+                    data[:, 1] = AudioCalc.highpass_filter(data[:, 1], sr, self.module.filter_cutoff)
+                elif self.module.filter_type == 'BPF':
+                    data[:, 0] = AudioCalc.bandpass_filter(data[:, 0], sr, self.module.filter_low, self.module.filter_high)
+                    data[:, 1] = AudioCalc.bandpass_filter(data[:, 1], sr, self.module.filter_low, self.module.filter_high)
+
             # Measurements
             l_data = data[:, 0]
             r_data = data[:, 1]

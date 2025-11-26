@@ -16,6 +16,20 @@ class AudioCalc:
             return signal
         sos = butter(8, [lowcut / nyquist, highcut / nyquist], btype='bandpass', output='sos')
         return sosfiltfilt(sos, signal)
+
+    @staticmethod
+    def lowpass_filter(signal, sampling_rate, cutoff=20000.0):
+        nyquist = 0.5 * sampling_rate
+        cutoff = min(nyquist - 1, max(0.1, cutoff))
+        sos = butter(8, cutoff / nyquist, btype='lowpass', output='sos')
+        return sosfiltfilt(sos, signal)
+
+    @staticmethod
+    def highpass_filter(signal, sampling_rate, cutoff=20.0):
+        nyquist = 0.5 * sampling_rate
+        cutoff = min(nyquist - 1, max(0.1, cutoff))
+        sos = butter(8, cutoff / nyquist, btype='highpass', output='sos')
+        return sosfiltfilt(sos, signal)
     
     @staticmethod
     def notch_filter(signal, sampling_rate, target_frequency, quality_factor=30):
