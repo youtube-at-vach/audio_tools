@@ -29,6 +29,9 @@ class AudioEngine:
         self.callbacks = {} # id -> callback
         self.next_callback_id = 0
         self.lock = threading.Lock()
+        
+        # Status Monitoring
+        self.accumulated_status = sd.CallbackFlags()
 
     def list_devices(self):
         """Returns a list of available audio devices."""
@@ -109,6 +112,9 @@ class AudioEngine:
         hw_out_ch = 2 if out_mode in ['right', 'stereo'] else 1
         
         def master_callback(indata, outdata, frames, time, status):
+            if status:
+                self.accumulated_status |= status
+                
             # Zero out master output buffer first
             outdata.fill(0)
             
@@ -228,6 +234,10 @@ class AudioEngine:
         with self.lock:
             client_count = len(self.callbacks)
             
+        # Get and reset accumulated status
+        current_status_flags = self.accumulated_status
+        self.accumulated_status = sd.CallbackFlags()
+            
         return {
             "active": active,
             "input_channels": self.input_channel_mode,
@@ -236,7 +246,8 @@ class AudioEngine:
             "cpu_load": cpu_load,
             "active_clients": client_count,
             "input_device": self.input_device,
-            "output_device": self.output_device
+            "output_device": self.output_device,
+            "status_flags": current_status_flags
         }
 
     # Legacy method support (deprecated but kept for compatibility during transition if needed)
