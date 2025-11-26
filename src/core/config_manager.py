@@ -67,3 +67,12 @@ class ConfigManager:
         """Updates the language setting."""
         self.config["language"] = lang_code
         self.save_config()
+
+    def get_theme(self):
+        """Returns the saved theme, defaults to 'system'."""
+        return self.config.get("theme", "system")
+
+    def set_theme(self, theme_name):
+        """Updates the theme setting."""
+        self.config["theme"] = theme_name
+        self.save_config()

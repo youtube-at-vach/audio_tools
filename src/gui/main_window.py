@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QStackedWidget, QStatusBar
+from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QStackedWidget, QStatusBar, QApplication
 from PyQt6.QtCore import Qt, QTimer
 from src.core.audio_engine import AudioEngine
 from src.core.config_manager import ConfigManager
@@ -31,6 +31,17 @@ class MainWindow(QMainWindow):
         get_manager().load_language(lang)
         
         self.audio_engine = AudioEngine()
+        
+        # Initialize Theme Manager
+        from src.core.theme_manager import ThemeManager
+        self.theme_manager = ThemeManager(QApplication.instance())
+        # Make it accessible from app instance for SettingsWidget
+        QApplication.instance().theme_manager = self.theme_manager
+        
+        # Load and apply saved theme
+        saved_theme = self.config_manager.get_theme()
+        self.theme_manager.set_theme(saved_theme)
+
         
         # Load saved config
         audio_cfg = self.config_manager.get_audio_config()
