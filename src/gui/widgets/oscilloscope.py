@@ -206,6 +206,8 @@ class OscilloscopeWidget(QWidget):
         self.chk_left.toggled.connect(lambda x: setattr(self.module, 'show_left', x))
         controls_layout.addWidget(self.chk_left)
         
+        self.chk_right = QCheckBox("R")
+        self.chk_right.setChecked(True)
         self.chk_right.toggled.connect(lambda x: setattr(self.module, 'show_right', x))
         controls_layout.addWidget(self.chk_right)
         
@@ -289,9 +291,9 @@ class OscilloscopeWidget(QWidget):
         self.curve_l = self.plot_widget.plot(pen=pg.mkPen('#00ff00', width=2), name="Left")
         self.curve_r = self.plot_widget.plot(pen=pg.mkPen('#ff0000', width=2), name="Right")
         
-        # Trigger Level Line
-        self.trig_line.sigPositionChanged.connect(self.on_trig_line_moved)
-        self.plot_widget.addItem(self.trig_line)
+        # # Trigger Level Line
+        # self.trig_line.sigPositionChanged.connect(self.on_trig_line_moved)
+        # self.plot_widget.addItem(self.trig_line)
         
         # Cursors (Hidden by default)
         self.cursor_1 = pg.InfiniteLine(angle=90, movable=True, pen=pg.mkPen('c', width=1), label='C1', labelOpts={'position':0.1})
@@ -367,7 +369,7 @@ class OscilloscopeWidget(QWidget):
 
     def on_trig_level_changed(self, val):
         self.module.trigger_level = val
-        self.trig_line.setPos(val)
+        # self.trig_line.setPos(val)
 
         self.module.trigger_level = val
         
