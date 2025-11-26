@@ -345,3 +345,114 @@ class AudioCalc:
             'tdn': tdn * 100,
             'tdn_db': 20 * np.log10(tdn) if tdn > 1e-9 else -100.0
         }
+
+    @staticmethod
+    def calculate_spdr(mag, freqs, fundamental_freq, window_width_pct=0.1):
+        """
+        Calculates Spurious-Free Dynamic Range (SPDR).
+        SPDR is the ratio of the fundamental signal power to the power of the 
+        largest spurious signal (harmonic or non-harmonic).
+        """
+        # Find Fundamental Peak
+        width = max(10.0, fundamental_freq * window_width_pct)
+        fund_mask = (freqs >= fundamental_freq - width) & (freqs <= fundamental_freq + width)
+        
+        if not np.any(fund_mask):
+            return {'spdr_db': 0.0, 'max_spur_freq': 0.0, 'max_spur_amp': 0.0}
+            
+        fund_amp = np.max(mag[fund_mask])
+        
+        if fund_amp < 1e-9:
+             return {'spdr_db': 0.0, 'max_spur_freq': 0.0, 'max_spur_amp': 0.0}
+             
+        # Mask out fundamental for spur search
+        # We also typically mask out DC
+        search_mask = (freqs > 20.0) & ~fund_mask
+        
+        if not np.any(search_mask):
+             return {'spdr_db': 100.0, 'max_spur_freq': 0.0, 'max_spur_amp': 0.0}
+             
+        # Find max spur
+        spur_idx_rel = np.argmax(mag[search_mask])
+        spur_idxs = np.where(search_mask)[0]
+        spur_idx = spur_idxs[spur_idx_rel]
+        
+        spur_amp = mag[spur_idx]
+        spur_freq = freqs[spur_idx]
+        
+        if spur_amp < 1e-12:
+            spdr_db = 140.0 # High dynamic range
+        else:
+            spdr_db = 20 * np.log10(fund_amp / spur_amp)
+            
+        return {
+            'spdr_db': spdr_db,
+            'max_spur_freq': spur_freq,
+            'max_spur_amp': spur_amp
+        }
+
+    @staticmethod
+    def calculate_pim(mag, freqs, f1, f2, order=3):
+        """
+        Calculates Passive Intermodulation (PIM) / Phase Intermodulation.
+        For 2-tone test, PIM usually manifests as IMD products.
+        This implementation focuses on odd-order IMD products which are typical for PIM.
+        """
+        # Similar to IMD CCIF/SMPTE but we look for specific PIM orders (IM3, IM5, IM7)
+        # IM3: 2f1 - f2, 2f2 - f1
+        # IM5: 3f1 - 2f2, 3f2 - 2f1
+        # IM7: 4f1 - 3f2, 4f2 - 3f1
+        
+        # Find carrier amplitudes
+        amp_f1 = AudioCalc._find_peak(mag, freqs, f1)
+        amp_f2 = AudioCalc._find_peak(mag, freqs, f2)
+        carrier_amp = (amp_f1 + amp_f2) / 2 # Average carrier power
+        
+        if carrier_amp < 1e-6:
+            return {'pim_db': -100.0, 'products': []}
+            
+        products = []
+        sum_sq_pim = 0.0
+        
+        # Calculate up to specified order (must be odd)
+        for n in range(3, order + 2, 2):
+            # n is order (3, 5, 7...)
+            # For order n, coeffs sum to 1? No.
+            # IM3: 2,-1 (sum 1). 
+            # IM5: 3,-2 (sum 1).
+            # General: k * f1 - (k-1) * f2
+            # where 2k - 1 = n => k = (n+1)/2
+            
+            k = (n + 1) // 2
+            m = k - 1
+            
+            # Lower side
+            im_low = k * f1 - m * f2
+            # Upper side
+            im_high = k * f2 - m * f1
+            
+            amp_low = AudioCalc._find_peak(mag, freqs, im_low) if im_low > 0 else 0
+            amp_high = AudioCalc._find_peak(mag, freqs, im_high)
+            
+            sum_sq_pim += amp_low**2 + amp_high**2
+            
+            products.append({
+                'order': n,
+                'freq_low': im_low,
+                'amp_low': amp_low,
+                'freq_high': im_high,
+                'amp_high': amp_high
+            })
+            
+        pim_rms = np.sqrt(sum_sq_pim)
+        
+        if pim_rms < 1e-12:
+            pim_db = -140.0
+        else:
+            # PIM is often relative to carrier power (dBc)
+            pim_db = 20 * np.log10(pim_rms / carrier_amp)
+            
+        return {
+            'pim_db': pim_db,
+            'products': products
+        }

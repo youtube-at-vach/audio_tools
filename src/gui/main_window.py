@@ -9,6 +9,7 @@ from src.gui.widgets.lufs_meter import LufsMeter
 from src.gui.widgets.loopback_finder import LoopbackFinder
 from src.gui.widgets.network_analyzer import NetworkAnalyzer
 from src.gui.widgets.distortion_analyzer import DistortionAnalyzer
+from src.gui.widgets.advanced_distortion_meter import AdvancedDistortionMeter
 from src.gui.widgets.oscilloscope import Oscilloscope
 from src.gui.widgets.lock_in_amplifier import LockInAmplifier
 from src.gui.widgets.welcome import WelcomeWidget
@@ -99,6 +100,7 @@ class MainWindow(QMainWindow):
             LufsMeter(self.audio_engine),
             LoopbackFinder(self.audio_engine),
             DistortionAnalyzer(self.audio_engine),
+            AdvancedDistortionMeter(self.audio_engine),
             NetworkAnalyzer(self.audio_engine),
             Oscilloscope(self.audio_engine),
             LockInAmplifier(self.audio_engine),
