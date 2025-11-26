@@ -39,12 +39,10 @@ jobs:
       id: changelog
       shell: bash
       run: |
-        VERSION=${GITHUB_REF#refs/tags/}
-        # Extract content between version header and next version header
-        sed -n "/## \[${VERSION#v}\]/,/## \[/p" CHANGELOG.md | sed '$d' > release_notes.md
+        python misc/extract_changelog.py ${GITHUB_REF#refs/tags/} > release_notes.md
         # If empty, use a default message
         if [ ! -s release_notes.md ]; then
-          echo "Release $VERSION" > release_notes.md
+          echo "Release ${GITHUB_REF#refs/tags/}" > release_notes.md
         fi
 
     - name: Release Windows
@@ -91,12 +89,10 @@ jobs:
     - name: Extract CHANGELOG for version
       id: changelog
       run: |
-        VERSION=${GITHUB_REF#refs/tags/}
-        # Extract content between version header and next version header
-        sed -n "/## \[${VERSION#v}\]/,/## \[/p" CHANGELOG.md | sed '$d' > release_notes.md
+        python misc/extract_changelog.py ${GITHUB_REF#refs/tags/} > release_notes.md
         # If empty, use a default message
         if [ ! -s release_notes.md ]; then
-          echo "Release $VERSION" > release_notes.md
+          echo "Release ${GITHUB_REF#refs/tags/}" > release_notes.md
         fi
 
     - name: Release Linux
