@@ -17,6 +17,7 @@ from src.gui.widgets.frequency_counter import FrequencyCounter
 from src.gui.widgets.spectrogram import Spectrogram
 from src.gui.widgets.boxcar_averager import BoxcarAverager
 from src.gui.widgets.goniometer import Goniometer
+from src.gui.widgets.impedance_analyzer import ImpedanceAnalyzer
 from src.core.localization import get_manager, tr
 
 class MainWindow(QMainWindow):
@@ -108,7 +109,8 @@ class MainWindow(QMainWindow):
             FrequencyCounter(self.audio_engine),
             Spectrogram(self.audio_engine),
             BoxcarAverager(self.audio_engine),
-            Goniometer(self.audio_engine)
+            Goniometer(self.audio_engine),
+            ImpedanceAnalyzer(self.audio_engine)
         ]
         
         # Main layout container
