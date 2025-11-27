@@ -27,8 +27,11 @@ class ImpedanceAnalyzer(MeasurementModule):
         self.shunt_resistance = 100.0
         
         # Calibration Data (Freq -> Complex Z)
+        # Calibration Data (Freq -> Complex Z)
         self.cal_open = {} 
         self.cal_short = {}
+        self.cal_load = {}
+        self.load_standard_real = 100.0 # Ohm
         self.use_calibration = False
         
         # Results
@@ -188,16 +191,13 @@ class ImpedanceAnalyzer(MeasurementModule):
 
     def apply_calibration(self, z_meas, freq):
         """
-        Apply Open/Short calibration.
-        Z_corrected = (Z_meas - Z_short) / (1 - (Z_meas - Z_short) * Y_open)
-        Where Y_open = 1 / Z_open_meas
-        """
-        # Find closest calibration point or interpolate
-        # For simplicity, we look for exact match or nearest neighbor if sweep
-        # In sweep mode, we ensure we measure at same points.
-        # In manual mode, we might not have cal data.
+        Apply Open/Short/Load (OSL) calibration.
+        Formula:
+        Z_dut = Z_std * ((Z_open - Z_load) * (Z_meas - Z_short)) / ((Z_open - Z_meas) * (Z_load - Z_short))
         
-        # Simple Nearest Neighbor for now
+        Fallback to Open/Short (OS) if Load not available:
+        Z_dut = (Z_meas - Z_short) / (1 - (Z_meas - Z_short) * Y_open)
+        """
         if not self.cal_short or not self.cal_open:
             return z_meas
             
@@ -205,16 +205,31 @@ class ImpedanceAnalyzer(MeasurementModule):
         freqs = list(self.cal_short.keys())
         nearest_f = min(freqs, key=lambda x: abs(x - freq))
         
-        # Check if nearest is reasonably close (e.g. within 1%)
+        # Check if nearest is reasonably close (e.g. within 5%)
         if abs(nearest_f - freq) / freq > 0.05:
             return z_meas # No valid cal data
             
         z_short = self.cal_short[nearest_f]
         z_open = self.cal_open[nearest_f]
+        z_load = self.cal_load.get(nearest_f, None)
         
-        # Avoid divide by zero
+        # OSL Calibration
+        if z_load is not None:
+            z_std = self.load_standard_real
+            
+            # Denominator check
+            term1 = z_open - z_meas
+            term2 = z_load - z_short
+            if abs(term1) < 1e-12 or abs(term2) < 1e-12:
+                return z_meas
+                
+            numerator = z_std * (z_open - z_load) * (z_meas - z_short)
+            denominator = term1 * term2
+            
+            return numerator / denominator
+            
+        # OS Calibration (Fallback)
         if z_open == 0: return z_meas
-        
         y_open = 1.0 / z_open
         
         numerator = z_meas - z_short
@@ -329,6 +344,12 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.shunt_spin.setRange(0.1, 1000000); self.shunt_spin.setValue(100.0); self.shunt_spin.setSuffix(" Ohm")
         self.shunt_spin.valueChanged.connect(lambda v: setattr(self.module, 'shunt_resistance', v))
         settings_layout.addRow("Shunt R:", self.shunt_spin)
+        
+        self.load_std_spin = QDoubleSpinBox()
+        self.load_std_spin.setRange(0.1, 1000000); self.load_std_spin.setValue(100.0); self.load_std_spin.setSuffix(" Ohm")
+        self.load_std_spin.setToolTip("Resistance of the Load Standard used for OSL Calibration.")
+        self.load_std_spin.valueChanged.connect(lambda v: setattr(self.module, 'load_standard_real', v))
+        settings_layout.addRow("Load Std R:", self.load_std_spin)
         
         # Channels
         self.out_ch_combo = QComboBox()
@@ -463,6 +484,10 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.btn_short.clicked.connect(lambda: self.start_sweep('short'))
         sweep_form.addRow(self.btn_short)
         
+        self.btn_load = QPushButton("Measure LOAD (Cal)")
+        self.btn_load.clicked.connect(lambda: self.start_sweep('load'))
+        sweep_form.addRow(self.btn_load)
+        
         self.btn_dut = QPushButton("Measure DUT")
         self.btn_dut.clicked.connect(lambda: self.start_sweep(None))
         self.btn_dut.setStyleSheet("font-weight: bold; background-color: #ccccff;")
@@ -492,6 +517,9 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.plot_widget.getPlotItem().getAxis('right').linkToView(self.plot_p)
         self.plot_p.setXLink(self.plot_widget.getPlotItem())
         self.plot_widget.getPlotItem().getAxis('right').setLabel('Phase', units='deg')
+        
+        # Ensure Right Axis is Linear
+        self.plot_widget.getPlotItem().getAxis('right').setLogMode(False)
         
         self.curve_p = pg.PlotCurveItem(pen='c', name='Phase')
         self.plot_p.addItem(self.curve_p)
@@ -545,7 +573,14 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.v_y_lbl.setText(f"{v.imag:.4f} V")
         
         # Current (mA)
-        i_ma = i * 1000
+        # Current (mA)
+        # Calculate actual Current Complex from Voltage across Shunt
+        if self.module.shunt_resistance > 0:
+            i_complex = - self.module.meas_i_complex / self.module.shunt_resistance
+        else:
+            i_complex = 0j
+            
+        i_ma = i_complex * 1000
         self.i_mag_lbl.setText(f"{abs(i_ma):.4f} mA")
         self.i_phase_lbl.setText(f"{np.degrees(np.angle(i_ma)):.2f}°")
         self.i_x_lbl.setText(f"{i_ma.real:.4f} mA")
@@ -567,6 +602,14 @@ class ImpedanceAnalyzerWidget(QWidget):
         steps = self.sw_steps.value()
         log = self.sw_log.isChecked()
         
+        # Update Plot Mode based on Sweep Mode
+        self.plot_widget.getPlotItem().setLogMode(x=log, y=True) # Z is always Log Y
+        self.plot_widget.getPlotItem().getAxis('right').setLogMode(False) # Phase is Linear
+        
+        # Reset AutoRange
+        self.plot_widget.getPlotItem().enableAutoRange()
+        self.plot_p.enableAutoRange()
+        
         self.sweep_worker = ImpedanceSweepWorker(self.module, start, end, steps, log, 0.2)
         self.sweep_worker.progress.connect(self.sw_progress.setValue)
         self.sweep_worker.result.connect(self.on_sweep_result)
@@ -578,6 +621,8 @@ class ImpedanceAnalyzerWidget(QWidget):
             self.module.cal_open[f] = z
         elif self.cal_mode == 'short':
             self.module.cal_short[f] = z
+        elif self.cal_mode == 'load':
+            self.module.cal_load[f] = z
         else:
             # DUT Measurement
             self.sweep_freqs.append(f)
@@ -585,10 +630,19 @@ class ImpedanceAnalyzerWidget(QWidget):
             self.sweep_z_phases.append(np.degrees(np.angle(z)))
             
             self.curve_z.setData(self.sweep_freqs, self.sweep_z_mags)
-            self.curve_p.setData(self.sweep_freqs, self.sweep_z_phases)
+            
+            # Handle Phase Plot X-Axis
+            is_log_x = self.plot_widget.getPlotItem().getAxis('bottom').logMode
+            if is_log_x:
+                x_data = np.log10(self.sweep_freqs)
+            else:
+                x_data = self.sweep_freqs
+            self.curve_p.setData(x_data, self.sweep_z_phases)
 
     def on_sweep_finished(self):
         if self.cal_mode == 'open':
             QMessageBox.information(self, "Calibration", "Open Calibration Completed")
         elif self.cal_mode == 'short':
             QMessageBox.information(self, "Calibration", "Short Calibration Completed")
+        elif self.cal_mode == 'load':
+            QMessageBox.information(self, "Calibration", "Load Calibration Completed")
