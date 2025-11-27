@@ -594,12 +594,29 @@ class DistortionAnalyzerWidget(QWidget):
         self.spectrum_curve = self.spectrum_plot.plot(pen='y')
         self.tabs.addTab(self.spectrum_plot, "Spectrum")
         
-        # Tab 2: Harmonics Table
+        # Tab 2: Harmonics (Table + Bar Graph)
+        harmonics_widget = QWidget()
+        harmonics_layout = QVBoxLayout(harmonics_widget)
+        
         self.harmonics_table = QTableWidget()
         self.harmonics_table.setColumnCount(4)
         self.harmonics_table.setHorizontalHeaderLabels(["Order", "Freq (Hz)", "Level (dBr)", "Level (Linear)"])
         self.harmonics_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.tabs.addTab(self.harmonics_table, "Harmonics")
+        harmonics_layout.addWidget(self.harmonics_table, 1) # Stretch factor 1
+        
+        # Harmonics Bar Graph
+        self.harmonics_plot = pg.PlotWidget()
+        self.harmonics_plot.setLabel('left', 'Level', units='dBr')
+        self.harmonics_plot.setLabel('bottom', 'Harmonic Order')
+        self.harmonics_plot.showGrid(x=False, y=True)
+        self.harmonics_plot.setYRange(-140, 0)
+        
+        self.harmonics_bar_item = pg.BarGraphItem(x=[], height=[], width=0.6, brush='b')
+        self.harmonics_plot.addItem(self.harmonics_bar_item)
+        
+        harmonics_layout.addWidget(self.harmonics_plot, 1) # Stretch factor 1
+        
+        self.tabs.addTab(harmonics_widget, "Harmonics")
         
         # Tab 3: Sweep Results
         self.sweep_plot = pg.PlotWidget()
@@ -928,13 +945,29 @@ class DistortionAnalyzerWidget(QWidget):
             self.thd_label.setText(f"{results['thd_percent']:.4f} %")
             self.sinad_label.setText(f"{results['sinad_db']:.2f} dB")
             
-            # Update Harmonics Table
+            # Update Harmonics Table & Bar Graph
             self.harmonics_table.setRowCount(len(results['harmonics']))
+            
+            orders = []
+            levels = []
+            
             for i, h in enumerate(results['harmonics']):
                 self.harmonics_table.setItem(i, 0, QTableWidgetItem(str(h['order'])))
                 self.harmonics_table.setItem(i, 1, QTableWidgetItem(f"{h['frequency']:.1f}"))
                 self.harmonics_table.setItem(i, 2, QTableWidgetItem(f"{h['amplitude_dbr']:.2f}"))
                 self.harmonics_table.setItem(i, 3, QTableWidgetItem(f"{h['amplitude_linear']:.6f}"))
+                
+                orders.append(h['order'])
+                levels.append(h['amplitude_dbr'])
+            
+            # Update Bar Graph
+            if orders:
+                floor_db = -140
+                heights = [l - floor_db for l in levels]
+                self.harmonics_bar_item.setOpts(x=orders, height=heights, y0=floor_db)
+                # Ensure x-axis shows integer ticks for orders
+                # We can just set the range to cover all orders
+                self.harmonics_plot.setXRange(min(orders)-1, max(orders)+1)
             
             # Update Spectrum Plot
             window = get_window(self.module.window_type, len(data))
