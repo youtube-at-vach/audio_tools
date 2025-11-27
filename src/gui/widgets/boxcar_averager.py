@@ -20,6 +20,10 @@ class BoxcarAverager(MeasurementModule):
         self.trigger_channel = 0 # 0: Left, 1: Right
         self.input_channel = 'Stereo' # 'Left', 'Right', 'Stereo'
         
+        # External Sync Parameters
+        self.ref_channel = 1 # 0: Left, 1: Right
+        self.trigger_edge = 'Rising' # 'Rising', 'Falling'
+        
         # State
         self.accumulator = None
         self.count = 0
@@ -203,12 +207,107 @@ class BoxcarAverager(MeasurementModule):
                     self.count += 1
                     
         else:
-            # External Trigger
+            # External Trigger (Reference Sync)
             # We need to find triggers in 'data'
-            # And add windows to accumulator.
-            # This is tricky because a window might span across 'data' chunks.
-            # We need a state machine.
-            pass # TODO: Implement External Trigger Logic
+            # We scan the reference channel for edge crossings.
+            
+            ref_idx = self.ref_channel
+            if data.shape[1] <= ref_idx: return # Safety
+            
+            ref_sig = data[:, ref_idx]
+            
+            # Simple Edge Detection
+            # We need state from previous chunk to detect edge across boundary?
+            # For simplicity, we just look inside current chunk.
+            # Ideally we should keep last sample.
+            
+            if not hasattr(self, 'last_ref_sample'):
+                self.last_ref_sample = 0.0
+                
+            # Create a shifted array including the last sample
+            extended_ref = np.concatenate(([self.last_ref_sample], ref_sig))
+            self.last_ref_sample = ref_sig[-1]
+            
+            # Detect Crossings
+            # Rising: prev < level <= curr
+            # Falling: prev > level >= curr
+            level = self.trigger_level
+            
+            if self.trigger_edge == 'Rising':
+                triggers = (extended_ref[:-1] < level) & (extended_ref[1:] >= level)
+            else:
+                triggers = (extended_ref[:-1] > level) & (extended_ref[1:] <= level)
+                
+            trigger_indices = np.where(triggers)[0]
+            
+            # State Machine:
+            # We might be currently capturing a window.
+            # Or waiting for a trigger.
+            
+            if not hasattr(self, 'capture_active'):
+                self.capture_active = False
+                self.capture_idx = 0
+                
+            # Iterate through data sample by sample? Too slow in Python.
+            # We process triggers.
+            
+            # If we are capturing, we continue capturing until window full.
+            # If we are waiting, we look for next trigger.
+            # Note: Boxcar usually averages *overlapping* windows if re-triggered?
+            # Or strictly one after another?
+            # Usually strict lock-in style implies continuous, but here we have a "Period" (Window).
+            # If triggers come faster than Period, we ignore them? Or restart?
+            # Let's assume "Retriggerable" or "Non-retriggerable"?
+            # Let's go with Non-retriggerable for now (finish current window).
+            
+            current_data_idx = 0
+            num_samples = len(data)
+            
+            while current_data_idx < num_samples:
+                if self.capture_active:
+                    # Continue capturing
+                    samples_needed = self.period_samples - self.capture_idx
+                    samples_available = num_samples - current_data_idx
+                    
+                    to_take = min(samples_needed, samples_available)
+                    
+                    chunk = data[current_data_idx : current_data_idx + to_take]
+                    
+                    # Add to accumulator
+                    # Ensure accumulator size
+                    if self.accumulator.shape[0] != self.period_samples:
+                        self.reset_average()
+                        self.capture_active = False
+                        return
+                        
+                    self.accumulator[self.capture_idx : self.capture_idx + to_take] += chunk
+                    
+                    self.capture_idx += to_take
+                    current_data_idx += to_take
+                    
+                    if self.capture_idx >= self.period_samples:
+                        # Window finished
+                        self.capture_active = False
+                        self.count += 1
+                        self.capture_idx = 0
+                        # Continue loop to look for next trigger
+                else:
+                    # Waiting for trigger
+                    # Find first trigger after current_data_idx
+                    # trigger_indices contains indices relative to 'data' start (0)
+                    
+                    # Filter triggers that are >= current_data_idx
+                    valid_triggers = trigger_indices[trigger_indices >= current_data_idx]
+                    
+                    if len(valid_triggers) > 0:
+                        # Found trigger
+                        trig_idx = valid_triggers[0]
+                        self.capture_active = True
+                        self.capture_idx = 0
+                        current_data_idx = trig_idx # Start capturing from trigger point
+                    else:
+                        # No more triggers in this chunk
+                        current_data_idx = num_samples # Done
 
 class BoxcarAveragerWidget(QWidget):
     def __init__(self, module: BoxcarAverager):
@@ -238,7 +337,7 @@ class BoxcarAveragerWidget(QWidget):
         
         # Mode
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(['Internal Pulse', 'Internal Step']) # External TODO
+        self.mode_combo.addItems(['Internal Pulse', 'Internal Step', 'External Reference'])
         self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
         controls_layout.addWidget(QLabel("Mode:"))
         controls_layout.addWidget(self.mode_combo)
@@ -258,6 +357,35 @@ class BoxcarAveragerWidget(QWidget):
         self.channel_combo.currentTextChanged.connect(self.on_channel_changed)
         controls_layout.addWidget(QLabel("Channel:"))
         controls_layout.addWidget(self.channel_combo)
+        
+        # External Sync Controls (Hidden by default)
+        self.ext_group = QWidget()
+        ext_layout = QHBoxLayout(self.ext_group)
+        ext_layout.setContentsMargins(0,0,0,0)
+        
+        self.ref_combo = QComboBox()
+        self.ref_combo.addItems(['Left', 'Right'])
+        self.ref_combo.setCurrentIndex(1) # Default Right
+        self.ref_combo.currentIndexChanged.connect(self.on_ref_changed)
+        ext_layout.addWidget(QLabel("Ref:"))
+        ext_layout.addWidget(self.ref_combo)
+        
+        self.edge_combo = QComboBox()
+        self.edge_combo.addItems(['Rising', 'Falling'])
+        self.edge_combo.currentTextChanged.connect(self.on_edge_changed)
+        ext_layout.addWidget(QLabel("Edge:"))
+        ext_layout.addWidget(self.edge_combo)
+        
+        self.trig_spin = QDoubleSpinBox()
+        self.trig_spin.setRange(-1.0, 1.0)
+        self.trig_spin.setSingleStep(0.1)
+        self.trig_spin.setValue(0.0)
+        self.trig_spin.valueChanged.connect(self.on_trig_changed)
+        ext_layout.addWidget(QLabel("Lvl:"))
+        ext_layout.addWidget(self.trig_spin)
+        
+        controls_layout.addWidget(self.ext_group)
+        self.ext_group.hide()
         
         controls_group.setLayout(controls_layout)
         layout.addWidget(controls_group)
@@ -290,6 +418,11 @@ class BoxcarAveragerWidget(QWidget):
         self.module.mode = val
         self.module.reset_average()
         
+        if val == 'External Reference':
+            self.ext_group.show()
+        else:
+            self.ext_group.hide()
+        
     def on_period_changed(self, val):
         # val is ms
         sr = self.module.audio_engine.sample_rate
@@ -298,6 +431,18 @@ class BoxcarAveragerWidget(QWidget):
         
     def on_channel_changed(self, val):
         self.module.input_channel = val
+        self.module.reset_average()
+
+    def on_ref_changed(self, idx):
+        self.module.ref_channel = idx
+        self.module.reset_average()
+
+    def on_edge_changed(self, val):
+        self.module.trigger_edge = val
+        self.module.reset_average()
+
+    def on_trig_changed(self, val):
+        self.module.trigger_level = val
         self.module.reset_average()
         
     def update_plot(self):
