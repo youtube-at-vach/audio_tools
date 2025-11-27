@@ -32,6 +32,7 @@ class SignalParameters:
     # New Parameters
     pulse_width: float = 50.0 # %
     noise_amplitude: float = 0.1
+    phase_offset: float = 0.0 # Degrees
     
     # Internal state (not shared/copied usually, but kept here for simplicity per channel)
     _phase: float = 0.0
@@ -284,22 +285,35 @@ class SignalGenerator(MeasurementModule):
             phase_t = (np.arange(frames) + params._phase) / sample_rate
             params._phase += frames
             
+            # Apply Phase Offset
+            # We add phase offset to the argument of sin/cos functions.
+            # phase_t * freq gives cycles. 2*pi converts to radians.
+            # We add offset in radians.
+            offset_rad = np.radians(params.phase_offset)
+            
             if params.waveform == 'sine':
-                signal = params.amplitude * np.sin(2 * np.pi * params.frequency * phase_t)
+                signal = params.amplitude * np.sin(2 * np.pi * params.frequency * phase_t + offset_rad)
             elif params.waveform == 'square':
-                signal = params.amplitude * np.sign(np.sin(2 * np.pi * params.frequency * phase_t))
+                signal = params.amplitude * np.sign(np.sin(2 * np.pi * params.frequency * phase_t + offset_rad))
             elif params.waveform == 'triangle':
-                signal = params.amplitude * (2 * np.abs(2 * ((phase_t * params.frequency) % 1) - 1) - 1)
+                # Triangle wave depends on phase.
+                # (2 * abs(2 * ((t * f + off) % 1) - 1) - 1)
+                # We need to add offset to the cycle count part.
+                # offset in cycles = offset_deg / 360
+                off_cycles = params.phase_offset / 360.0
+                signal = params.amplitude * (2 * np.abs(2 * ((phase_t * params.frequency + off_cycles) % 1) - 1) - 1)
             elif params.waveform == 'sawtooth':
-                signal = params.amplitude * (2 * ((phase_t * params.frequency) % 1) - 1)
+                off_cycles = params.phase_offset / 360.0
+                signal = params.amplitude * (2 * ((phase_t * params.frequency + off_cycles) % 1) - 1)
             elif params.waveform == 'pulse':
                 duty = params.pulse_width / 100.0
-                ramp = (phase_t * params.frequency) % 1
+                off_cycles = params.phase_offset / 360.0
+                ramp = (phase_t * params.frequency + off_cycles) % 1
                 signal = params.amplitude * np.where(ramp < duty, 1.0, -1.0)
             elif params.waveform == 'tone_noise':
-                tone = params.amplitude * np.sin(2 * np.pi * params.frequency * phase_t)
+                signal = params.amplitude * np.sin(2 * np.pi * params.frequency * phase_t + offset_rad)
                 noise = params.noise_amplitude * np.random.uniform(-1, 1, size=frames)
-                signal = tone + noise
+                signal += noise
             
             return signal
 
@@ -512,6 +526,23 @@ class SignalGeneratorWidget(QWidget):
         freq_layout.addWidget(self.freq_slider)
         basic_layout.addRow("Frequency (Hz):", freq_layout)
         
+        # Phase
+        phase_layout = QHBoxLayout()
+        self.phase_spin = QDoubleSpinBox()
+        self.phase_spin.setRange(-180, 180)
+        self.phase_spin.setValue(0)
+        self.phase_spin.setSuffix(" deg")
+        self.phase_spin.valueChanged.connect(self.on_phase_spin_changed)
+        
+        self.phase_slider = QSlider(Qt.Orientation.Horizontal)
+        self.phase_slider.setRange(-180, 180)
+        self.phase_slider.setValue(0)
+        self.phase_slider.valueChanged.connect(self.on_phase_slider_changed)
+        
+        phase_layout.addWidget(self.phase_spin)
+        phase_layout.addWidget(self.phase_slider)
+        basic_layout.addRow("Phase Offset:", phase_layout)
+        
         # Amplitude
         amp_layout = QHBoxLayout()
         self.amp_spin = QDoubleSpinBox()
@@ -605,6 +636,9 @@ class SignalGeneratorWidget(QWidget):
         self.freq_spin.setValue(params.frequency)
         self.freq_slider.setValue(self._freq_to_slider(params.frequency))
         
+        self.phase_spin.setValue(params.phase_offset)
+        self.phase_slider.setValue(int(params.phase_offset))
+        
         self.update_amp_display_value(params.amplitude)
         
         self.sweep_group.setChecked(params.sweep_enabled)
@@ -620,9 +654,8 @@ class SignalGeneratorWidget(QWidget):
     def block_all_signals(self, block):
         widgets = [
             self.wave_combo, self.noise_combo, self.mt_count_spin, self.mls_order_combo,
-            self.wave_combo, self.noise_combo, self.mt_count_spin, self.mls_order_combo,
             self.burst_on_spin, self.burst_off_spin, self.pulse_width_spin, self.noise_amp_spin,
-            self.freq_spin, self.freq_slider,
+            self.freq_spin, self.freq_slider, self.phase_spin, self.phase_slider,
             self.amp_spin, self.amp_slider, self.sweep_group, self.start_freq_spin,
             self.end_freq_spin, self.duration_spin, self.log_check
         ]
@@ -657,10 +690,10 @@ class SignalGeneratorWidget(QWidget):
         dst.multitone_count = src.multitone_count
         dst.mls_order = src.mls_order
         dst.burst_on_cycles = src.burst_on_cycles
-        dst.burst_on_cycles = src.burst_on_cycles
         dst.burst_off_cycles = src.burst_off_cycles
         dst.pulse_width = src.pulse_width
         dst.noise_amplitude = src.noise_amplitude
+        dst.phase_offset = src.phase_offset
 
     def on_route_changed(self, btn):
         if self.route_l.isChecked():
@@ -712,6 +745,18 @@ class SignalGeneratorWidget(QWidget):
         self.freq_spin.blockSignals(True)
         self.freq_spin.setValue(freq)
         self.freq_spin.blockSignals(False)
+
+    def on_phase_spin_changed(self, val):
+        self.update_param('phase_offset', val)
+        self.phase_slider.blockSignals(True)
+        self.phase_slider.setValue(int(val))
+        self.phase_slider.blockSignals(False)
+
+    def on_phase_slider_changed(self, val):
+        self.update_param('phase_offset', float(val))
+        self.phase_spin.blockSignals(True)
+        self.phase_spin.setValue(float(val))
+        self.phase_spin.blockSignals(False)
 
     # --- Amplitude Helpers ---
     def on_unit_changed(self, unit):
