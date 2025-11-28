@@ -5,7 +5,7 @@ from scipy.signal import hilbert
 from collections import deque
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
                              QComboBox, QCheckBox, QGroupBox, QFormLayout, 
-                             QDoubleSpinBox, QProgressBar, QSpinBox, QTabWidget, QMessageBox)
+                             QDoubleSpinBox, QProgressBar, QSpinBox, QTabWidget, QMessageBox, QApplication)
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 import time
 from src.measurement_modules.base import MeasurementModule
@@ -327,7 +327,9 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.toggle_btn = QPushButton("Start Measurement")
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
-        self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; font-weight: bold; padding: 10px; } QPushButton:checked { background-color: #ffcccc; }")
+        
+        self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; color: black; font-weight: bold; padding: 10px; } QPushButton:checked { background-color: #ffcccc; }")
+            
         settings_layout.addRow(self.toggle_btn)
         
         self.freq_spin = QDoubleSpinBox()
@@ -490,7 +492,7 @@ class ImpedanceAnalyzerWidget(QWidget):
         
         self.btn_dut = QPushButton("Measure DUT")
         self.btn_dut.clicked.connect(lambda: self.start_sweep(None))
-        self.btn_dut.setStyleSheet("font-weight: bold; background-color: #ccccff;")
+        self.btn_dut.setStyleSheet("font-weight: bold; background-color: #ccccff; color: black;")
         sweep_form.addRow(self.btn_dut)
         
         self.sw_progress = QProgressBar()
@@ -646,3 +648,40 @@ class ImpedanceAnalyzerWidget(QWidget):
             QMessageBox.information(self, "Calibration", "Short Calibration Completed")
         elif self.cal_mode == 'load':
             QMessageBox.information(self, "Calibration", "Load Calibration Completed")
+
+    def apply_theme(self, theme_name):
+        if theme_name == 'system' and hasattr(self.app, 'theme_manager'):
+            theme_name = self.app.theme_manager.get_effective_theme()
+            
+        if theme_name == 'dark':
+            # Dark Theme
+            self.toggle_btn.setStyleSheet(
+                "QPushButton { background-color: #2e7d32; color: white; border: 1px solid #555; border-radius: 4px; padding: 10px; font-weight: bold; }"
+                "QPushButton:checked { background-color: #c62828; color: white; border: 1px solid #555; border-radius: 4px; padding: 10px; }"
+                "QPushButton:hover { background-color: #388e3c; }"
+                "QPushButton:checked:hover { background-color: #d32f2f; }"
+            )
+            self.z_mag_label.setStyleSheet("font-size: 32px; font-weight: bold; color: #00ff00;")
+            self.z_phase_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #00ffff;")
+            self.z_r_label.setStyleSheet("font-size: 20px; color: #ffff00;")
+            self.z_x_label.setStyleSheet("font-size: 20px; color: #ff00ff;")
+            self.btn_dut.setStyleSheet("font-weight: bold; background-color: #5e35b1; color: white;")
+        else:
+            # Light Theme
+            self.toggle_btn.setStyleSheet(
+                "QPushButton { background-color: #ccffcc; color: black; border: 1px solid #ccc; border-radius: 4px; padding: 10px; font-weight: bold; }"
+                "QPushButton:checked { background-color: #ffcccc; color: black; border: 1px solid #ccc; border-radius: 4px; padding: 10px; }"
+                "QPushButton:hover { background-color: #bbfebb; }"
+                "QPushButton:checked:hover { background-color: #ffbbbb; }"
+            )
+            self.z_mag_label.setStyleSheet("font-size: 32px; font-weight: bold; color: #008800;")
+            self.z_phase_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #008888;")
+            self.z_r_label.setStyleSheet("font-size: 20px; color: #888800;")
+            self.z_x_label.setStyleSheet("font-size: 20px; color: #880088;")
+            self.btn_dut.setStyleSheet("font-weight: bold; background-color: #ccccff; color: black;")
+
+        # Theme handling
+        self.app = QApplication.instance()
+        if hasattr(self.app, 'theme_manager'):
+            self.app.theme_manager.theme_changed.connect(self.apply_theme)
+            self.apply_theme(self.app.theme_manager.get_current_theme())

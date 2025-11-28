@@ -2,7 +2,7 @@ import argparse
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QComboBox, QCheckBox, QSlider, QGroupBox, QFormLayout)
+                             QComboBox, QCheckBox, QSlider, QGroupBox, QFormLayout, QApplication)
 from PyQt6.QtCore import QTimer, Qt
 from scipy.signal.windows import dpss
 from src.measurement_modules.base import MeasurementModule
@@ -183,8 +183,9 @@ class SpectrumAnalyzerWidget(QWidget):
         self.toggle_btn = QPushButton("Start Analysis")
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
-        # Default style (Green for Start)
-        self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; } QPushButton:checked { background-color: #ffcccc; }")
+        
+        self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; color: black; } QPushButton:checked { background-color: #ffcccc; color: black; }")
+            
         row1_layout.addWidget(self.toggle_btn)
         
         # Mode Selection
@@ -958,3 +959,35 @@ class SpectrumAnalyzerWidget(QWidget):
             self.peak_curve.setData(plot_freqs_linear, peak_mags)
         else:
             self.peak_curve.setData([], [])
+
+    def apply_theme(self, theme_name):
+        # If theme_name is 'system', resolve it
+        if theme_name == 'system' and hasattr(self.app, 'theme_manager'):
+            theme_name = self.app.theme_manager.get_effective_theme()
+            
+        if theme_name == 'dark':
+            # Dark Theme: Darker colors, White text
+            self.toggle_btn.setStyleSheet(
+                "QPushButton { background-color: #2e7d32; color: white; border: 1px solid #555; border-radius: 4px; padding: 5px; }"
+                "QPushButton:checked { background-color: #c62828; color: white; border: 1px solid #555; border-radius: 4px; padding: 5px; }"
+                "QPushButton:hover { background-color: #388e3c; }"
+                "QPushButton:checked:hover { background-color: #d32f2f; }"
+            )
+            self.overall_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #00ff00;")
+            self.cursor_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #00ffff;")
+        else:
+            # Light Theme: Pastel colors, Black text
+            self.toggle_btn.setStyleSheet(
+                "QPushButton { background-color: #ccffcc; color: black; border: 1px solid #ccc; border-radius: 4px; padding: 5px; }"
+                "QPushButton:checked { background-color: #ffcccc; color: black; border: 1px solid #ccc; border-radius: 4px; padding: 5px; }"
+                "QPushButton:hover { background-color: #bbfebb; }"
+                "QPushButton:checked:hover { background-color: #ffbbbb; }"
+            )
+            self.overall_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #008800;")
+            self.cursor_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #0000aa;")
+
+        # Theme handling
+        self.app = QApplication.instance()
+        if hasattr(self.app, 'theme_manager'):
+            self.app.theme_manager.theme_changed.connect(self.apply_theme)
+            self.apply_theme(self.app.theme_manager.get_current_theme())

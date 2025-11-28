@@ -2,7 +2,7 @@ import argparse
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-                             QComboBox, QGroupBox, QSlider, QProgressBar, QCheckBox)
+                             QComboBox, QGroupBox, QSlider, QProgressBar, QCheckBox, QApplication)
 from PyQt6.QtCore import QTimer, Qt
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
@@ -151,7 +151,15 @@ class GoniometerWidget(QWidget):
         self.toggle_btn = QPushButton("Start")
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
-        self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; } QPushButton:checked { background-color: #ffcccc; }")
+        
+        # Theme handling
+        self.app = QApplication.instance()
+        if hasattr(self.app, 'theme_manager'):
+            self.app.theme_manager.theme_changed.connect(self.apply_theme)
+            self.apply_theme(self.app.theme_manager.get_current_theme())
+        else:
+            self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; } QPushButton:checked { background-color: #ffcccc; }")
+            
         controls_layout.addWidget(self.toggle_btn)
         
         # Gain
@@ -277,3 +285,24 @@ class GoniometerWidget(QWidget):
             color = "#ff0000"
             
         self.corr_bar.setStyleSheet(f"QProgressBar::chunk {{ background-color: {color}; }}")
+
+    def apply_theme(self, theme_name):
+        if theme_name == 'system' and hasattr(self.app, 'theme_manager'):
+            theme_name = self.app.theme_manager.get_effective_theme()
+            
+        if theme_name == 'dark':
+            # Dark Theme
+            self.toggle_btn.setStyleSheet(
+                "QPushButton { background-color: #2e7d32; color: white; border: 1px solid #555; border-radius: 4px; padding: 5px; }"
+                "QPushButton:checked { background-color: #c62828; color: white; border: 1px solid #555; border-radius: 4px; padding: 5px; }"
+                "QPushButton:hover { background-color: #388e3c; }"
+                "QPushButton:checked:hover { background-color: #d32f2f; }"
+            )
+        else:
+            # Light Theme
+            self.toggle_btn.setStyleSheet(
+                "QPushButton { background-color: #ccffcc; color: black; border: 1px solid #ccc; border-radius: 4px; padding: 5px; }"
+                "QPushButton:checked { background-color: #ffcccc; color: black; border: 1px solid #ccc; border-radius: 4px; padding: 5px; }"
+                "QPushButton:hover { background-color: #bbfebb; }"
+                "QPushButton:checked:hover { background-color: #ffbbbb; }"
+            )
