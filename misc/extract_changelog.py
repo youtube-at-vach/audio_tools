@@ -73,6 +73,10 @@ if __name__ == "__main__":
     content = extract_changelog(version, changelog_path)
 
     if content:
+        # Ensure UTF-8 output on Windows
+        if sys.platform == 'win32':
+            import io
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
         print(content)
     else:
         # no output (workflow can detect empty)

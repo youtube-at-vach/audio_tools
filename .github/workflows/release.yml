@@ -44,6 +44,8 @@ jobs:
     - name: Extract CHANGELOG for version
       id: changelog
       shell: bash
+      env:
+        PYTHONIOENCODING: utf-8
       run: |
         python misc/extract_changelog.py ${GITHUB_REF#refs/tags/} > release_notes.md
         # If empty, use a default message
