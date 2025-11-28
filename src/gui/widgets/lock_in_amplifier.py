@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLay
                              QDoubleSpinBox, QProgressBar, QSpinBox)
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
                              QComboBox, QCheckBox, QSlider, QGroupBox, QFormLayout, 
-                             QDoubleSpinBox, QProgressBar, QSpinBox, QTabWidget)
+                             QDoubleSpinBox, QProgressBar, QSpinBox, QTabWidget, QApplication)
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 import time
 from src.measurement_modules.base import MeasurementModule
@@ -286,7 +286,9 @@ class LockInAmplifierWidget(QWidget):
         self.toggle_btn = QPushButton("Start Output & Measure")
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
-        self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; font-weight: bold; padding: 10px; } QPushButton:checked { background-color: #ffcccc; }")
+        
+        self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; font-weight: bold; padding: 10px; color: black; } QPushButton:checked { background-color: #ffcccc; }")
+            
         settings_layout.addRow(self.toggle_btn)
         
         settings_layout.addRow(self.toggle_btn)
@@ -841,3 +843,48 @@ class LockInAmplifierWidget(QWidget):
         self.fra_progress.setValue(100)
         self.fra_plot.getPlotItem().autoRange()
         self.fra_plot_p.autoRange()
+
+    def apply_theme(self, theme_name):
+        if theme_name == 'system' and hasattr(self.app, 'theme_manager'):
+            theme_name = self.app.theme_manager.get_effective_theme()
+            
+        if theme_name == 'dark':
+            # Dark Theme
+            self.toggle_btn.setStyleSheet(
+                "QPushButton { background-color: #2e7d32; color: white; border: 1px solid #555; border-radius: 4px; padding: 10px; font-weight: bold; }"
+                "QPushButton:checked { background-color: #c62828; color: white; border: 1px solid #555; border-radius: 4px; padding: 10px; }"
+                "QPushButton:hover { background-color: #388e3c; }"
+                "QPushButton:checked:hover { background-color: #d32f2f; }"
+            )
+            self.mag_label.setStyleSheet("font-size: 36px; font-weight: bold; color: #00ff00;")
+            self.mag_db_label.setStyleSheet("font-size: 24px; color: #88ff88;")
+            self.phase_label.setStyleSheet("font-size: 36px; font-weight: bold; color: #00ffff;")
+            self.x_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #ffff00;")
+            self.y_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #ff00ff;")
+            
+            # Ref status depends on state, but we set base style here or update in update_ui
+            # update_ui sets color explicitly, so we might need to update that logic too.
+            # Ideally apply_theme just sets the current state's color if we track it, 
+            # or we let update_ui handle it and just use theme-aware colors there.
+            # But update_ui runs on timer.
+            pass
+
+        else:
+            # Light Theme
+            self.toggle_btn.setStyleSheet(
+                "QPushButton { background-color: #ccffcc; color: black; border: 1px solid #ccc; border-radius: 4px; padding: 10px; font-weight: bold; }"
+                "QPushButton:checked { background-color: #ffcccc; color: black; border: 1px solid #ccc; border-radius: 4px; padding: 10px; }"
+                "QPushButton:hover { background-color: #bbfebb; }"
+                "QPushButton:checked:hover { background-color: #ffbbbb; }"
+            )
+            self.mag_label.setStyleSheet("font-size: 36px; font-weight: bold; color: #008800;")
+            self.mag_db_label.setStyleSheet("font-size: 24px; color: #006600;")
+            self.phase_label.setStyleSheet("font-size: 36px; font-weight: bold; color: #008888;")
+            self.x_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #888800;")
+            self.y_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #880088;")
+
+        # Theme handling
+        self.app = QApplication.instance()
+        if hasattr(self.app, 'theme_manager'):
+            self.app.theme_manager.theme_changed.connect(self.apply_theme)
+            self.apply_theme(self.app.theme_manager.get_current_theme())

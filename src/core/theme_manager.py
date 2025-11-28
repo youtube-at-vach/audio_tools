@@ -62,6 +62,15 @@ class ThemeManager(QObject):
     def get_current_theme(self) -> str:
         """Returns the current theme setting ('system', 'light', or 'dark')."""
         return self.current_theme
+        
+    def get_effective_theme(self) -> str:
+        """
+        Returns the effective theme ('light' or 'dark').
+        If current_theme is 'system', detects the system theme.
+        """
+        if self.current_theme == 'system':
+            return self._detect_system_theme()
+        return self.current_theme
     
     def _on_system_theme_changed(self, scheme):
         """Handle system theme change (Qt 6.5+ only)."""

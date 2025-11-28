@@ -2,7 +2,7 @@ import argparse
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-                             QComboBox, QCheckBox, QGroupBox, QSlider)
+                             QComboBox, QCheckBox, QGroupBox, QSlider, QApplication)
 from PyQt6.QtGui import QTransform
 from PyQt6.QtCore import QTimer, Qt
 from scipy.signal import get_window, lfilter
@@ -114,7 +114,15 @@ class SpectrogramWidget(QWidget):
         self.toggle_btn = QPushButton("Start")
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
-        self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; } QPushButton:checked { background-color: #ffcccc; }")
+        
+        # Theme handling
+        self.app = QApplication.instance()
+        if hasattr(self.app, 'theme_manager'):
+            self.app.theme_manager.theme_changed.connect(self.apply_theme)
+            self.apply_theme(self.app.theme_manager.get_current_theme())
+        else:
+            self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; } QPushButton:checked { background-color: #ffcccc; }")
+            
         controls_layout.addWidget(self.toggle_btn)
         
         # Channel
@@ -305,3 +313,24 @@ class SpectrogramWidget(QWidget):
         self.img.setTransform(QTransform().scale(1, y_scale))
         self.plot.setLimits(yMin=0, yMax=nyquist)
         self.plot.setYRange(0, nyquist)
+
+    def apply_theme(self, theme_name):
+        if theme_name == 'system' and hasattr(self.app, 'theme_manager'):
+            theme_name = self.app.theme_manager.get_effective_theme()
+            
+        if theme_name == 'dark':
+            # Dark Theme
+            self.toggle_btn.setStyleSheet(
+                "QPushButton { background-color: #2e7d32; color: white; border: 1px solid #555; border-radius: 4px; padding: 5px; }"
+                "QPushButton:checked { background-color: #c62828; color: white; border: 1px solid #555; border-radius: 4px; padding: 5px; }"
+                "QPushButton:hover { background-color: #388e3c; }"
+                "QPushButton:checked:hover { background-color: #d32f2f; }"
+            )
+        else:
+            # Light Theme
+            self.toggle_btn.setStyleSheet(
+                "QPushButton { background-color: #ccffcc; color: black; border: 1px solid #ccc; border-radius: 4px; padding: 5px; }"
+                "QPushButton:checked { background-color: #ffcccc; color: black; border: 1px solid #ccc; border-radius: 4px; padding: 5px; }"
+                "QPushButton:hover { background-color: #bbfebb; }"
+                "QPushButton:checked:hover { background-color: #ffbbbb; }"
+            )
