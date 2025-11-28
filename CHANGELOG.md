@@ -1,5 +1,28 @@
 # Changelog
 
+## [v0.1.4] - 2025-11-28
+
+### Added
+- **Impedance Analyzer**: インピーダンス測定モジュールを追加。
+    - デュアルロックイン計算による高精度測定。
+    - 周波数スイープ機能。
+    - OSL (Open/Short/Load) キャリブレーション機能。
+    - 既知の負荷抵抗値を指定可能なUI。
+- **Goniometer**: ステレオ信号の位相相関と空間分布を可視化するウィジェットを追加。
+- **Signal Generator Phase Control**: 信号生成器に位相制御機能を追加。
+- **Boxcar Averager External Sync**: ボックスカー平均器に外部リファレンス同期モードを追加。
+- **Distortion Analyzer Harmonics Bar Graph**: 歪み解析器に高調波の棒グラフ表示を追加。
+
+### Changed
+- **Theme-Aware Styling**: すべての測定モジュールウィジェットのボタンとラベルにテーマ対応スタイリングを実装。
+    - ライト/ダークテーマで適切な視認性を確保。
+    - システムテーマの自動検出と適用。
+- **Windows Distribution**: Windows版の配布形式を単一の.exeから.zip形式に変更。
+    - システム警告を回避し、より扱いやすい配布形式に。
+
+### Fixed
+- **Localization**: Goniometer と Advanced Distortion Meter の多言語翻訳を追加。
+
 ## [v0.1.3] - 2025-11-27
 
 ### Added
