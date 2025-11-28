@@ -6,19 +6,25 @@ PythonとPyQt6で構築されており、高精度な信号生成、解析、測
 ## ✨ 主な機能 (Features)
 
 ### 🛠️ 測定モジュール
-以下の10種類のモジュールが統合されています：
+以下の17種類のモジュールが統合されています:
 
-1.  **Signal Generator**: 正弦波、矩形波、ノイズ、スイープ信号などを生成。
+1.  **Signal Generator**: 正弦波、矩形波、ノイズ、スイープ信号などを生成。位相制御にも対応。
 2.  **Spectrum Analyzer**: 高速FFTによるリアルタイムスペクトル解析。
 3.  **LUFS Meter**: ラウドネス (LUFS) のリアルタイム測定。
 4.  **Loopback Finder**: オーディオデバイスの遅延測定。
 5.  **Distortion Analyzer**: THD, THD+N, SINAD, IMD (SMPTE/CCIF) の測定。
-6.  **Network Analyzer**: 周波数特性（ゲイン・位相）の測定。
-7.  **Oscilloscope**: 波形の時間軸表示とトリガー機能。
-8.  **Lock-in Amplifier**: 微小信号の位相敏感検波 (LIA)。
-9.  **Frequency Counter**: 高精度な周波数測定とアラン分散プロット。
-10. **Spectrogram**: 時間-周波数表示のスペクトログラム。
-11. **Boxcar Averager**: ボックスカー平均によるノイズ低減。
+6.  **Advanced Distortion Meter**: MIM、SPDR、PIM測定を含む高度な歪み解析。
+7.  **IMD Analyzer**: 相互変調歪み (IMD) の専用解析ツール。
+8.  **Network Analyzer**: 周波数特性(ゲイン・位相)の測定。
+9.  **Oscilloscope**: 波形の時間軸表示とトリガー機能。リアルタイムフィルタリング対応。
+10. **Lock-in Amplifier**: 微小信号の位相敏感検波 (LIA)。周波数応答解析 (FRA) モード搭載。
+11. **Impedance Analyzer**: インピーダンス測定とOSL (Open/Short/Load) キャリブレーション。
+12. **Frequency Counter**: 高精度な周波数測定とアラン分散プロット。
+13. **Spectrogram**: 時間-周波数表示のスペクトログラム。
+14. **Boxcar Averager**: ボックスカー平均によるノイズ低減。外部リファレンス同期対応。
+15. **Goniometer**: ステレオ信号の位相相関と空間分布の可視化。
+16. **Settings**: デバイス設定、キャリブレーション、テーマ選択など。
+17. **Welcome**: アプリケーションの概要とクイックスタートガイド。
 
 ### 🌍 多言語対応 (Localization)
 世界中の主要な言語をサポートしています。設定画面から切り替え可能です。
@@ -36,6 +42,7 @@ PythonとPyQt6で構築されており、高精度な信号生成、解析、測
 *   **入出力設定**: デバイス選択、サンプリングレート (44.1kHz - 192kHz)、バッファーサイズ変更。
 *   **キャリブレーション**: 入力感度と出力ゲインの補正ウィザードを搭載し、電圧 (Vrms, Vpeak, dBu, dBV) での正確な読み取りが可能。
 *   **チャンネルルーティング**: 入力・出力チャンネルの個別割り当てに対応。
+*   **テーマ設定**: ライト/ダーク/システムテーマの切り替えが可能。
 
 ---
 
@@ -44,7 +51,7 @@ PythonとPyQt6で構築されており、高精度な信号生成、解析、測
 ### 📦 ビルド済みパッケージを使用する場合
 **Releases** ページから最新のバージョンをダウンロードしてください。
 
-*   **Windows**: `Audio_Measurement_Tools.exe` をダウンロードして実行します。
+*   **Windows**: `Audio_Measurement_Tools-Windows.zip` をダウンロードして解凍し、`Audio_Measurement_Tools.exe` を実行します。
 *   **Linux**: `Audio_Measurement_Tools-x86_64.AppImage` をダウンロードし、実行権限を付与して起動します。
     ```bash
     chmod +x Audio_Measurement_Tools-*.AppImage

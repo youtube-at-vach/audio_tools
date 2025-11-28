@@ -33,7 +33,13 @@ jobs:
 
     - name: Build with PyInstaller
       run: |
-        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.ico --add-data "src;src" --exclude-module matplotlib --collect-all backports main_gui.py
+        pyinstaller --onedir --windowed --name Audio_Measurement_Tools --icon=app_icon.ico --add-data "src;src" --exclude-module matplotlib --collect-all backports main_gui.py
+
+    - name: Create ZIP archive
+      shell: bash
+      run: |
+        cd dist
+        7z a -tzip Audio_Measurement_Tools-Windows.zip Audio_Measurement_Tools/
 
     - name: Extract CHANGELOG for version
       id: changelog
@@ -49,7 +55,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: dist/Audio_Measurement_Tools.exe
+        files: dist/Audio_Measurement_Tools-Windows.zip
         body_path: release_notes.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
