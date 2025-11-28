@@ -17,8 +17,6 @@
 - **Theme-Aware Styling**: すべての測定モジュールウィジェットのボタンとラベルにテーマ対応スタイリングを実装。
     - ライト/ダークテーマで適切な視認性を確保。
     - システムテーマの自動検出と適用。
-- **Windows Distribution**: Windows版の配布形式を単一の.exeから.zip形式に変更。
-    - システム警告を回避し、より扱いやすい配布形式に。
 
 ### Fixed
 - **Localization**: Goniometer と Advanced Distortion Meter の多言語翻訳を追加。
