@@ -1,8 +1,0 @@
-numpy
-scipy
-sounddevice
-soundfile
-rich
-matplotlib
-seaborn
-pandas
