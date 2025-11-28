@@ -27,6 +27,7 @@ class LockInAmplifier(MeasurementModule):
         self.gen_amplitude = 0.5 # Linear 0-1
         self.output_channel = 0 # 0: Left, 1: Right
         self.external_mode = False
+        self.harmonic_order = 1
         
         self.signal_channel = 0 # 0: Left, 1: Right
         self.ref_channel = 1    # 0: Left, 1: Right
@@ -41,7 +42,7 @@ class LockInAmplifier(MeasurementModule):
         
         # Averaging
         self.averaging_count = 1
-        self.history = deque(maxlen=100)
+        self.history = deque(maxlen=300)
         
         self.callback_id = None
         
@@ -150,6 +151,13 @@ class LockInAmplifier(MeasurementModule):
         # Normalize to unit magnitude to extract just the phase information
         # Avoid divide by zero
         ref_phasor = ref_analytic / (np.abs(ref_analytic) + 1e-12)
+        
+        # Apply Harmonic Order
+        # If we want to measure the n-th harmonic, we need a reference at n * freq.
+        # The phase of the n-th harmonic is n * theta.
+        # Since ref_phasor = exp(j * theta), ref_phasor^n = exp(j * n * theta).
+        if self.harmonic_order > 1:
+            ref_phasor = ref_phasor ** self.harmonic_order
         
         # Demodulate: Multiply Signal by Conjugate of Reference Phasor
         # Product = Sig * exp(-j*theta_ref)
@@ -349,10 +357,16 @@ class LockInAmplifierWidget(QWidget):
         settings_layout.addRow("Integration:", self.time_combo)
         
         self.avg_spin = QSpinBox()
-        self.avg_spin.setRange(1, 100)
+        self.avg_spin.setRange(1, 300)
         self.avg_spin.setValue(1)
         self.avg_spin.valueChanged.connect(lambda v: setattr(self.module, 'averaging_count', v))
         settings_layout.addRow("Averaging:", self.avg_spin)
+        
+        self.harmonic_spin = QSpinBox()
+        self.harmonic_spin.setRange(1, 10)
+        self.harmonic_spin.setValue(1)
+        self.harmonic_spin.valueChanged.connect(lambda v: setattr(self.module, 'harmonic_order', v))
+        settings_layout.addRow("Harmonic:", self.harmonic_spin)
         
         settings_group.setLayout(settings_layout)
         manual_layout.addWidget(settings_group, stretch=1)
