@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build-windows:
-    runs-on: windows-2022
+    runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
 
@@ -41,7 +41,7 @@ jobs:
         # タグ名を取得（refs/tags/... から取り除く）
         $tag = $env:GITHUB_REF -replace 'refs/tags/',''
         if (-not $tag) { $tag = 'untagged' }
-        $zip = "dist/Audio_Measurement_Tools-$tag.zip"
+        $zip = "dist/Audio_Measurement_Tools.zip"
         Compress-Archive -Path "dist/Audio_Measurement_Tools.exe" -DestinationPath $zip -Force
         Write-Output "Zipped to: $zip"
 
