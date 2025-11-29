@@ -1,8 +1,5 @@
 numpy
 scipy
 sounddevice
-rich
-
-soundfile
 PyQt6
 pyqtgraph
