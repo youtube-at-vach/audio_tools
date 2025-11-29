@@ -30,7 +30,7 @@ jobs:
       with:
         nuitka-version: main
         script-name: main_gui.py
-        standalone: true
+        mode: standalone
         enable-plugins: pyqt6
         include-data-dir: src=src
         windows-icon-from-ico: app_icon.ico
