@@ -40,7 +40,9 @@ class LockInAmplifier(MeasurementModule):
         self.current_x = 0.0
         self.current_y = 0.0
         self.ref_freq = 0.0
+        self.ref_freq = 0.0
         self.ref_level = 0.0
+        self.ref_coherence = 0.0
         
         # Averaging
         self.averaging_count = 1
@@ -137,18 +139,65 @@ class LockInAmplifier(MeasurementModule):
             self.ref_freq = 0.0
             return
 
-        # Estimate Ref Frequency (Zero crossings or FFT)
-        # Simple zero crossing for display
-        crossings = np.where(np.diff(np.signbit(ref)))[0]
-        if len(crossings) > 1:
-            avg_period = (crossings[-1] - crossings[0]) / (len(crossings) - 1) * 2 
-            fs = self.audio_engine.sample_rate
-            self.ref_freq = fs / avg_period if avg_period > 0 else 0
+        # Estimate Ref Frequency and Coherence
+        # Use Hilbert Transform to get analytic signal
+        ref_analytic = hilbert(ref)
+        
+        # Trim edges to remove Hilbert artifacts (e.g., 5% from each side)
+        trim_percent = 0.05
+        trim_len = int(len(ref) * trim_percent)
+        if trim_len < 10: trim_len = 0 # Don't trim if too short (shouldn't happen with 4096)
+        
+        if trim_len > 0:
+            ref_analytic_trimmed = ref_analytic[trim_len:-trim_len]
+            ref_trimmed = ref[trim_len:-trim_len]
+        else:
+            ref_analytic_trimmed = ref_analytic
+            ref_trimmed = ref
+            
+        if len(ref_analytic_trimmed) > 10:
+            # Linear Regression on Phase
+            ref_inst_phase = np.unwrap(np.angle(ref_analytic_trimmed))
+            t_trimmed = np.arange(len(ref_inst_phase)) / self.audio_engine.sample_rate
+            
+            # Polyfit degree 1 (Linear) -> slope is angular frequency (rad/s)
+            slope, intercept = np.polyfit(t_trimmed, ref_inst_phase, 1)
+            self.ref_freq = slope / (2.0 * np.pi)
+        else:
+            self.ref_freq = 0.0
+            
+        # Calculate Coherence (Spectral Purity)
+        # Coherence = Magnitude of component at Ref Freq / Total RMS
+        # We generate an ideal phasor at the estimated ref_freq for the TRIMMED duration
+        # Note: We need to align phase? No, magnitude of projection handles phase diff.
+        # But we need the time vector to be relative to the start of the trimmed block?
+        # Actually, just relative time 0 to T is fine, as the phase offset will be absorbed in the complex mean.
+        
+        t_coh = np.arange(len(ref_trimmed)) / self.audio_engine.sample_rate
+        ideal_phasor = np.exp(1j * 2 * np.pi * self.ref_freq * t_coh)
+        
+        # Project ref onto ideal phasor
+        # ref_component = mean(ref * conj(ideal_phasor)) * 2 (for peak)
+        ref_component = np.abs(np.mean(ref_trimmed * np.conj(ideal_phasor))) * 2
+        ref_rms_val = np.sqrt(np.mean(ref_trimmed**2))
+        ref_peak_val = ref_rms_val * np.sqrt(2)
+        
+        if ref_peak_val > 1e-9:
+            self.ref_coherence = ref_component / ref_peak_val
+            if self.ref_coherence > 1.0: self.ref_coherence = 1.0
+        else:
+            self.ref_coherence = 0.0
+            
+        # Force Internal Mode stats
+        if not self.external_mode:
+            self.ref_freq = self.gen_frequency
+            self.ref_coherence = 1.0
         
         # 2. Lock-in Detection
         # Hilbert Transform to get analytic signal of Reference
         # This gives us a complex phasor rotating at the reference frequency
-        ref_analytic = hilbert(ref)
+        # We already computed ref_analytic above
+        # ref_analytic = hilbert(ref)
         
         # Normalize to unit magnitude to extract just the phase information
         # Avoid divide by zero
@@ -864,12 +913,16 @@ class LockInAmplifierWidget(QWidget):
         # Update Ref Status
         ref_level = self.module.ref_level
         ref_freq = self.module.ref_freq
+        coherence = self.module.ref_coherence
         
-        if ref_level > -60:
-            self.ref_status_label.setText(f"Locked ({ref_freq:.1f} Hz, {ref_level:.1f} dB)")
+        if coherence >= 0.95:
+            self.ref_status_label.setText(f"Locked ({ref_freq:.1f} Hz, Coh: {coherence:.2f})")
             self.ref_status_label.setStyleSheet("font-weight: bold; color: #00ff00;")
+        elif coherence >= 0.8:
+            self.ref_status_label.setText(f"Unstable ({ref_freq:.1f} Hz, Coh: {coherence:.2f})")
+            self.ref_status_label.setStyleSheet("font-weight: bold; color: #ffff00;")
         else:
-            self.ref_status_label.setText("No Signal / Low Level")
+            self.ref_status_label.setText(f"Unlocked ({ref_freq:.1f} Hz, Coh: {coherence:.2f})")
             self.ref_status_label.setStyleSheet("font-weight: bold; color: #ff0000;")
 
     def on_fra_start(self):
