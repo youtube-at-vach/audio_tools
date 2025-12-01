@@ -58,3 +58,4 @@ venv_build/
 # Local config
 config.json
 calibration.json
+lockin.json
