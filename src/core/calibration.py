@@ -12,6 +12,7 @@ class CalibrationManager:
         self.input_sensitivity = 1.0 # Volts per Full Scale (V/FS) (Peak)
         self.output_gain = 1.0 # Volts per Full Scale (V/FS) (Peak)
         self.frequency_calibration = 1.0 # Multiplier for frequency correction
+        self.lockin_gain_offset = 0.0 # dB offset for Lock-in Amplifier
         self.load()
 
     def load(self):
@@ -22,6 +23,7 @@ class CalibrationManager:
                     self.input_sensitivity = data.get('input_sensitivity', 1.0)
                     self.output_gain = data.get('output_gain', 1.0)
                     self.frequency_calibration = data.get('frequency_calibration', 1.0)
+                    self.lockin_gain_offset = data.get('lockin_gain_offset', 0.0)
             except Exception as e:
                 print(f"Failed to load calibration: {e}")
 
@@ -29,7 +31,8 @@ class CalibrationManager:
         data = {
             'input_sensitivity': self.input_sensitivity,
             'output_gain': self.output_gain,
-            'frequency_calibration': self.frequency_calibration
+            'frequency_calibration': self.frequency_calibration,
+            'lockin_gain_offset': self.lockin_gain_offset
         }
         try:
             with open(self.config_path, 'w') as f:
@@ -51,6 +54,11 @@ class CalibrationManager:
         """Sets the frequency calibration factor (multiplier)."""
         self.frequency_calibration = factor
         self.save()
+        
+    def set_lockin_gain_offset(self, offset_db):
+        """Sets the absolute gain offset for the Lock-in Amplifier in dB."""
+        self.lockin_gain_offset = offset_db
+        self.save()
 
     def dbfs_to_dbv(self, dbfs):
         """Converts dBFS to dBV."""
@@ -69,3 +77,90 @@ class CalibrationManager:
     def get_input_offset_db(self):
         """Returns the dB offset to add to dBFS to get dBV."""
         return 20 * np.log10(self.input_sensitivity)
+
+    # --- Frequency Correction Map ---
+    
+    def load_frequency_map(self, path):
+        """
+        Loads a frequency correction map from a JSON file.
+        Format: [[freq, mag_db, phase_deg], ...]
+        """
+        if not os.path.exists(path):
+            print(f"Calibration map not found: {path}")
+            return False
+            
+        try:
+            with open(path, 'r') as f:
+                data = json.load(f)
+                # Sort by frequency just in case
+                self.frequency_map = sorted(data, key=lambda x: x[0])
+                print(f"Loaded calibration map with {len(self.frequency_map)} points.")
+                return True
+        except Exception as e:
+            print(f"Failed to load calibration map: {e}")
+            return False
+
+    def save_frequency_map(self, path, data):
+        """
+        Saves the frequency correction map to a JSON file.
+        data: list of [freq, mag_db, phase_deg]
+        """
+        try:
+            with open(path, 'w') as f:
+                json.dump(data, f, indent=4)
+            self.frequency_map = sorted(data, key=lambda x: x[0])
+            print(f"Saved calibration map to {path}")
+            return True
+        except Exception as e:
+            print(f"Failed to save calibration map: {e}")
+            return False
+
+    def get_frequency_correction(self, freq):
+        """
+        Returns (mag_correction_db, phase_correction_deg) for the given frequency.
+        Uses linear interpolation.
+        Returns (0.0, 0.0) if no map is loaded.
+        """
+        if not hasattr(self, 'frequency_map') or not self.frequency_map:
+            return 0.0, 0.0
+            
+        # If out of range, clamp to nearest
+        if freq <= self.frequency_map[0][0]:
+            return self.frequency_map[0][1], self.frequency_map[0][2]
+        if freq >= self.frequency_map[-1][0]:
+            return self.frequency_map[-1][1], self.frequency_map[-1][2]
+            
+        # Binary search or simple search (map size usually < 1000)
+        # np.interp is convenient if we separate arrays, but here we have list of lists.
+        # Let's do a simple search or convert to numpy arrays on load? 
+        # For now, simple search is fine for < 1000 points.
+        
+        # Optimization: Convert to numpy arrays on load if performance is critical.
+        # But for now, let's just do it simply.
+        
+        # Find index i such that map[i][0] <= freq < map[i+1][0]
+        # Using bisect would be faster but let's stick to basic python for clarity unless needed.
+        
+        # Let's use numpy for interpolation, it's robust.
+        # We can cache the numpy arrays if this is called often (it is).
+        
+        if not hasattr(self, '_map_freqs'):
+            self._update_map_cache()
+            
+        mag_corr = np.interp(freq, self._map_freqs, self._map_mags)
+        phase_corr = np.interp(freq, self._map_freqs, self._map_phases)
+        
+        return mag_corr, phase_corr
+
+    def _update_map_cache(self):
+        if not hasattr(self, 'frequency_map') or not self.frequency_map:
+            self._map_freqs = np.array([])
+            self._map_mags = np.array([])
+            self._map_phases = np.array([])
+            return
+
+        data = np.array(self.frequency_map)
+        self._map_freqs = data[:, 0]
+        self._map_mags = data[:, 1]
+        self._map_phases = data[:, 2]
+

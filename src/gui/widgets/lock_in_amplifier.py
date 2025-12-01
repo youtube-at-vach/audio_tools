@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLay
                              QDoubleSpinBox, QProgressBar, QSpinBox)
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
                              QComboBox, QCheckBox, QSlider, QGroupBox, QFormLayout, 
-                             QDoubleSpinBox, QProgressBar, QSpinBox, QTabWidget, QApplication)
+                             QDoubleSpinBox, QProgressBar, QSpinBox, QTabWidget, QApplication, QFileDialog, QMessageBox)
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 import time
 from src.measurement_modules.base import MeasurementModule
@@ -27,7 +27,9 @@ class LockInAmplifier(MeasurementModule):
         self.gen_amplitude = 0.5 # Linear 0-1
         self.output_channel = 0 # 0: Left, 1: Right
         self.external_mode = False
+
         self.harmonic_order = 1
+        self.apply_calibration = False
         
         self.signal_channel = 0 # 0: Left, 1: Right
         self.ref_channel = 1    # 0: Left, 1: Right
@@ -183,10 +185,24 @@ class LockInAmplifier(MeasurementModule):
         # Phase
         self.current_phase = np.degrees(np.angle(avg_result))
         
+        # Apply Calibration
+        if self.apply_calibration:
+            mag_corr, phase_corr = self.audio_engine.calibration.get_frequency_correction(self.gen_frequency)
+            gain_offset = self.audio_engine.calibration.lockin_gain_offset
+            
+            # Total Correction
+            # Corrected_dB = Measured_dB - (Map_Correction + Gain_Offset)
+            total_mag_corr_db = mag_corr + gain_offset
+            
+            corr_factor = 10 ** (-total_mag_corr_db / 20)
+            self.current_magnitude *= corr_factor
+            self.current_phase -= phase_corr
+        
         # X and Y (In-phase and Quadrature)
-        # X = 2 * Real, Y = 2 * Imag
-        self.current_x = 2 * np.real(avg_result)
-        self.current_y = 2 * np.imag(avg_result)
+        # Recalculate X/Y based on corrected Mag/Phase
+        rad_phase = np.radians(self.current_phase)
+        self.current_x = self.current_magnitude * np.cos(rad_phase)
+        self.current_y = self.current_magnitude * np.sin(rad_phase)
 
 
 
@@ -474,6 +490,7 @@ class LockInAmplifierWidget(QWidget):
         self.fra_plot_unit_combo = QComboBox()
         self.fra_plot_unit_combo.addItems(['dBFS', 'dBV', 'dBu', 'Vrms', 'Vpeak'])
         self.fra_plot_unit_combo.setCurrentText('dBFS')
+        self.fra_plot_unit_combo.currentTextChanged.connect(self.update_fra_plot)
         fra_form.addRow("Plot Unit:", self.fra_plot_unit_combo)
         
         self.fra_start_btn = QPushButton("Start Sweep")
@@ -520,15 +537,122 @@ class LockInAmplifierWidget(QWidget):
         
         self.tabs.addTab(fra_widget, "Frequency Response")
         
+        # --- Tab 3: Calibration ---
+        cal_widget = QWidget()
+        cal_layout = QHBoxLayout(cal_widget)
+        
+        # Settings
+        cal_settings = QGroupBox("Calibration Settings")
+        cal_form = QFormLayout()
+        
+        self.cal_start_spin = QDoubleSpinBox()
+        self.cal_start_spin.setRange(20, 20000); self.cal_start_spin.setValue(20); self.cal_start_spin.setSuffix(" Hz")
+        cal_form.addRow("Start Freq:", self.cal_start_spin)
+        
+        self.cal_end_spin = QDoubleSpinBox()
+        self.cal_end_spin.setRange(20, 20000); self.cal_end_spin.setValue(20000); self.cal_end_spin.setSuffix(" Hz")
+        cal_form.addRow("End Freq:", self.cal_end_spin)
+        
+        self.cal_steps_spin = QSpinBox()
+        self.cal_steps_spin.setRange(10, 5000); self.cal_steps_spin.setValue(100)
+        cal_form.addRow("Steps:", self.cal_steps_spin)
+        
+        self.cal_settle_spin = QDoubleSpinBox()
+        self.cal_settle_spin.setRange(0.1, 5.0); self.cal_settle_spin.setValue(0.5); self.cal_settle_spin.setSuffix(" s")
+        cal_form.addRow("Settling Time:", self.cal_settle_spin)
+        
+        self.cal_start_btn = QPushButton("Run Relative Map Sweep")
+        self.cal_start_btn.clicked.connect(self.on_cal_start)
+        cal_form.addRow(self.cal_start_btn)
+        
+        self.cal_save_btn = QPushButton("Save Map")
+        self.cal_save_btn.clicked.connect(self.on_cal_save)
+        self.cal_save_btn.setEnabled(False)
+        cal_form.addRow(self.cal_save_btn)
+        
+        self.cal_load_btn = QPushButton("Load Map")
+        self.cal_load_btn.clicked.connect(self.on_cal_load)
+        cal_form.addRow(self.cal_load_btn)
+        
+        self.cal_apply_check = QCheckBox("Apply Calibration")
+        self.cal_apply_check.toggled.connect(self.on_cal_apply_toggled)
+        cal_form.addRow(self.cal_apply_check)
+        
+        # Absolute Gain Calibration
+        cal_form.addRow(QLabel("<b>Absolute Gain Calibration</b>"))
+        
+        self.abs_cal_target_spin = QDoubleSpinBox()
+        self.abs_cal_target_spin.setRange(-200, 200)
+        self.abs_cal_target_spin.setValue(1.0) # Default 1.0 V
+        self.abs_cal_target_spin.setDecimals(6)
+        
+        self.abs_cal_unit_combo = QComboBox()
+        self.abs_cal_unit_combo.addItems(['Vrms', 'dBV', 'dBu', 'dBFS'])
+        self.abs_cal_unit_combo.setCurrentText('Vrms')
+        
+        abs_target_layout = QHBoxLayout()
+        abs_target_layout.addWidget(self.abs_cal_target_spin)
+        abs_target_layout.addWidget(self.abs_cal_unit_combo)
+        cal_form.addRow("Target Value:", abs_target_layout)
+        
+        self.abs_cal_btn = QPushButton("Calibrate Absolute Gain (1-Point)")
+        self.abs_cal_btn.clicked.connect(self.on_abs_cal_click)
+        cal_form.addRow(self.abs_cal_btn)
+        
+        self.abs_cal_status = QLabel(f"Current Offset: {self.module.audio_engine.calibration.lockin_gain_offset:.3f} dB")
+        cal_form.addRow(self.abs_cal_status)
+        
+        self.cal_progress = QProgressBar()
+        cal_form.addRow(self.cal_progress)
+        
+        cal_settings.setLayout(cal_form)
+        cal_layout.addWidget(cal_settings, stretch=1)
+        
+        # Plot
+        self.cal_plot = pg.PlotWidget(title="Calibration Map")
+        self.cal_plot.setLabel('bottom', "Frequency", units='Hz')
+        self.cal_plot.setLabel('left', "Correction", units='dB')
+        self.cal_plot.showGrid(x=True, y=True, alpha=0.3)
+        self.cal_plot.addLegend()
+        self.cal_plot.getPlotItem().getAxis('bottom').setLogMode(True)
+        
+        self.cal_curve_mag = self.cal_plot.plot(pen='y', name='Mag Correction (dB)')
+        self.cal_curve_phase = pg.PlotCurveItem(pen='c', name='Phase Correction (deg)')
+        
+        # Dual Axis for Phase
+        self.cal_plot_p = pg.ViewBox()
+        self.cal_plot.scene().addItem(self.cal_plot_p)
+        self.cal_plot.getPlotItem().showAxis('right')
+        self.cal_plot.getPlotItem().scene().addItem(self.cal_plot_p)
+        self.cal_plot.getPlotItem().getAxis('right').linkToView(self.cal_plot_p)
+        self.cal_plot_p.setXLink(self.cal_plot.getPlotItem())
+        self.cal_plot.getPlotItem().getAxis('right').setLabel('Phase', units='deg')
+        
+        self.cal_plot_p.addItem(self.cal_curve_phase)
+        
+        # Handle resizing for cal plot
+        def update_cal_views():
+            self.cal_plot_p.setGeometry(self.cal_plot.getPlotItem().vb.sceneBoundingRect())
+            self.cal_plot_p.linkedViewChanged(self.cal_plot.getPlotItem().vb, self.cal_plot_p.XAxis)
+        self.cal_plot.getPlotItem().vb.sigResized.connect(update_cal_views)
+        
+        cal_layout.addWidget(self.cal_plot, stretch=3)
+        
+        self.tabs.addTab(cal_widget, "Calibration")
+        
         main_layout.addWidget(self.tabs)
         self.setLayout(main_layout)
         
         # Data storage for FRA
         self.fra_freqs = []
         self.fra_log_freqs = []
-        self.fra_mags = []
+        self.fra_raw_mags = [] # Linear (0-1)
         self.fra_phases = []
         self.fra_worker = None
+        
+        # Data storage for Calibration
+        self.cal_data = [] # List of [freq, mag_db, phase_deg]
+        self.cal_worker = None
 
     def on_toggle(self, checked):
         if checked:
@@ -759,7 +883,7 @@ class LockInAmplifierWidget(QWidget):
         # Clear Data
         self.fra_freqs = []
         self.fra_log_freqs = []
-        self.fra_mags = []
+        self.fra_raw_mags = []
         self.fra_phases = []
         self.fra_curve_mag.setData([], [])
         self.fra_curve_phase.setData([], [])
@@ -800,8 +924,8 @@ class LockInAmplifierWidget(QWidget):
         self.fra_worker.progress.connect(self.fra_progress.setValue)
         self.fra_worker.result.connect(self.on_fra_result)
         self.fra_worker.finished_sweep.connect(self.on_fra_finished)
-        
         self.fra_worker.start()
+        
         self.fra_start_btn.setText("Stop Sweep")
         
     def on_fra_result(self, f, mag, phase):
@@ -809,54 +933,333 @@ class LockInAmplifierWidget(QWidget):
         
         # Log X
         if self.fra_log_check.isChecked():
-            x_val = np.log10(f)
+            x_val = np.log10(f) if f > 0 else 0
         else:
             x_val = f
         self.fra_log_freqs.append(x_val)
         
-        # Convert Mag to Selected Unit
-        unit = self.fra_plot_unit_combo.currentText()
-        sensitivity = self.module.audio_engine.calibration.input_sensitivity
-        
-        # mag is Linear (0-1 relative to Full Scale)
-        
-        y_val = 0.0
-        if unit == 'dBFS':
-            y_val = 20 * np.log10(mag + 1e-12)
-            self.fra_plot.setLabel('left', "Magnitude", units='dBFS')
-        elif unit == 'dBV':
-            v_peak = mag * sensitivity
-            v_rms = v_peak / np.sqrt(2)
-            y_val = 20 * np.log10(v_rms + 1e-12)
-            self.fra_plot.setLabel('left', "Magnitude", units='dBV')
-        elif unit == 'dBu':
-            v_peak = mag * sensitivity
-            v_rms = v_peak / np.sqrt(2)
-            y_val = 20 * np.log10((v_rms + 1e-12) / 0.7746)
-            self.fra_plot.setLabel('left', "Magnitude", units='dBu')
-        elif unit == 'Vrms':
-            v_peak = mag * sensitivity
-            y_val = v_peak / np.sqrt(2)
-            self.fra_plot.setLabel('left', "Magnitude", units='V')
-        elif unit == 'Vpeak':
-            y_val = mag * sensitivity
-            self.fra_plot.setLabel('left', "Magnitude", units='V')
-            
-        self.fra_mags.append(y_val)
+        self.fra_raw_mags.append(mag)
         self.fra_phases.append(phase)
         
-        self.fra_curve_mag.setData(self.fra_log_freqs, self.fra_mags)
-        self.fra_curve_phase.setData(self.fra_log_freqs, self.fra_phases)
+        self.update_fra_plot()
         
         # Auto-scale Phase View
         self.fra_plot_p.autoRange()
+
+    def update_fra_plot(self):
+        if not self.fra_raw_mags:
+            return
+            
+        unit = self.fra_plot_unit_combo.currentText()
+        sensitivity = self.module.audio_engine.calibration.input_sensitivity
         
+        plot_mags = []
+        
+        for mag in self.fra_raw_mags:
+            y_val = 0.0
+            if unit == 'dBFS':
+                y_val = 20 * np.log10(mag + 1e-12)
+            elif unit == 'dBV':
+                v_peak = mag * sensitivity
+                v_rms = v_peak / np.sqrt(2)
+                y_val = 20 * np.log10(v_rms + 1e-12)
+            elif unit == 'dBu':
+                v_peak = mag * sensitivity
+                v_rms = v_peak / np.sqrt(2)
+                y_val = 20 * np.log10((v_rms + 1e-12) / 0.7746)
+            elif unit == 'Vrms':
+                v_peak = mag * sensitivity
+                y_val = v_peak / np.sqrt(2)
+            elif unit == 'Vpeak':
+                y_val = mag * sensitivity
+            plot_mags.append(y_val)
+            
+        # Update Axis Label
+        if unit == 'dBFS': self.fra_plot.setLabel('left', "Magnitude", units='dBFS')
+        elif unit == 'dBV': self.fra_plot.setLabel('left', "Magnitude", units='dBV')
+        elif unit == 'dBu': self.fra_plot.setLabel('left', "Magnitude", units='dBu')
+        elif unit == 'Vrms': self.fra_plot.setLabel('left', "Magnitude", units='V')
+        elif unit == 'Vpeak': self.fra_plot.setLabel('left', "Magnitude", units='V')
+
+        self.fra_curve_mag.setData(self.fra_log_freqs, plot_mags)
+        self.fra_curve_phase.setData(self.fra_log_freqs, self.fra_phases)
+
     def on_fra_finished(self):
         self.fra_start_btn.setText("Start Sweep")
         self.fra_start_btn.setEnabled(True)
-        self.fra_progress.setValue(100)
-        self.fra_plot.getPlotItem().autoRange()
-        self.fra_plot_p.autoRange()
+        self.module.stop_analysis() # Stop generator
+        
+    # --- Calibration Methods ---
+    
+    def on_cal_start(self):
+        if self.cal_worker is not None and self.cal_worker.isRunning():
+            self.cal_worker.cancel()
+            self.cal_start_btn.setText("Stopping...")
+            self.cal_start_btn.setEnabled(False)
+            return
+            
+        # Clear Data
+        self.cal_data = []
+        self.cal_curve_mag.setData([], [])
+        self.cal_curve_phase.setData([], [])
+        
+        # Start Worker (Reuse FRASweepWorker logic)
+        start = self.cal_start_spin.value()
+        end = self.cal_end_spin.value()
+        steps = self.cal_steps_spin.value()
+        settle = self.cal_settle_spin.value()
+        
+        # Force Apply Settings
+        self.module.output_channel = self.out_ch_combo.currentIndex()
+        self.module.signal_channel = self.sig_ch_combo.currentIndex()
+        self.module.ref_channel = self.ref_ch_combo.currentIndex()
+        
+        # Set Amplitude
+        amp_val = self.amp_spin.value()
+        amp_unit = self.gen_unit_combo.currentText()
+        self.module.gen_amplitude = self.calculate_linear_amplitude(amp_val, amp_unit)
+        
+        # Disable Calibration Application during calibration sweep!
+        self.cal_apply_check.setChecked(False)
+        
+        self.cal_worker = FRASweepWorker(self.module, start, end, steps, True, settle) # Always log sweep for cal?
+        self.cal_worker.progress.connect(self.cal_progress.setValue)
+        self.cal_worker.result.connect(self.on_cal_result)
+        self.cal_worker.finished_sweep.connect(self.on_cal_finished)
+        self.cal_worker.start()
+        
+        self.cal_start_btn.setText("Stop Calibration")
+        self.cal_save_btn.setEnabled(False)
+        
+    def on_cal_result(self, f, mag, phase):
+        # Store raw data
+        if mag > 0:
+            mag_db = 20 * np.log10(mag + 1e-12)
+        else:
+            mag_db = -120
+            
+        self.cal_data.append([f, mag_db, phase])
+        
+        # Update Plot
+        freqs = [x[0] for x in self.cal_data]
+        log_freqs = [np.log10(x) for x in freqs]
+        mags = [x[1] for x in self.cal_data]
+        phases = [x[2] for x in self.cal_data]
+        
+        self.cal_curve_mag.setData(log_freqs, mags)
+        self.cal_curve_phase.setData(log_freqs, phases)
+        
+    def on_cal_finished(self):
+        self.cal_start_btn.setText("Run Relative Map Sweep")
+        self.cal_start_btn.setEnabled(True)
+        self.cal_save_btn.setEnabled(True)
+        self.module.stop_analysis()
+        
+        # Normalize Map to 1kHz (or nearest)
+        # Find 1kHz index
+        if not self.cal_data: return
+        
+        freqs = [x[0] for x in self.cal_data]
+        mags = [x[1] for x in self.cal_data]
+        phases = [x[2] for x in self.cal_data]
+        
+        # Find nearest to 1000Hz
+        idx = (np.abs(np.array(freqs) - 1000)).argmin()
+        ref_mag = mags[idx]
+        ref_phase = phases[idx] # Optional: Normalize phase too? Usually yes for relative map.
+        
+        # Normalize
+        norm_data = []
+        for f, m, p in self.cal_data:
+            norm_data.append([f, m - ref_mag, p - ref_phase]) # Relative to 1kHz
+            
+        self.cal_data = norm_data
+        
+        # Update Plot with Normalized Data
+        log_freqs = [np.log10(x[0]) for x in self.cal_data]
+        norm_mags = [x[1] for x in self.cal_data]
+        norm_phases = [x[2] for x in self.cal_data]
+        
+        self.cal_curve_mag.setData(log_freqs, norm_mags)
+        self.cal_curve_phase.setData(log_freqs, norm_phases)
+        
+        QMessageBox.information(self, "Calibration Complete", 
+                              f"Sweep completed.\nMap normalized to 1kHz (Ref: {ref_mag:.2f} dB, {ref_phase:.2f} deg).\n"
+                              "This map captures RELATIVE frequency response.\n"
+                              "Use 'Absolute Gain Calibration' to fix the absolute level.")
+
+    def on_abs_cal_click(self):
+        if not self.module.is_running:
+            QMessageBox.warning(self, "Error", "Please start the measurement first (Manual Control -> Start).")
+            return
+            
+        # Get Current Measurement (Uncorrected or Corrected? Should be Uncorrected for calculating offset?)
+        # Actually, if we are calibrating absolute gain, we want the result AFTER Map correction (if applied) 
+        # to match the Target.
+        # But wait, if Map is relative (0dB at 1k), then at 1k Map correction is 0.
+        # So at 1k, Corrected = Measured - Offset.
+        # We want Corrected = Target.
+        # So Target = Measured - Offset => Offset = Measured - Target.
+        
+        # If we are at 10k, and Map says +1dB relative to 1k.
+        # Measured = X.
+        # Corrected = X - (+1dB) - Offset.
+        # We want Corrected = Target.
+        # Offset = X - 1dB - Target.
+        
+        # So we need the measurement *with Map applied but without Offset applied*.
+        # Or simpler: Just take the current displayed value (which has both applied), 
+        # and adjust the offset by the difference.
+        
+        # Current Displayed Magnitude (dBFS)
+        # self.module.current_magnitude is already corrected in process_data if apply_calibration is True.
+        # But wait, process_data uses the *current* offset.
+        # So Current_Displayed = Raw - Map - Old_Offset.
+        # We want New_Displayed = Target.
+        # Target = Raw - Map - New_Offset.
+        # New_Offset = Raw - Map - Target.
+        # New_Offset = (Current_Displayed + Old_Offset) - Target.
+        # New_Offset = Old_Offset + (Current_Displayed - Target).
+        
+        # This works regardless of whether Map is applied or not, as long as we are consistent.
+        # If Map NOT applied: Current = Raw. New_Offset = Raw - Target. (Assuming Map=0)
+        
+        # Let's use the current magnitude from module (which is linear 0-1 FS).
+        current_mag_linear = self.module.current_magnitude
+        if current_mag_linear <= 0:
+            QMessageBox.warning(self, "Error", "Signal too low for calibration.")
+            return
+            
+        current_mag_dbfs = 20 * np.log10(current_mag_linear + 1e-12)
+        
+        # Calculate Target in dBFS
+        target_val = self.abs_cal_target_spin.value()
+        target_unit = self.abs_cal_unit_combo.currentText()
+        sensitivity = self.module.audio_engine.calibration.input_sensitivity
+        
+        target_dbfs = 0.0
+        if target_unit == 'dBFS':
+            target_dbfs = target_val
+        elif target_unit == 'dBV':
+            # val = 20log(Vrms)
+            # Vrms = 10^(val/20)
+            # Vpeak = Vrms * sqrt(2)
+            # dBFS = 20log(Vpeak / sensitivity)
+            v_rms = 10**(target_val/20)
+            v_peak = v_rms * np.sqrt(2)
+            target_dbfs = 20 * np.log10(v_peak / sensitivity)
+        elif target_unit == 'dBu':
+            v_rms = 0.7746 * 10**(target_val/20)
+            v_peak = v_rms * np.sqrt(2)
+            target_dbfs = 20 * np.log10(v_peak / sensitivity)
+        elif target_unit == 'Vrms':
+            v_peak = target_val * np.sqrt(2)
+            target_dbfs = 20 * np.log10(v_peak / sensitivity)
+            
+        # Calculate Error
+        # Current (Displayed) = Target + Error
+        # We want to subtract Error from the reading.
+        # Since reading = Raw - Offset, we need to INCREASE Offset by Error.
+        # Error = Current - Target
+        # New_Offset = Old_Offset + Error
+        
+        # Wait, let's verify sign.
+        # Correction logic: Corrected = Measured - Offset.
+        # If Measured = -10dB, Target = -12dB.
+        # We are reading 2dB too high.
+        # We need to subtract 2dB more.
+        # So Offset should increase by 2dB.
+        # Error = -10 - (-12) = +2dB.
+        # New_Offset = Old_Offset + 2dB. Correct.
+        
+        # But wait, self.module.current_magnitude ALREADY includes the current offset if applied!
+        # If apply_calibration is False, it does NOT include offset.
+        
+        old_offset = 0.0
+        if self.module.apply_calibration:
+            old_offset = self.module.audio_engine.calibration.lockin_gain_offset
+            
+        # Reconstruct "Raw - Map" (The value before offset correction)
+        # If applied: Current = (Raw - Map) - Old_Offset
+        # So (Raw - Map) = Current + Old_Offset
+        
+        # If NOT applied: Current = Raw
+        # And we assume Map is 0 (or ignored).
+        # But if we calibrate Absolute Gain, we usually want it to work WITH the map.
+        # If the user hasn't enabled calibration, we should probably warn them or enable it?
+        # Or just calculate the offset assuming they WILL enable it.
+        
+        # Case 1: Calibration Enabled.
+        # We adjust offset to make display match target.
+        # New_Offset = Old_Offset + (Current_dBFS - Target_dBFS)
+        
+        # Case 2: Calibration Disabled.
+        # We calculate offset such that IF enabled, it matches.
+        # Raw = Current.
+        # Target = Raw - Map - New_Offset.
+        # New_Offset = Raw - Map - Target.
+        # We need the Map value at current frequency.
+        
+        if not self.module.apply_calibration:
+            ret = QMessageBox.question(self, "Enable Calibration?", 
+                                     "Calibration is currently disabled. To calibrate absolute gain correctly with the frequency map, we should enable calibration first.\n\nEnable and proceed?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if ret == QMessageBox.StandardButton.Yes:
+                self.cal_apply_check.setChecked(True)
+                # Wait for one cycle? No, just proceed with logic, 
+                # but we need to be careful about what 'current_magnitude' represents.
+                # It represents the LAST processed buffer.
+                # If we just enabled it, the next process_data hasn't run yet.
+                # So current_magnitude is still Raw.
+                # So we use Case 2 logic but set Old_Offset to what is in calibration (which is not applied yet).
+                
+                # Actually, simpler: Just force enable, wait a bit (or manually trigger process), then read.
+                self.module.process_data() # Force process with new setting
+                current_mag_linear = self.module.current_magnitude
+                current_mag_dbfs = 20 * np.log10(current_mag_linear + 1e-12)
+                old_offset = self.module.audio_engine.calibration.lockin_gain_offset
+            else:
+                return
+
+        # Recalculate diff
+        diff = current_mag_dbfs - target_dbfs
+        new_offset = old_offset + diff
+        
+        self.module.audio_engine.calibration.set_lockin_gain_offset(new_offset)
+        self.abs_cal_status.setText(f"Current Offset: {new_offset:.3f} dB")
+        
+        QMessageBox.information(self, "Success", f"Absolute Gain Calibrated.\nOffset adjusted by {diff:+.3f} dB.\nNew Offset: {new_offset:.3f} dB")
+        
+    def on_cal_save(self):
+        if not self.cal_data:
+            return
+            
+        path, _ = QFileDialog.getSaveFileName(self, "Save Calibration Map", "", "JSON Files (*.json)")
+        if path:
+            if self.module.audio_engine.calibration.save_frequency_map(path, self.cal_data):
+                QMessageBox.information(self, "Success", "Calibration map saved successfully.")
+            else:
+                QMessageBox.critical(self, "Error", "Failed to save calibration map.")
+                
+    def on_cal_load(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Load Calibration Map", "", "JSON Files (*.json)")
+        if path:
+            if self.module.audio_engine.calibration.load_frequency_map(path):
+                QMessageBox.information(self, "Success", "Calibration map loaded successfully.")
+                # Update plot with loaded data
+                self.cal_data = self.module.audio_engine.calibration.frequency_map
+                freqs = [x[0] for x in self.cal_data]
+                log_freqs = [np.log10(x) for x in freqs]
+                mags = [x[1] for x in self.cal_data]
+                phases = [x[2] for x in self.cal_data]
+                self.cal_curve_mag.setData(log_freqs, mags)
+                self.cal_curve_phase.setData(log_freqs, phases)
+            else:
+                QMessageBox.critical(self, "Error", "Failed to load calibration map.")
+
+    def on_cal_apply_toggled(self, checked):
+        self.module.apply_calibration = checked
+
 
     def apply_theme(self, theme_name):
         if theme_name == 'system' and hasattr(self.app, 'theme_manager'):
