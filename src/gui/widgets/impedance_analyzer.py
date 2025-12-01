@@ -5,7 +5,7 @@ from scipy.signal import hilbert
 from collections import deque
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
                              QComboBox, QCheckBox, QGroupBox, QFormLayout, 
-                             QDoubleSpinBox, QProgressBar, QSpinBox, QTabWidget, QMessageBox, QApplication)
+                             QDoubleSpinBox, QProgressBar, QSpinBox, QTabWidget, QMessageBox, QApplication, QGridLayout)
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 import time
 from src.measurement_modules.base import MeasurementModule
@@ -299,6 +299,225 @@ class ImpedanceSweepWorker(QThread):
         self.is_cancelled = True
 
 
+class ImpedanceResultsWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.is_detailed = False
+        self.circuit_mode = "Series" # "Series" or "Parallel"
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # --- Header / Toggle ---
+        header_layout = QHBoxLayout()
+        self.mode_label = QLabel("Mode: Series")
+        self.mode_label.setStyleSheet("font-weight: bold; color: #aaa;")
+        header_layout.addWidget(self.mode_label)
+        
+        header_layout.addStretch()
+        
+        self.detail_btn = QPushButton("Show Details")
+        self.detail_btn.setCheckable(True)
+        self.detail_btn.clicked.connect(self.toggle_details)
+        self.detail_btn.setStyleSheet("font-size: 10px; padding: 2px;")
+        header_layout.addWidget(self.detail_btn)
+        layout.addLayout(header_layout)
+
+        # --- Simple View ---
+        self.simple_widget = QWidget()
+        simple_layout = QGridLayout(self.simple_widget)
+        
+        # Primary Z
+        self.lbl_z_mag = QLabel("0.00 Ω")
+        self.lbl_z_mag.setStyleSheet("font-size: 28px; font-weight: bold; color: #4caf50;") # Green
+        self.lbl_z_phase = QLabel("0.00°")
+        self.lbl_z_phase.setStyleSheet("font-size: 20px; font-weight: bold; color: #2196f3;") # Blue
+        
+        simple_layout.addWidget(QLabel("|Z|:"), 0, 0)
+        simple_layout.addWidget(self.lbl_z_mag, 0, 1)
+        simple_layout.addWidget(QLabel("θ:"), 0, 2)
+        simple_layout.addWidget(self.lbl_z_phase, 0, 3)
+        
+        # Secondary (R/X or G/B based on mode)
+        self.lbl_p1_name = QLabel("Rs:")
+        self.lbl_p1_val = QLabel("0.00 Ω")
+        self.lbl_p1_val.setStyleSheet("font-size: 18px; color: #ffeb3b;") # Yellow
+        
+        self.lbl_p2_name = QLabel("Xs:")
+        self.lbl_p2_val = QLabel("0.00 Ω")
+        self.lbl_p2_val.setStyleSheet("font-size: 18px; color: #e91e63;") # Pink
+        
+        simple_layout.addWidget(self.lbl_p1_name, 1, 0)
+        simple_layout.addWidget(self.lbl_p1_val, 1, 1)
+        simple_layout.addWidget(self.lbl_p2_name, 1, 2)
+        simple_layout.addWidget(self.lbl_p2_val, 1, 3)
+        
+        # L/C/Q
+        self.lbl_lc_name = QLabel("L:")
+        self.lbl_lc_val = QLabel("0.00 H")
+        self.lbl_q_val = QLabel("Q: 0.00")
+        
+        simple_layout.addWidget(self.lbl_lc_name, 2, 0)
+        simple_layout.addWidget(self.lbl_lc_val, 2, 1)
+        simple_layout.addWidget(self.lbl_q_val, 2, 2, 1, 2)
+
+        layout.addWidget(self.simple_widget)
+
+        # --- Detailed View ---
+        self.detail_widget = QWidget()
+        self.detail_widget.setVisible(False)
+        detail_layout = QGridLayout(self.detail_widget)
+        
+        # Group 1: Series
+        box_s = QGroupBox("Series Equivalent")
+        lay_s = QFormLayout()
+        self.val_rs = QLabel("-"); lay_s.addRow("Rs:", self.val_rs)
+        self.val_xs = QLabel("-"); lay_s.addRow("Xs:", self.val_xs)
+        self.val_ls = QLabel("-"); lay_s.addRow("Ls:", self.val_ls)
+        self.val_cs = QLabel("-"); lay_s.addRow("Cs:", self.val_cs)
+        box_s.setLayout(lay_s)
+        detail_layout.addWidget(box_s, 0, 0)
+        
+        # Group 2: Parallel
+        box_p = QGroupBox("Parallel Equivalent")
+        lay_p = QFormLayout()
+        self.val_rp = QLabel("-"); lay_p.addRow("Rp:", self.val_rp)
+        self.val_xp = QLabel("-"); lay_p.addRow("Xp:", self.val_xp)
+        self.val_lp = QLabel("-"); lay_p.addRow("Lp:", self.val_lp)
+        self.val_cp = QLabel("-"); lay_p.addRow("Cp:", self.val_cp)
+        box_p.setLayout(lay_p)
+        detail_layout.addWidget(box_p, 0, 1)
+        
+        # Group 3: Admittance
+        box_y = QGroupBox("Admittance (Y)")
+        lay_y = QFormLayout()
+        self.val_y_mag = QLabel("-"); lay_y.addRow("|Y|:", self.val_y_mag)
+        self.val_g = QLabel("-"); lay_y.addRow("G (Cond):", self.val_g)
+        self.val_b = QLabel("-"); lay_y.addRow("B (Susc):", self.val_b)
+        box_y.setLayout(lay_y)
+        detail_layout.addWidget(box_y, 1, 0)
+        
+        # Group 4: Quality / Loss
+        box_q = QGroupBox("Quality / Loss")
+        lay_q = QFormLayout()
+        self.val_q = QLabel("-"); lay_q.addRow("Q Factor:", self.val_q)
+        self.val_d = QLabel("-"); lay_q.addRow("D (Loss):", self.val_d)
+        self.val_esr = QLabel("-"); lay_q.addRow("ESR:", self.val_esr) # Same as Rs usually
+        box_q.setLayout(lay_q)
+        detail_layout.addWidget(box_q, 1, 1)
+        
+        # Group 5: Raw Signals
+        box_raw = QGroupBox("Raw Signals (V / I)")
+        lay_raw = QFormLayout()
+        self.val_v = QLabel("-"); lay_raw.addRow("Voltage:", self.val_v)
+        self.val_i = QLabel("-"); lay_raw.addRow("Current:", self.val_i)
+        self.val_v_phase = QLabel("-"); lay_raw.addRow("V Phase:", self.val_v_phase)
+        self.val_i_phase = QLabel("-"); lay_raw.addRow("I Phase:", self.val_i_phase)
+        box_raw.setLayout(lay_raw)
+        detail_layout.addWidget(box_raw, 2, 0, 1, 2)
+        
+        layout.addWidget(self.detail_widget)
+        layout.addStretch()
+
+    def toggle_details(self, checked):
+        self.is_detailed = checked
+        self.detail_widget.setVisible(checked)
+        self.detail_btn.setText("Hide Details" if checked else "Show Details")
+
+    def update_data(self, z: complex, v: complex, i: complex, freq: float):
+        if freq <= 0: return
+        w = 2 * np.pi * freq
+        
+        # Basic Z
+        z_mag = abs(z)
+        z_phase = np.degrees(np.angle(z))
+        
+        self.lbl_z_mag.setText(f"{z_mag:.4g} Ω")
+        self.lbl_z_phase.setText(f"{z_phase:.2f}°")
+        
+        # Series
+        rs = z.real
+        xs = z.imag
+        ls = xs / w if w > 0 else 0
+        cs = -1 / (w * xs) if (w > 0 and abs(xs) > 1e-12) else float('inf')
+        
+        # Parallel
+        # Y = 1/Z = G + jB
+        if z_mag > 1e-12:
+            y = 1.0 / z
+            g = y.real
+            b = y.imag
+            
+            rp = 1.0 / g if abs(g) > 1e-12 else float('inf')
+            xp = -1.0 / b if abs(b) > 1e-12 else float('inf')
+            
+            lp = -1.0 / (w * b) if (w > 0 and abs(b) > 1e-12) else float('inf')
+            cp = b / w if w > 0 else 0
+        else:
+            y = 0j; g=0; b=0; rp=0; xp=0; lp=0; cp=0
+            
+        # Q / D
+        q = abs(xs) / abs(rs) if abs(rs) > 1e-12 else float('inf')
+        d = 1.0 / q if q > 1e-12 else float('inf')
+        
+        # --- Update Detailed View ---
+        self.val_rs.setText(f"{rs:.4g} Ω")
+        self.val_xs.setText(f"{xs:.4g} Ω")
+        self.val_ls.setText(f"{ls*1e6:.4g} µH" if abs(ls) < 1 else f"{ls:.4g} H")
+        self.val_cs.setText(f"{cs*1e9:.4g} nF" if abs(cs) < 1e-6 else f"{cs*1e6:.4g} µF")
+        
+        self.val_rp.setText(f"{rp:.4g} Ω")
+        self.val_xp.setText(f"{xp:.4g} Ω")
+        self.val_lp.setText(f"{lp*1e6:.4g} µH" if abs(lp) < 1 else f"{lp:.4g} H")
+        self.val_cp.setText(f"{cp*1e9:.4g} nF" if abs(cp) < 1e-6 else f"{cp*1e6:.4g} µF")
+        
+        self.val_y_mag.setText(f"{abs(y):.4g} S")
+        self.val_g.setText(f"{g:.4g} S")
+        self.val_b.setText(f"{b:.4g} S")
+        
+        self.val_q.setText(f"{q:.4g}")
+        self.val_d.setText(f"{d:.4g}")
+        self.val_esr.setText(f"{rs:.4g} Ω")
+        
+        self.val_v.setText(f"{abs(v):.4g} V")
+        self.val_i.setText(f"{abs(i)*1000:.4g} mA")
+        self.val_v_phase.setText(f"{np.degrees(np.angle(v)):.2f}°")
+        self.val_i_phase.setText(f"{np.degrees(np.angle(i)):.2f}°")
+        
+        # --- Update Simple View ---
+        self.mode_label.setText(f"Mode: {self.circuit_mode}")
+        
+        if self.circuit_mode == "Series":
+            self.lbl_p1_name.setText("Rs:")
+            self.lbl_p1_val.setText(f"{rs:.4g} Ω")
+            self.lbl_p2_name.setText("Xs:")
+            self.lbl_p2_val.setText(f"{xs:.4g} Ω")
+            
+            if xs > 0: # Inductive
+                self.lbl_lc_name.setText("Ls:")
+                self.lbl_lc_val.setText(f"{ls*1e6:.4g} µH" if abs(ls) < 1e-3 else f"{ls*1e3:.4g} mH")
+            else: # Capacitive
+                self.lbl_lc_name.setText("Cs:")
+                self.lbl_lc_val.setText(f"{cs*1e9:.4g} nF" if abs(cs) < 1e-6 else f"{cs*1e6:.4g} µF")
+                
+        else: # Parallel
+            self.lbl_p1_name.setText("Rp:")
+            self.lbl_p1_val.setText(f"{rp:.4g} Ω")
+            self.lbl_p2_name.setText("Xp:")
+            self.lbl_p2_val.setText(f"{xp:.4g} Ω")
+            
+            if b < 0: # Inductive (B is negative for Inductor in Admittance? Y = 1/jwL = -j/wL -> B < 0)
+                self.lbl_lc_name.setText("Lp:")
+                self.lbl_lc_val.setText(f"{lp*1e6:.4g} µH" if abs(lp) < 1e-3 else f"{lp*1e3:.4g} mH")
+            else: # Capacitive (Y = jwC -> B > 0)
+                self.lbl_lc_name.setText("Cp:")
+                self.lbl_lc_val.setText(f"{cp*1e9:.4g} nF" if abs(cp) < 1e-6 else f"{cp*1e6:.4g} µF")
+
+        self.lbl_q_val.setText(f"Q: {q:.4g}")
+
+
 class ImpedanceAnalyzerWidget(QWidget):
     def __init__(self, module: ImpedanceAnalyzer):
         super().__init__()
@@ -320,207 +539,107 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.cal_mode = None # 'open', 'short', or None (DUT)
 
     def init_ui(self):
-        main_layout = QVBoxLayout()
-        self.tabs = QTabWidget()
+        main_layout = QHBoxLayout(self)
         
-        # --- Tab 1: Manual Control ---
-        manual_widget = QWidget()
-        manual_layout = QHBoxLayout(manual_widget)
+        # --- Left Panel: Controls ---
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_panel.setFixedWidth(300) # Fixed width for controls
         
-        # Settings (Left Panel)
-        settings_group = QGroupBox("Settings")
-        settings_layout = QFormLayout()
+        # 1. Measurement Control
+        grp_meas = QGroupBox("Measurement")
+        lay_meas = QFormLayout()
         
         self.toggle_btn = QPushButton("Start Measurement")
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
-        
         self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; color: black; font-weight: bold; padding: 10px; } QPushButton:checked { background-color: #ffcccc; }")
-            
-        settings_layout.addRow(self.toggle_btn)
+        lay_meas.addRow(self.toggle_btn)
         
         self.freq_spin = QDoubleSpinBox()
         self.freq_spin.setRange(20, 20000); self.freq_spin.setValue(1000); self.freq_spin.setSuffix(" Hz")
         self.freq_spin.valueChanged.connect(lambda v: setattr(self.module, 'gen_frequency', v))
-        settings_layout.addRow("Frequency:", self.freq_spin)
+        lay_meas.addRow("Frequency:", self.freq_spin)
         
         self.amp_spin = QDoubleSpinBox()
         self.amp_spin.setRange(0, 1.0); self.amp_spin.setValue(0.5); self.amp_spin.setSingleStep(0.1)
         self.amp_spin.valueChanged.connect(lambda v: setattr(self.module, 'gen_amplitude', v))
-        settings_layout.addRow("Amplitude (0-1):", self.amp_spin)
+        lay_meas.addRow("Amplitude:", self.amp_spin)
+        
+        self.circuit_combo = QComboBox()
+        self.circuit_combo.addItems(["Series", "Parallel"])
+        self.circuit_combo.currentTextChanged.connect(self.on_circuit_mode_changed)
+        lay_meas.addRow("Circuit Model:", self.circuit_combo)
+        
+        grp_meas.setLayout(lay_meas)
+        left_layout.addWidget(grp_meas)
+        
+        # 2. Configuration
+        grp_conf = QGroupBox("Configuration")
+        lay_conf = QFormLayout()
         
         self.shunt_spin = QDoubleSpinBox()
-        self.shunt_spin.setRange(0.1, 1000000); self.shunt_spin.setValue(100.0); self.shunt_spin.setSuffix(" Ohm")
+        self.shunt_spin.setRange(0.1, 1000000); self.shunt_spin.setValue(100.0); self.shunt_spin.setSuffix(" Ω")
         self.shunt_spin.valueChanged.connect(lambda v: setattr(self.module, 'shunt_resistance', v))
-        settings_layout.addRow("Shunt R:", self.shunt_spin)
+        lay_conf.addRow("Shunt R:", self.shunt_spin)
         
         self.load_std_spin = QDoubleSpinBox()
-        self.load_std_spin.setRange(0.1, 1000000); self.load_std_spin.setValue(100.0); self.load_std_spin.setSuffix(" Ohm")
-        self.load_std_spin.setToolTip("Resistance of the Load Standard used for OSL Calibration.")
+        self.load_std_spin.setRange(0.1, 1000000); self.load_std_spin.setValue(100.0); self.load_std_spin.setSuffix(" Ω")
         self.load_std_spin.valueChanged.connect(lambda v: setattr(self.module, 'load_standard_real', v))
-        settings_layout.addRow("Load Std R:", self.load_std_spin)
-        
-        # Channels
-        self.out_ch_combo = QComboBox()
-        self.out_ch_combo.addItems(["Left", "Right", "Stereo"])
-        self.out_ch_combo.currentIndexChanged.connect(lambda i: setattr(self.module, 'output_channel', i))
-        settings_layout.addRow("Output Ch:", self.out_ch_combo)
-        
-        self.v_ch_combo = QComboBox()
-        self.v_ch_combo.addItems(["Left (Ch 1)", "Right (Ch 2)"])
-        self.v_ch_combo.setCurrentIndex(0)
-        self.v_ch_combo.currentIndexChanged.connect(lambda i: setattr(self.module, 'voltage_channel', i))
-        settings_layout.addRow("Voltage Ch:", self.v_ch_combo)
-        
-        self.i_ch_combo = QComboBox()
-        self.i_ch_combo.addItems(["Left (Ch 1)", "Right (Ch 2)"])
-        self.i_ch_combo.setCurrentIndex(1)
-        self.i_ch_combo.currentIndexChanged.connect(lambda i: setattr(self.module, 'current_channel', i))
-        settings_layout.addRow("Current Ch:", self.i_ch_combo)
+        lay_conf.addRow("Load Std R:", self.load_std_spin)
         
         self.cal_check = QCheckBox("Apply Calibration")
         self.cal_check.toggled.connect(lambda c: setattr(self.module, 'use_calibration', c))
-        settings_layout.addRow(self.cal_check)
+        lay_conf.addRow(self.cal_check)
         
-        settings_group.setLayout(settings_layout)
-        manual_layout.addWidget(settings_group, stretch=1)
+        grp_conf.setLayout(lay_conf)
+        left_layout.addWidget(grp_conf)
         
-        # Readings (Right Panel)
-        readings_widget = QWidget()
-        readings_layout = QVBoxLayout(readings_widget)
-        
-        # Impedance (Primary Result)
-        z_group = QGroupBox("Impedance (Z)")
-        z_group.setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; }")
-        z_layout = QHBoxLayout()
-        
-        # Z Magnitude & Phase
-        z_mp_layout = QVBoxLayout()
-        self.z_mag_label = QLabel("0.00 Ω")
-        self.z_mag_label.setStyleSheet("font-size: 32px; font-weight: bold; color: #00ff00;")
-        self.z_mag_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        z_mp_layout.addWidget(QLabel("Magnitude (|Z|)"))
-        z_mp_layout.addWidget(self.z_mag_label)
-        
-        self.z_phase_label = QLabel("0.00°")
-        self.z_phase_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #00ffff;")
-        self.z_phase_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        z_mp_layout.addWidget(QLabel("Phase (θ)"))
-        z_mp_layout.addWidget(self.z_phase_label)
-        z_layout.addLayout(z_mp_layout)
-        
-        # Z Real & Imag
-        z_ri_layout = QVBoxLayout()
-        self.z_r_label = QLabel("0.00 Ω")
-        self.z_r_label.setStyleSheet("font-size: 20px; color: #ffff00;")
-        self.z_r_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        z_ri_layout.addWidget(QLabel("Resistance (R)"))
-        z_ri_layout.addWidget(self.z_r_label)
-        
-        self.z_x_label = QLabel("0.00 Ω")
-        self.z_x_label.setStyleSheet("font-size: 20px; color: #ff00ff;")
-        self.z_x_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        z_ri_layout.addWidget(QLabel("Reactance (X)"))
-        z_ri_layout.addWidget(self.z_x_label)
-        z_layout.addLayout(z_ri_layout)
-        
-        z_group.setLayout(z_layout)
-        readings_layout.addWidget(z_group)
-        
-        # Detailed V/I
-        details_layout = QHBoxLayout()
-        
-        # Voltage Box
-        v_group = QGroupBox("Voltage (CH1)")
-        v_layout = QFormLayout()
-        self.v_mag_lbl = QLabel("0.000 V")
-        self.v_phase_lbl = QLabel("0.00°")
-        self.v_x_lbl = QLabel("0.000 V")
-        self.v_y_lbl = QLabel("0.000 V")
-        v_layout.addRow("Amp (A):", self.v_mag_lbl)
-        v_layout.addRow("Phase:", self.v_phase_lbl)
-        v_layout.addRow("X (In-phase):", self.v_x_lbl)
-        v_layout.addRow("Y (Quad):", self.v_y_lbl)
-        v_group.setLayout(v_layout)
-        details_layout.addWidget(v_group)
-        
-        # Current Box
-        i_group = QGroupBox("Current (CH2)")
-        i_layout = QFormLayout()
-        self.i_mag_lbl = QLabel("0.000 mA")
-        self.i_phase_lbl = QLabel("0.00°")
-        self.i_x_lbl = QLabel("0.000 mA")
-        self.i_y_lbl = QLabel("0.000 mA")
-        i_layout.addRow("Amp (A):", self.i_mag_lbl)
-        i_layout.addRow("Phase:", self.i_phase_lbl)
-        i_layout.addRow("X (In-phase):", self.i_x_lbl)
-        i_layout.addRow("Y (Quad):", self.i_y_lbl)
-        i_group.setLayout(i_layout)
-        details_layout.addWidget(i_group)
-        
-        readings_layout.addLayout(details_layout)
-        readings_layout.addStretch()
-        
-        manual_layout.addWidget(readings_widget, stretch=2)
-        
-        self.tabs.addTab(manual_widget, "Manual Mode")
-        
-        # --- Tab 2: Sweep & Calibration ---
-        sweep_widget = QWidget()
-        sweep_layout = QHBoxLayout(sweep_widget)
-        
-        # Sweep Settings
-        sweep_settings = QGroupBox("Sweep Control")
-        sweep_form = QFormLayout()
+        # 3. Sweep & Cal Actions
+        grp_sweep = QGroupBox("Sweep / Calibration")
+        lay_sweep = QFormLayout()
         
         self.sw_start = QDoubleSpinBox(); self.sw_start.setRange(20, 20000); self.sw_start.setValue(20)
-        sweep_form.addRow("Start Freq:", self.sw_start)
-        
+        lay_sweep.addRow("Start:", self.sw_start)
         self.sw_end = QDoubleSpinBox(); self.sw_end.setRange(20, 20000); self.sw_end.setValue(20000)
-        sweep_form.addRow("End Freq:", self.sw_end)
-        
+        lay_sweep.addRow("End:", self.sw_end)
         self.sw_steps = QSpinBox(); self.sw_steps.setRange(10, 1000); self.sw_steps.setValue(50)
-        sweep_form.addRow("Steps:", self.sw_steps)
-        
+        lay_sweep.addRow("Steps:", self.sw_steps)
         self.sw_log = QCheckBox("Log Sweep"); self.sw_log.setChecked(True)
-        sweep_form.addRow(self.sw_log)
-        
-        self.btn_open = QPushButton("Measure OPEN (Cal)")
-        self.btn_open.clicked.connect(lambda: self.start_sweep('open'))
-        sweep_form.addRow(self.btn_open)
-        
-        self.btn_short = QPushButton("Measure SHORT (Cal)")
-        self.btn_short.clicked.connect(lambda: self.start_sweep('short'))
-        sweep_form.addRow(self.btn_short)
-        
-        self.btn_load = QPushButton("Measure LOAD (Cal)")
-        self.btn_load.clicked.connect(lambda: self.start_sweep('load'))
-        sweep_form.addRow(self.btn_load)
-        
-        self.btn_dut = QPushButton("Measure DUT")
-        self.btn_dut.clicked.connect(lambda: self.start_sweep(None))
-        self.btn_dut.setStyleSheet("font-weight: bold; background-color: #ccccff; color: black;")
-        sweep_form.addRow(self.btn_dut)
+        lay_sweep.addRow(self.sw_log)
         
         self.sw_progress = QProgressBar()
-        sweep_form.addRow(self.sw_progress)
+        lay_sweep.addRow(self.sw_progress)
         
-        sweep_settings.setLayout(sweep_form)
-        sweep_layout.addWidget(sweep_settings, stretch=1)
+        # Buttons Grid
+        btn_grid = QGridLayout()
+        self.btn_open = QPushButton("Open Cal")
+        self.btn_open.clicked.connect(lambda: self.start_sweep('open'))
+        self.btn_short = QPushButton("Short Cal")
+        self.btn_short.clicked.connect(lambda: self.start_sweep('short'))
+        self.btn_load = QPushButton("Load Cal")
+        self.btn_load.clicked.connect(lambda: self.start_sweep('load'))
+        self.btn_dut = QPushButton("Sweep DUT")
+        self.btn_dut.clicked.connect(lambda: self.start_sweep(None))
+        self.btn_dut.setStyleSheet("font-weight: bold; background-color: #ccccff; color: black;")
         
-        # Plot
-        plot_layout = QVBoxLayout()
+        btn_grid.addWidget(self.btn_open, 0, 0)
+        btn_grid.addWidget(self.btn_short, 0, 1)
+        btn_grid.addWidget(self.btn_load, 1, 0)
+        btn_grid.addWidget(self.btn_dut, 1, 1)
+        lay_sweep.addRow(btn_grid)
         
-        # Plot Mode Selection
-        mode_layout = QHBoxLayout()
-        mode_layout.addWidget(QLabel("Plot Mode:"))
-        self.plot_mode_combo = QComboBox()
-        self.plot_mode_combo.addItems(["|Z| & Phase", "R & X (ESR/ESL)", "Q Factor", "C / L"])
-        self.plot_mode_combo.currentIndexChanged.connect(self.update_plot_mode)
-        mode_layout.addWidget(self.plot_mode_combo)
-        mode_layout.addStretch()
-        plot_layout.addLayout(mode_layout)
-
+        grp_sweep.setLayout(lay_sweep)
+        left_layout.addWidget(grp_sweep)
+        
+        left_layout.addStretch()
+        main_layout.addWidget(left_panel)
+        
+        # --- Right Panel: Results ---
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        
+        # 1. Plot
         self.plot_widget = pg.PlotWidget(title="Impedance Z(f)")
         self.plot_widget.setLabel('bottom', "Frequency", units='Hz')
         self.plot_widget.setLabel('left', "|Z|", units='Ohm')
@@ -528,15 +647,13 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.plot_widget.addLegend()
         self.plot_widget.getPlotItem().setLogMode(x=True, y=True)
         
-        # Primary Curve (Left Axis)
         self.curve_primary = pg.PlotCurveItem(pen='g', name='|Z|')
         self.plot_widget.addItem(self.curve_primary)
-        
-        self.curve_secondary = pg.PlotCurveItem(pen='y', name='Secondary') # Used for R/X mode
+        self.curve_secondary = pg.PlotCurveItem(pen='y', name='Secondary')
         self.plot_widget.addItem(self.curve_secondary)
         self.curve_secondary.setVisible(False)
         
-        # Secondary Axis (Right Axis) - For Phase or L/C split
+        # Secondary Axis
         self.plot_right = pg.ViewBox()
         self.plot_widget.scene().addItem(self.plot_right)
         self.plot_widget.getPlotItem().showAxis('right')
@@ -545,30 +662,37 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.plot_right.setXLink(self.plot_widget.getPlotItem())
         self.plot_widget.getPlotItem().getAxis('right').setLabel('Phase', units='deg')
         
-        # Ensure Right Axis is Linear by default
-        self.plot_widget.getPlotItem().getAxis('right').setLogMode(False)
-        
         self.curve_right = pg.PlotCurveItem(pen='c', name='Phase')
         self.plot_right.addItem(self.curve_right)
         
-        # Legend
         self.legend = self.plot_widget.addLegend()
-        
-        # Initial Plot Setup
-        self.update_plot_mode()
         
         def update_views():
             self.plot_right.setGeometry(self.plot_widget.getPlotItem().vb.sceneBoundingRect())
             self.plot_right.linkedViewChanged(self.plot_widget.getPlotItem().vb, self.plot_right.XAxis)
         self.plot_widget.getPlotItem().vb.sigResized.connect(update_views)
         
-        plot_layout.addWidget(self.plot_widget)
-        sweep_layout.addLayout(plot_layout, stretch=3)
+        right_layout.addWidget(self.plot_widget, stretch=2)
         
-        self.tabs.addTab(sweep_widget, "Sweep / Calibration")
+        # Plot Mode Selector (Overlay or below plot)
+        pm_layout = QHBoxLayout()
+        pm_layout.addWidget(QLabel("Plot Mode:"))
+        self.plot_mode_combo = QComboBox()
+        self.plot_mode_combo.addItems(["|Z| & Phase", "R & X (ESR/ESL)", "Q Factor", "C / L"])
+        self.plot_mode_combo.currentIndexChanged.connect(self.update_plot_mode)
+        pm_layout.addWidget(self.plot_mode_combo)
+        pm_layout.addStretch()
+        right_layout.addLayout(pm_layout)
         
-        main_layout.addWidget(self.tabs)
+        # 2. Detailed Results Widget
+        self.results_widget = ImpedanceResultsWidget()
+        right_layout.addWidget(self.results_widget, stretch=1)
+        
+        main_layout.addWidget(right_panel)
         self.setLayout(main_layout)
+        
+        # Initial Setup
+        self.update_plot_mode()
 
     def on_toggle(self, checked):
         if checked:
@@ -580,39 +704,18 @@ class ImpedanceAnalyzerWidget(QWidget):
             self.timer.stop()
             self.toggle_btn.setText("Start Measurement")
 
+    def on_circuit_mode_changed(self, mode):
+        self.results_widget.circuit_mode = mode
+        # Trigger update if running
+        if not self.module.is_running:
+            # Manually update with last known data if available
+            self.results_widget.update_data(self.module.meas_z_complex, self.module.meas_v_complex, self.module.meas_i_complex, self.module.gen_frequency)
+
     def update_ui(self):
         if not self.module.is_running: return
         
         self.module.process_data()
-        
-        z = self.module.meas_z_complex
-        v = self.module.meas_v_complex
-        i = self.module.meas_i_complex
-        
-        # Impedance
-        self.z_mag_label.setText(f"{abs(z):.2f} Ω")
-        self.z_phase_label.setText(f"{np.degrees(np.angle(z)):.2f}°")
-        self.z_r_label.setText(f"{z.real:.2f} Ω")
-        self.z_x_label.setText(f"{z.imag:.2f} Ω")
-        
-        # Voltage
-        self.v_mag_lbl.setText(f"{abs(v):.4f} V")
-        self.v_phase_lbl.setText(f"{np.degrees(np.angle(v)):.2f}°")
-        self.v_x_lbl.setText(f"{v.real:.4f} V")
-        self.v_y_lbl.setText(f"{v.imag:.4f} V")
-        
-        # Current (mA)
-        # Calculate actual Current Complex from Voltage across Shunt
-        if self.module.shunt_resistance > 0:
-            i_complex = - self.module.meas_i_complex / self.module.shunt_resistance
-        else:
-            i_complex = 0j
-            
-        i_ma = i_complex * 1000
-        self.i_mag_lbl.setText(f"{abs(i_ma):.4f} mA")
-        self.i_phase_lbl.setText(f"{np.degrees(np.angle(i_ma)):.2f}°")
-        self.i_x_lbl.setText(f"{i_ma.real:.4f} mA")
-        self.i_y_lbl.setText(f"{i_ma.imag:.4f} mA")
+        self.results_widget.update_data(self.module.meas_z_complex, self.module.meas_v_complex, self.module.meas_i_complex, self.module.gen_frequency)
 
     def start_sweep(self, mode):
         if self.sweep_worker is not None and self.sweep_worker.isRunning():
@@ -663,7 +766,6 @@ class ImpedanceAnalyzerWidget(QWidget):
         
         # Clear Legend (Robust)
         if hasattr(self.legend, 'items'):
-            # Create a list of labels to remove to avoid modifying list while iterating
             labels_to_remove = [label.text for sample, label in self.legend.items]
             for label_text in labels_to_remove:
                 self.legend.removeItem(label_text)
@@ -845,10 +947,6 @@ class ImpedanceAnalyzerWidget(QWidget):
                 "QPushButton:hover { background-color: #388e3c; }"
                 "QPushButton:checked:hover { background-color: #d32f2f; }"
             )
-            self.z_mag_label.setStyleSheet("font-size: 32px; font-weight: bold; color: #00ff00;")
-            self.z_phase_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #00ffff;")
-            self.z_r_label.setStyleSheet("font-size: 20px; color: #ffff00;")
-            self.z_x_label.setStyleSheet("font-size: 20px; color: #ff00ff;")
             self.btn_dut.setStyleSheet("font-weight: bold; background-color: #5e35b1; color: white;")
         else:
             # Light Theme
@@ -858,10 +956,6 @@ class ImpedanceAnalyzerWidget(QWidget):
                 "QPushButton:hover { background-color: #bbfebb; }"
                 "QPushButton:checked:hover { background-color: #ffbbbb; }"
             )
-            self.z_mag_label.setStyleSheet("font-size: 32px; font-weight: bold; color: #008800;")
-            self.z_phase_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #008888;")
-            self.z_r_label.setStyleSheet("font-size: 20px; color: #888800;")
-            self.z_x_label.setStyleSheet("font-size: 20px; color: #880088;")
             self.btn_dut.setStyleSheet("font-weight: bold; background-color: #ccccff; color: black;")
 
         # Theme handling
