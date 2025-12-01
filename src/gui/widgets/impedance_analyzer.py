@@ -303,6 +303,13 @@ class ImpedanceAnalyzerWidget(QWidget):
     def __init__(self, module: ImpedanceAnalyzer):
         super().__init__()
         self.module = module
+        
+        # Sweep Data
+        self.sweep_freqs = []
+        self.sweep_z_complex = [] # Store full complex data
+        self.sweep_z_mags = []
+        self.sweep_z_phases = []
+        
         self.init_ui()
         
         self.timer = QTimer()
@@ -502,6 +509,18 @@ class ImpedanceAnalyzerWidget(QWidget):
         sweep_layout.addWidget(sweep_settings, stretch=1)
         
         # Plot
+        plot_layout = QVBoxLayout()
+        
+        # Plot Mode Selection
+        mode_layout = QHBoxLayout()
+        mode_layout.addWidget(QLabel("Plot Mode:"))
+        self.plot_mode_combo = QComboBox()
+        self.plot_mode_combo.addItems(["|Z| & Phase", "R & X (ESR/ESL)", "Q Factor", "C / L"])
+        self.plot_mode_combo.currentIndexChanged.connect(self.update_plot_mode)
+        mode_layout.addWidget(self.plot_mode_combo)
+        mode_layout.addStretch()
+        plot_layout.addLayout(mode_layout)
+
         self.plot_widget = pg.PlotWidget(title="Impedance Z(f)")
         self.plot_widget.setLabel('bottom', "Frequency", units='Hz')
         self.plot_widget.setLabel('left', "|Z|", units='Ohm')
@@ -509,39 +528,47 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.plot_widget.addLegend()
         self.plot_widget.getPlotItem().setLogMode(x=True, y=True)
         
-        self.curve_z = self.plot_widget.plot(pen='g', name='|Z|')
+        # Primary Curve (Left Axis)
+        self.curve_primary = pg.PlotCurveItem(pen='g', name='|Z|')
+        self.plot_widget.addItem(self.curve_primary)
         
-        # Phase Plot (Right Axis)
-        self.plot_p = pg.ViewBox()
-        self.plot_widget.scene().addItem(self.plot_p)
+        self.curve_secondary = pg.PlotCurveItem(pen='y', name='Secondary') # Used for R/X mode
+        self.plot_widget.addItem(self.curve_secondary)
+        self.curve_secondary.setVisible(False)
+        
+        # Secondary Axis (Right Axis) - For Phase or L/C split
+        self.plot_right = pg.ViewBox()
+        self.plot_widget.scene().addItem(self.plot_right)
         self.plot_widget.getPlotItem().showAxis('right')
-        self.plot_widget.getPlotItem().scene().addItem(self.plot_p)
-        self.plot_widget.getPlotItem().getAxis('right').linkToView(self.plot_p)
-        self.plot_p.setXLink(self.plot_widget.getPlotItem())
+        self.plot_widget.getPlotItem().scene().addItem(self.plot_right)
+        self.plot_widget.getPlotItem().getAxis('right').linkToView(self.plot_right)
+        self.plot_right.setXLink(self.plot_widget.getPlotItem())
         self.plot_widget.getPlotItem().getAxis('right').setLabel('Phase', units='deg')
         
-        # Ensure Right Axis is Linear
+        # Ensure Right Axis is Linear by default
         self.plot_widget.getPlotItem().getAxis('right').setLogMode(False)
         
-        self.curve_p = pg.PlotCurveItem(pen='c', name='Phase')
-        self.plot_p.addItem(self.curve_p)
+        self.curve_right = pg.PlotCurveItem(pen='c', name='Phase')
+        self.plot_right.addItem(self.curve_right)
+        
+        # Legend
+        self.legend = self.plot_widget.addLegend()
+        
+        # Initial Plot Setup
+        self.update_plot_mode()
         
         def update_views():
-            self.plot_p.setGeometry(self.plot_widget.getPlotItem().vb.sceneBoundingRect())
-            self.plot_p.linkedViewChanged(self.plot_widget.getPlotItem().vb, self.plot_p.XAxis)
+            self.plot_right.setGeometry(self.plot_widget.getPlotItem().vb.sceneBoundingRect())
+            self.plot_right.linkedViewChanged(self.plot_widget.getPlotItem().vb, self.plot_right.XAxis)
         self.plot_widget.getPlotItem().vb.sigResized.connect(update_views)
         
-        sweep_layout.addWidget(self.plot_widget, stretch=3)
+        plot_layout.addWidget(self.plot_widget)
+        sweep_layout.addLayout(plot_layout, stretch=3)
         
         self.tabs.addTab(sweep_widget, "Sweep / Calibration")
         
         main_layout.addWidget(self.tabs)
         self.setLayout(main_layout)
-        
-        # Sweep Data
-        self.sweep_freqs = []
-        self.sweep_z_mags = []
-        self.sweep_z_phases = []
 
     def on_toggle(self, checked):
         if checked:
@@ -575,7 +602,6 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.v_y_lbl.setText(f"{v.imag:.4f} V")
         
         # Current (mA)
-        # Current (mA)
         # Calculate actual Current Complex from Voltage across Shunt
         if self.module.shunt_resistance > 0:
             i_complex = - self.module.meas_i_complex / self.module.shunt_resistance
@@ -594,23 +620,26 @@ class ImpedanceAnalyzerWidget(QWidget):
             
         self.cal_mode = mode
         self.sweep_freqs = []
+        self.sweep_z_complex = []
         self.sweep_z_mags = []
         self.sweep_z_phases = []
-        self.curve_z.setData([], [])
-        self.curve_p.setData([], [])
+        
+        # Clear Curves
+        self.curve_primary.setData([], [])
+        self.curve_secondary.setData([], [])
+        self.curve_right.setData([], [])
         
         start = self.sw_start.value()
         end = self.sw_end.value()
         steps = self.sw_steps.value()
         log = self.sw_log.isChecked()
         
-        # Update Plot Mode based on Sweep Mode
-        self.plot_widget.getPlotItem().setLogMode(x=log, y=True) # Z is always Log Y
-        self.plot_widget.getPlotItem().getAxis('right').setLogMode(False) # Phase is Linear
+        # Initial Plot Setup
+        self.update_plot_mode()
         
         # Reset AutoRange
         self.plot_widget.getPlotItem().enableAutoRange()
-        self.plot_p.enableAutoRange()
+        self.plot_right.enableAutoRange()
         
         self.sweep_worker = ImpedanceSweepWorker(self.module, start, end, steps, log, 0.2)
         self.sweep_worker.progress.connect(self.sw_progress.setValue)
@@ -618,6 +647,167 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.sweep_worker.finished_sweep.connect(self.on_sweep_finished)
         self.sweep_worker.start()
         
+    def update_plot_mode(self):
+        mode = self.plot_mode_combo.currentText()
+        pi = self.plot_widget.getPlotItem()
+        ax_right = pi.getAxis('right')
+        
+        # Default Visibility
+        self.curve_secondary.setVisible(False)
+        self.curve_right.setVisible(True)
+        ax_right.setStyle(showValues=True)
+        
+        # X-Axis Log Mode
+        is_log_x = self.sw_log.isChecked()
+        pi.setLogMode(x=is_log_x, y=False) # Reset Y log first
+        
+        # Clear Legend (Robust)
+        if hasattr(self.legend, 'items'):
+            # Create a list of labels to remove to avoid modifying list while iterating
+            labels_to_remove = [label.text for sample, label in self.legend.items]
+            for label_text in labels_to_remove:
+                self.legend.removeItem(label_text)
+        else:
+            self.legend.clear()
+        
+        if mode == "|Z| & Phase":
+            pi.setLabel('left', "|Z|", units='Ohm')
+            pi.setLogMode(y=True) # Z is Log Y
+            
+            self.curve_primary.setData(name='|Z|', pen='g')
+            self.legend.addItem(self.curve_primary, '|Z|')
+            
+            ax_right.setLabel('Phase', units='deg')
+            ax_right.setLogMode(False)
+            self.curve_right.setData(name='Phase', pen='c')
+            self.legend.addItem(self.curve_right, 'Phase')
+            
+        elif mode == "R & X (ESR/ESL)":
+            pi.setLabel('left', "Resistance (R) / Reactance (X)", units='Ohm')
+            pi.setLogMode(y=True) # R/X often span large ranges
+            
+            self.curve_primary.setData(name='Resistance (R)', pen='y')
+            self.legend.addItem(self.curve_primary, 'Resistance (R)')
+            
+            self.curve_secondary.setVisible(True)
+            self.curve_secondary.setData(name='Reactance (X)', pen='m')
+            self.legend.addItem(self.curve_secondary, 'Reactance (X)')
+            
+            self.curve_right.setVisible(False)
+            ax_right.setStyle(showValues=False)
+            ax_right.setLabel('')
+            
+        elif mode == "Q Factor":
+            pi.setLabel('left', "Q Factor")
+            pi.setLogMode(y=False) 
+            
+            self.curve_primary.setData(name='Q', pen='r')
+            self.legend.addItem(self.curve_primary, 'Q')
+            
+            self.curve_right.setVisible(False)
+            ax_right.setStyle(showValues=False)
+            ax_right.setLabel('')
+            
+        elif mode == "C / L":
+            pi.setLabel('left', "Capacitance", units='F')
+            pi.setLogMode(y=True)
+            
+            self.curve_primary.setData(name='Capacitance', pen='b')
+            self.legend.addItem(self.curve_primary, 'Capacitance')
+            
+            ax_right.setLabel('Inductance', units='H')
+            ax_right.setLogMode(True) # L is Log Y
+            
+            self.curve_right.setData(name='Inductance', pen='r')
+            self.legend.addItem(self.curve_right, 'Inductance')
+            
+        # Re-plot data if available
+        if self.sweep_freqs:
+            self.refresh_plot_data()
+
+    def refresh_plot_data(self):
+        if not self.sweep_freqs: return
+        
+        mode = self.plot_mode_combo.currentText()
+        freqs = np.array(self.sweep_freqs)
+        zs = np.array(self.sweep_z_complex)
+        
+        # X-Axis Data (Manual Log)
+        is_log_x = self.plot_widget.getPlotItem().getAxis('bottom').logMode
+        if is_log_x:
+            x_data = np.log10(freqs)
+        else:
+            x_data = freqs
+            
+        if mode == "|Z| & Phase":
+            # |Z| (Log Y)
+            y_data = np.abs(zs)
+            if self.plot_widget.getPlotItem().getAxis('left').logMode:
+                y_data = np.log10(y_data)
+            self.curve_primary.setData(x_data, y_data)
+            
+            # Phase (Linear Y)
+            self.curve_right.setData(x_data, np.degrees(np.angle(zs)))
+            
+        elif mode == "R & X (ESR/ESL)":
+            # R (Log Y)
+            r_data = np.abs(zs.real)
+            x_data_val = np.abs(zs.imag)
+            
+            if self.plot_widget.getPlotItem().getAxis('left').logMode:
+                # Avoid log(0)
+                r_data = np.log10(r_data + 1e-12)
+                x_data_val = np.log10(x_data_val + 1e-12)
+                
+            self.curve_primary.setData(x_data, r_data)
+            self.curve_secondary.setData(x_data, x_data_val)
+            
+        elif mode == "Q Factor":
+            # Q = |X| / R
+            rs = zs.real
+            xs = zs.imag
+            qs = np.zeros_like(rs)
+            mask = (np.abs(rs) > 1e-12)
+            qs[mask] = np.abs(xs[mask]) / np.abs(rs[mask])
+            
+            self.curve_primary.setData(x_data, qs)
+            
+        elif mode == "C / L":
+            # C = -1 / (w * X) for X < 0
+            # L = X / w for X > 0
+            w = 2 * np.pi * freqs
+            xs = zs.imag
+            
+            # Capacitance (valid where X < 0)
+            cs = np.full_like(xs, np.nan)
+            mask_c = (xs < -1e-12)
+            cs[mask_c] = -1.0 / (w[mask_c] * xs[mask_c])
+            
+            # Inductance (valid where X > 0)
+            ls = np.full_like(xs, np.nan)
+            mask_l = (xs > 1e-12)
+            ls[mask_l] = xs[mask_l] / w[mask_l]
+            
+            # Log Y for both
+            # Left Axis (C)
+            if self.plot_widget.getPlotItem().getAxis('left').logMode:
+                 # Handle NaNs and log
+                 valid_c = ~np.isnan(cs)
+                 cs_plot = np.full_like(cs, np.nan)
+                 cs_plot[valid_c] = np.log10(cs[valid_c])
+                 self.curve_primary.setData(x_data, cs_plot)
+            else:
+                 self.curve_primary.setData(x_data, cs)
+                 
+            # Right Axis (L)
+            if self.plot_widget.getPlotItem().getAxis('right').logMode:
+                 valid_l = ~np.isnan(ls)
+                 ls_plot = np.full_like(ls, np.nan)
+                 ls_plot[valid_l] = np.log10(ls[valid_l])
+                 self.curve_right.setData(x_data, ls_plot)
+            else:
+                 self.curve_right.setData(x_data, ls)
+
     def on_sweep_result(self, f, z):
         if self.cal_mode == 'open':
             self.module.cal_open[f] = z
@@ -628,18 +818,12 @@ class ImpedanceAnalyzerWidget(QWidget):
         else:
             # DUT Measurement
             self.sweep_freqs.append(f)
+            self.sweep_z_complex.append(z)
             self.sweep_z_mags.append(abs(z))
             self.sweep_z_phases.append(np.degrees(np.angle(z)))
             
-            self.curve_z.setData(self.sweep_freqs, self.sweep_z_mags)
-            
-            # Handle Phase Plot X-Axis
-            is_log_x = self.plot_widget.getPlotItem().getAxis('bottom').logMode
-            if is_log_x:
-                x_data = np.log10(self.sweep_freqs)
-            else:
-                x_data = self.sweep_freqs
-            self.curve_p.setData(x_data, self.sweep_z_phases)
+            # Update Plot
+            self.refresh_plot_data()
 
     def on_sweep_finished(self):
         if self.cal_mode == 'open':
