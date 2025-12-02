@@ -470,3 +470,176 @@ class AudioCalc:
             'pim_db': pim_db,
             'products': products
         }
+
+    @staticmethod
+    def calculate_noise_profile(mag, freqs, sampling_rate):
+        """
+        Calculates noise profile including Hum, White, and 1/f noise.
+        mag: Magnitude spectrum (Linear V/rtHz)
+        freqs: Frequency bins
+        """
+        results = {}
+        
+        # 1. Hum Noise Detection (50Hz vs 60Hz)
+        # Search for peaks at 50Hz and 60Hz
+        def get_power_in_band(f_center, width=5.0):
+            mask = (freqs >= f_center - width) & (freqs <= f_center + width)
+            if not np.any(mask):
+                return 0.0
+            # Integration: Power = sum(PSD^2 * bin_width)
+            # mag is V/rtHz. mag^2 is V^2/Hz.
+            # bin_width = fs / N = freqs[1] - freqs[0]
+            bin_width = freqs[1] - freqs[0] if len(freqs) > 1 else 1.0
+            power = np.sum(mag[mask]**2) * bin_width
+            return power
+
+        p50 = get_power_in_band(50.0)
+        p60 = get_power_in_band(60.0)
+        
+        base_freq = 50.0 if p50 > p60 else 60.0
+        results['hum_freq'] = base_freq
+        
+        # Sum harmonics
+        hum_power = 0.0
+        hum_components = []
+        for i in range(1, 11): # Fundamental + 9 harmonics
+            f_h = base_freq * i
+            if f_h > sampling_rate / 2:
+                break
+            p_h = get_power_in_band(f_h)
+            hum_power += p_h
+            hum_components.append((f_h, np.sqrt(p_h)))
+            
+        results['hum_rms'] = np.sqrt(hum_power)
+        results['hum_components'] = hum_components
+        
+        # 2. 1/f Noise Analysis
+        # Fit log(PSD) vs log(f) in 1Hz - 100Hz
+        # Avoid Hum frequencies
+        fit_mask = (freqs >= 1.0) & (freqs <= 100.0)
+        # Exclude hum regions
+        for f_h, _ in hum_components:
+            fit_mask &= ~((freqs >= f_h - 5.0) & (freqs <= f_h + 5.0))
+            
+        if np.any(fit_mask):
+            f_fit = freqs[fit_mask]
+            y_fit = 20 * np.log10(mag[fit_mask] + 1e-15) # dB
+            x_fit = np.log10(f_fit)
+        # 2. 1/f Noise (Flicker)
+        # Dynamic Fit Range:
+        # 1. Estimate White Noise first (using high freq).
+        # 2. Find the frequency where signal drops to approx 3dB above White Noise.
+        # 3. Fit 1/f only up to that frequency (or 100Hz, whichever is lower).
+        
+        # Estimate White Noise (Median of 1k-20k)
+        white_mask = (freqs >= 1000.0) & (freqs <= 20000.0)
+        if np.any(white_mask):
+            # Median is robust to peaks, but under-estimates RMS of Gaussian noise (Rayleigh magnitude)
+            # Factor: RMS / Median = 1 / sqrt(ln(2)) ~= 1.2011
+            white_density = np.median(mag[white_mask]) * 1.2011
+        else:
+            white_density = 1e-9 # Fallback
+            
+        results['white_density'] = white_density # V/rtHz
+        
+        # Determine Fit Upper Bound
+        # Find first frequency where mag < white_density * 1.5 (approx 3.5dB margin)
+        # Search in 1Hz - 1kHz range
+        search_mask = (freqs >= 1.0) & (freqs <= 1000.0)
+        search_freqs = freqs[search_mask]
+        search_mags = mag[search_mask]
+        
+        # Smooth magnitudes slightly to avoid triggering on dips
+        # Simple moving average of 3 bins
+        if len(search_mags) > 3:
+            search_mags_smooth = np.convolve(search_mags, np.ones(3)/3, mode='same')
+        else:
+            search_mags_smooth = search_mags
+            
+        # Find knee
+        knee_indices = np.where(search_mags_smooth < white_density * 2.0)[0]
+        if len(knee_indices) > 0:
+            f_knee = search_freqs[knee_indices[0]]
+        else:
+            f_knee = 100.0 # Default if never drops
+            
+        # Clamp knee
+        f_max_fit = np.clip(f_knee, 5.0, 400.0) # Minimum 5Hz range, max 400Hz
+        
+        # Fit 1/f
+        # Range: 1Hz to f_max_fit
+        # Exclude Hum regions
+        mask_1f = (freqs >= 1.0) & (freqs <= f_max_fit)
+        
+        # Exclude hum
+        for h_freq, h_amp in hum_components:
+            mask_1f &= ~((freqs >= h_freq - 2.0) & (freqs <= h_freq + 2.0))
+            
+        if np.sum(mask_1f) > 5:
+            f_log = np.log10(freqs[mask_1f])
+            m_log = np.log10(mag[mask_1f])
+            
+            # Linear regression: m_log = slope * f_log + intercept
+            slope, intercept = np.polyfit(f_log, m_log, 1)
+            results['flicker_slope'] = slope
+            results['flicker_intercept'] = intercept
+        else:
+            results['flicker_slope'] = 0.0
+            results['flicker_intercept'] = 0.0
+        
+        # Calculate Corner Frequency
+        # 1/f line: y = m*x + c  (dB)
+        # White floor: y_w = 20*log10(white_density)
+        # m*x + c = y_w => x = (y_w - c) / m
+        # f_corner = 10^x
+        if results['flicker_slope'] != 0:
+            y_w = 20 * np.log10(white_density + 1e-15)
+            x_c = (y_w - results['flicker_intercept']) / results['flicker_slope']
+            # Clamp x_c to avoid overflow (e.g. 10^100)
+            # 10^9 is 1GHz, 10^-9 is 1nHz. Range -9 to 9 is plenty.
+            if x_c > 9:
+                results['corner_freq'] = 1e9
+            elif x_c < -9:
+                results['corner_freq'] = 1e-9
+            else:
+                results['corner_freq'] = 10**x_c
+        else:
+            results['corner_freq'] = 0.0
+            
+        # 4. Integrated Noise in Bands
+        def integrate_band(f_start, f_end):
+            mask = (freqs >= f_start) & (freqs < f_end)
+            if not np.any(mask):
+                return 0.0
+            bin_width = freqs[1] - freqs[0]
+            return np.sqrt(np.sum(mag[mask]**2) * bin_width)
+            
+        results['noise_rms_20k'] = integrate_band(20, 20000)
+        results['noise_rms_100k'] = integrate_band(20, 100000)
+        
+        # A-weighting Integration
+        # Ra(f) = (12194^2 * f^4) / ((f^2 + 20.6^2) * sqrt((f^2 + 107.7^2)(f^2 + 737.9^2)) * (f^2 + 12194^2))
+        # Gain = 20*log10(Ra(f)) + 2.00
+        # Linear Gain = Ra(f) * 10^(2.0/20) = Ra(f) * 1.2589
+        
+        f = freqs
+        f2 = f**2
+        const = 12194**2 * f**4
+        denom = (f2 + 20.6**2) * np.sqrt((f2 + 107.7**2) * (f2 + 737.9**2)) * (f2 + 12194**2)
+        # Avoid division by zero
+        denom[denom == 0] = 1.0
+        Ra = const / denom
+        weighting_linear = Ra * 1.2589
+        
+        # Apply weighting to magnitude (V/rtHz)
+        mag_a = mag * weighting_linear
+        
+        # Integrate A-weighted spectrum (20Hz - 20kHz)
+        mask_a = (freqs >= 20) & (freqs <= 20000)
+        if np.any(mask_a):
+            bin_width = freqs[1] - freqs[0]
+            results['noise_rms_a_weighted'] = np.sqrt(np.sum(mag_a[mask_a]**2) * bin_width)
+        else:
+            results['noise_rms_a_weighted'] = 0.0
+        
+        return results
