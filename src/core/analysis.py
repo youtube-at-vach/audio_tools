@@ -593,8 +593,14 @@ class AudioCalc:
         # m*x + c = y_w => x = (y_w - c) / m
         # f_corner = 10^x
         if results['flicker_slope'] != 0:
-            y_w = 20 * np.log10(white_density + 1e-15)
-            x_c = (y_w - results['flicker_intercept']) / results['flicker_slope']
+            # Intersection of 1/f line and white noise floor
+            # Line: log10(V) = slope * log10(f) + intercept
+            # White: log10(V_white)
+            # log10(f_c) = (log10(V_white) - intercept) / slope
+            
+            log_white = np.log10(white_density + 1e-15)
+            x_c = (log_white - results['flicker_intercept']) / results['flicker_slope']
+            
             # Clamp x_c to avoid overflow (e.g. 10^100)
             # 10^9 is 1GHz, 10^-9 is 1nHz. Range -9 to 9 is plenty.
             if x_c > 9:
