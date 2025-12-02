@@ -332,6 +332,23 @@ class SpectrumAnalyzerWidget(QWidget):
         layout.addWidget(self.plot_widget)
         self.setLayout(layout)
 
+    def format_si(self, value, unit):
+        if value == 0:
+            return f"0.0 {unit}"
+            
+        exponent = int(np.floor(np.log10(abs(value)) / 3) * 3)
+        exponent = max(min(exponent, 9), -15)
+        
+        scaled_value = value / (10**exponent)
+        
+        prefixes = {
+            -15: 'f', -12: 'p', -9: 'n', -6: 'µ', -3: 'm', 
+            0: '', 3: 'k', 6: 'M', 9: 'G'
+        }
+        
+        prefix = prefixes.get(exponent, '')
+        return f"{scaled_value:.3g} {prefix}{unit}"
+
     def mouse_moved(self, evt):
         pos = evt[0]
         if self.plot_widget.sceneBoundingRect().contains(pos):
@@ -340,18 +357,27 @@ class SpectrumAnalyzerWidget(QWidget):
             x = mouse_point.x()
             y = mouse_point.y()
             
-            # If x is log scale, convert back to linear for display
-            # pyqtgraph handles the log scaling internally, so 'x' here is already log10(freq) if log mode is on?
-            # Wait, if setLogMode(x=True) is used, the plot expects linear x values, but the ViewBox coordinates might be log?
-            # Actually, when setLogMode(x=True), the underlying view uses log coordinates.
-            # So x is log10(freq).
-            
+            # x is log10(freq)
             freq = 10**x
             
-            unit = "dBV" if self.module.use_physical_units else "dBFS"
+            unit_db = "dBV" if self.module.use_physical_units else "dBFS"
+            unit_linear = "V" if self.module.use_physical_units else ""
+            
             if self.module.analysis_mode == 'PSD':
-                unit += "/√Hz"
-            self.cursor_label.setText(f"Cursor: {freq:.1f} Hz, {y:.1f} {unit}")
+                unit_db += "/√Hz"
+                unit_linear += "/√Hz"
+            
+            # Calculate linear value
+            linear_val = 10**(y/20)
+            
+            # Format linear value
+            if self.module.use_physical_units:
+                linear_str = self.format_si(linear_val, unit_linear)
+                cursor_text = f"Cursor: {freq:.1f} Hz, {y:.1f} {unit_db} ({linear_str})"
+            else:
+                cursor_text = f"Cursor: {freq:.1f} Hz, {y:.1f} {unit_db} ({linear_val:.4g})"
+
+            self.cursor_label.setText(cursor_text)
             self.v_line.setPos(x)
             self.h_line.setPos(y)
 
