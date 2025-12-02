@@ -128,6 +128,17 @@ class NoiseProfilerWidget(QWidget):
         disp_group.setLayout(disp_layout)
         left_panel.addWidget(disp_group)
         
+        # Unit Selection
+        unit_group = QGroupBox("Units")
+        unit_layout = QVBoxLayout()
+        self.unit_combo = QComboBox()
+        self.unit_combo.addItems(["dBFS/√Hz", "dBV/√Hz", "dBu/√Hz"])
+        self.unit_combo.setCurrentText("dBV/√Hz") # Default to match Spectrum Analyzer request
+        self.unit_combo.currentTextChanged.connect(self.update_analysis)
+        unit_layout.addWidget(self.unit_combo)
+        unit_group.setLayout(unit_layout)
+        left_panel.addWidget(unit_group)
+        
         # LNA Settings
         lna_group = QGroupBox("LNA / Input Settings")
         lna_layout = QFormLayout()
@@ -309,14 +320,33 @@ class NoiseProfilerWidget(QWidget):
                 
             avg_mag = self.module._avg_magnitude
             
-            # 2. Analyze Noise
-            results = AudioCalc.calculate_noise_profile(avg_mag, freqs, fs)
+            # Apply Unit / Calibration Offset
+            # avg_mag is in V_fs/rtHz (Linear, relative to Full Scale 1.0)
+            # We want to convert to the selected unit's linear voltage reference
+            
+            unit_mode = self.unit_combo.currentText()
+            offset_db = 0.0
+            
+            if "dBV" in unit_mode or "dBu" in unit_mode:
+                # Apply Calibration Offset
+                offset_db += self.module.audio_engine.calibration.get_input_offset_db()
+                
+            if "dBu" in unit_mode:
+                # 0 dBu = 0.775V = -2.218 dBV
+                # dBu = dBV + 2.218
+                offset_db += 2.2184
+                
+            # Apply offset to linear magnitude
+            # magnitude_new = magnitude_old * 10^(offset_db/20)
+            cal_factor = 10**(offset_db/20)
+            avg_mag_cal = avg_mag * cal_factor
+            
+            # 2. Analyze Noise (using calibrated magnitude)
+            results = AudioCalc.calculate_noise_profile(avg_mag_cal, freqs, fs)
             
             # Apply Manual Override
             if self.module.manual_corner_enabled:
                 results['corner_freq'] = self.module.manual_corner_freq
-                # Recalculate slope if needed? Or just use the manual corner for display/radar?
-                # For now, just override the corner frequency value.
                 
             self.module.last_results = results
             
@@ -328,16 +358,56 @@ class NoiseProfilerWidget(QWidget):
             R_in = self.module.input_impedance
             
             # Thermal Noise Density (V/rtHz)
+            # This is physical Volts.
+            # If we are in dBFS mode, we should technically convert Thermal Noise to dBFS?
+            # But "Thermal Limit" usually implies Physical Units.
+            # If user selects dBFS, comparing to Thermal Noise (Volts) is tricky unless we know 0dBFS in Volts.
+            # Let's assume if dBFS is selected, we show Thermal Limit in dBFS (using inverse calibration).
+            # But we only have get_input_offset_db().
+            # Let's just use the same cal_factor to convert Thermal Density (Volts) to Display Units?
+            # No, Thermal Density is calculated in Volts.
+            # If Display is Volts (dBV/dBu), we are good.
+            # If Display is dBFS, we need Volts -> FS.
+            # FS = Volts / 10^(offset/20).
+            
             thermal_density = np.sqrt(4 * k * T * R_in)
             
             # Resistance Mode Logic
             is_res_mode = self.res_mode_chk.isChecked()
             
             if is_res_mode:
+                # Resistance Mode always uses Physical Volts to calculate Ohms
+                # R = V^2 / (4kT)
+                # avg_mag_cal is in "Display Units" (Volts or scaled FS).
+                # If dBu, avg_mag_cal is relative to 0.775V? No, dBu is a log unit.
+                # If we selected dBu, avg_mag_cal is scaled such that 20log(avg_mag_cal) = dBu value?
+                # No, avg_mag_cal is Linear.
+                # If unit is dBV, avg_mag_cal is Volts.
+                # If unit is dBu, avg_mag_cal is "dBu-linearized"? i.e. 1.0 = 0.775V?
+                # Yes, because we added 2.218dB.
+                # So avg_mag_cal * 0.775 = Volts.
+                
+                # To get Ohms, we need Volts.
+                # Let's recover Volts from avg_mag_cal.
+                
+                if "dBu" in unit_mode:
+                    mag_volts = avg_mag_cal * 0.775
+                elif "dBV" in unit_mode:
+                    mag_volts = avg_mag_cal
+                else: # dBFS
+                    # We need to know 0dBFS in Volts to calculate Ohms.
+                    # If we don't know, we can't accurately show Ohms.
+                    # But we can use the calibration offset if available.
+                    # If not available (offset=0), we assume 0dBFS = 1V (default).
+                    # So mag_volts = avg_mag_cal * 10^(cal_offset/20).
+                    # But we didn't apply cal_offset in dBFS mode.
+                    # So we should apply it here just for Resistance calculation.
+                    cal_offset = self.module.audio_engine.calibration.get_input_offset_db()
+                    mag_volts = avg_mag * 10**(cal_offset/20)
+
                 # Convert to Ohms: R = V^2 / (4kT)
-                # Avoid division by zero
                 denom = 4 * k * T
-                mag_plot = (avg_mag**2) / denom
+                mag_plot = (mag_volts**2) / denom
                 
                 # Thermal Limit (Ohms) -> R_in
                 thermal_limit_val = R_in
@@ -352,10 +422,23 @@ class NoiseProfilerWidget(QWidget):
                 # Fit Line (Convert V fit to R fit)
                 if results['flicker_slope'] != 0:
                     f_fit = np.logspace(0, 2, 100)
-                    # V density fit (log10)
-                    y_fit_v_log = results['flicker_slope'] * np.log10(f_fit) + results['flicker_intercept']
-                    y_fit_v = 10**(y_fit_v_log) # Convert log10(V) to Linear V
-                    y_fit_r = (y_fit_v**2) / denom
+                    # V density fit (log10 of Display Units)
+                    # We need to convert fit result to Volts first
+                    
+                    # Fit is on log10(avg_mag_cal)
+                    y_fit_log_disp = results['flicker_slope'] * np.log10(f_fit) + results['flicker_intercept']
+                    y_fit_disp = 10**(y_fit_log_disp)
+                    
+                    if "dBu" in unit_mode:
+                        y_fit_volts = y_fit_disp * 0.775
+                    elif "dBV" in unit_mode:
+                        y_fit_volts = y_fit_disp
+                    else:
+                        # For dBFS fit, we need to apply cal offset to get volts
+                        cal_offset = self.module.audio_engine.calibration.get_input_offset_db()
+                        y_fit_volts = y_fit_disp * 10**(cal_offset/20)
+                        
+                    y_fit_r = (y_fit_volts**2) / denom
                     self.fit_curve.setData(f_fit, y_fit_r)
                 else:
                     self.fit_curve.setData([], [])
@@ -369,26 +452,45 @@ class NoiseProfilerWidget(QWidget):
                 self.hum_curve.setData(hum_freqs, hum_vals)
                 
                 # White Noise Floor
-                white_r = (results['white_density']**2) / denom
+                # white_density is in Display Units
+                if "dBu" in unit_mode:
+                    white_volts = results['white_density'] * 0.775
+                elif "dBV" in unit_mode:
+                    white_volts = results['white_density']
+                else:
+                    cal_offset = self.module.audio_engine.calibration.get_input_offset_db()
+                    white_volts = results['white_density'] * 10**(cal_offset/20)
+                    
+                white_r = (white_volts**2) / denom
                 self.white_curve.setData([10, 20000], [white_r, white_r])
                 
             else:
-                # Voltage Mode (PSD dBV)
-                mag_plot = 20 * np.log10(avg_mag + 1e-15)
+                # Voltage Mode (PSD dB)
+                # avg_mag_cal is in Display Units
+                mag_plot = 20 * np.log10(avg_mag_cal + 1e-15)
                 
-                # Thermal Limit (dBV)
-                thermal_limit_val = 20 * np.log10(thermal_density + 1e-15)
+                # Thermal Limit (dB)
+                # Convert Thermal Density (Volts) to Display Units
+                if "dBu" in unit_mode:
+                    thermal_disp = thermal_density / 0.775
+                elif "dBV" in unit_mode:
+                    thermal_disp = thermal_density
+                else:
+                    # dBFS: Volts -> FS
+                    cal_offset = self.module.audio_engine.calibration.get_input_offset_db()
+                    thermal_disp = thermal_density / (10**(cal_offset/20))
+                    
+                thermal_limit_val = 20 * np.log10(thermal_disp + 1e-15)
                 
                 # Update Labels
-                self.plot_widget.setLabel('left', 'Noise Density', units='dBV/√Hz')
-                self.plot_widget.setTitle("Noise PSD (Log-Log)")
+                self.plot_widget.setLabel('left', 'Noise Density', units=unit_mode)
+                self.plot_widget.setTitle(f"Noise PSD ({unit_mode})")
                 
                 self.plot_curve.setData(freqs[1:], mag_plot[1:])
                 
                 # Fit Line
                 if results['flicker_slope'] != 0:
                     f_fit = np.logspace(0, 2, 100)
-                    # fit is log10(V), we need 20*log10(V)
                     y_fit_log = results['flicker_slope'] * np.log10(f_fit) + results['flicker_intercept']
                     y_fit_db = 20 * y_fit_log
                     self.fit_curve.setData(f_fit, y_fit_db)
@@ -415,19 +517,21 @@ class NoiseProfilerWidget(QWidget):
                 self.thermal_line.hide()
 
             # 4. Update Stacked Bar Chart
-            self.update_stack_chart(results)
+            self.update_stack_chart(results, unit_mode)
             
             # 5. Update Report
-            self.update_report(results)
+            self.update_report(results, unit_mode)
             
         except Exception as e:
             print(f"Error in NoiseProfiler update: {e}")
             import traceback
             traceback.print_exc()
         
-    def update_stack_chart(self, results):
+    def update_stack_chart(self, results, unit_mode):
         # Calculate Power Contributions
         # Total Power = (RMS)^2
+        # Note: results are in Display Units.
+        # Ratios are independent of units (linear scaling cancels out).
         p_total = results['noise_rms_20k']**2
         
         # Hum Power
@@ -462,10 +566,30 @@ class NoiseProfilerWidget(QWidget):
         self.bar_flicker.setOpts(width=[pct_flicker], x0=[pct_hum + pct_white])
         
         # Update Title with Total RMS
-        self.stack_widget.setTitle(f"Noise Contribution (Total: {results['noise_rms_20k']*1e6:.2f} µVrms)")
+        # Show unit
+        unit_rms = unit_mode.replace("/√Hz", "")
+        self.stack_widget.setTitle(f"Noise Contribution (Total: {results['noise_rms_20k']*1e6:.2f} µ{unit_rms})") # Micro-units?
+        # If dBV, unit is Volts. uV is fine.
+        # If dBu, unit is 0.775V scaled. u(dBu-linear)?
+        # Maybe just show the value and unit.
         
-    def update_report(self, results):
+        if "dBV" in unit_mode:
+            val_disp = results['noise_rms_20k'] * 1e6
+            unit_disp = "µVrms"
+        elif "dBu" in unit_mode:
+            val_disp = results['noise_rms_20k'] * 1e6
+            unit_disp = "µ(dBu-lin)" # A bit weird
+        else:
+            val_disp = results['noise_rms_20k'] * 1e6
+            unit_disp = "µFS"
+            
+        self.stack_widget.setTitle(f"Noise Contribution (Total: {val_disp:.2f} {unit_disp})")
+        
+    def update_report(self, results, unit_mode):
         # Calculate Input Referred Noise
+        # results are in Display Units (Output).
+        # We need to refer back to Input by dividing by LNA Gain.
+        
         gain_db = self.module.lna_gain_db
         gain_linear = 10**(gain_db/20)
         
@@ -478,24 +602,39 @@ class NoiseProfilerWidget(QWidget):
         thermal_density = np.sqrt(4 * k * T * R)
         thermal_density_db = 20 * np.log10(thermal_density)
         
-        # Input Referred
-        # V_in = V_out / Gain
-        white_density_in = results['white_density'] / gain_linear
+        # Input Referred Density (Volts)
+        # First convert Display Unit to Volts
+        if "dBu" in unit_mode:
+            white_volts = results['white_density'] * 0.775
+        elif "dBV" in unit_mode:
+            white_volts = results['white_density']
+        else:
+            cal_offset = self.module.audio_engine.calibration.get_input_offset_db()
+            white_volts = results['white_density'] * 10**(cal_offset/20)
+            
+        white_density_in = white_volts / gain_linear
         white_density_in_db = 20 * np.log10(white_density_in + 1e-15)
         
-        # NF (Noise Figure) = SNR_in / SNR_out = Total_Noise_In / Thermal_Noise
-        # Or simply Excess Noise Ratio?
-        # Let's just show Input Referred Density vs Thermal Density
+        # Report Values (Display Units)
+        hum_rms = results['hum_rms']
+        total_rms = results['noise_rms_20k']
+        white_dens = results['white_density']
+        
+        # Formatting helper
+        def fmt(val):
+            return f"{val*1e6:.2f} µ" if val < 1e-3 else f"{val*1e3:.2f} m"
+            
+        unit_suffix = "V" if "dBV" in unit_mode else ("(dBu-lin)" if "dBu" in unit_mode else "FS")
         
         txt = f"""
         <b>Noise Report</b><br>
         <br>
         <b>Hum ({results['hum_freq']:.0f}Hz):</b><br>
-        RMS: {results['hum_rms']*1e6:.2f} µV<br>
-        THD+N (Hum): {20*np.log10(results['hum_rms']/results['noise_rms_20k']+1e-15):.1f} dB<br>
+        RMS: {hum_rms*1e6:.2f} µ{unit_suffix}<br>
+        THD+N (Hum): {20*np.log10(hum_rms/total_rms+1e-15):.1f} dB<br>
         <br>
         <b>White Noise:</b><br>
-        Density: {results['white_density']*1e9:.2f} nV/√Hz<br>
+        Density: {white_dens*1e9:.2f} n{unit_suffix}/√Hz<br>
         (Input Ref: {white_density_in*1e9:.2f} nV/√Hz)<br>
         <br>
         <b>1/f Noise:</b><br>
@@ -503,7 +642,7 @@ class NoiseProfilerWidget(QWidget):
         Slope: {results['flicker_slope']:.2f} dB/dec<br>
         <br>
         <b>Integrated RMS (20k):</b><br>
-        Total: {results['noise_rms_20k']*1e6:.2f} µV<br>
+        Total: {total_rms*1e6:.2f} µ{unit_suffix}<br>
         <br>
         <b>Thermal Limit ({R}Ω):</b><br>
         {thermal_density*1e9:.2f} nV/√Hz ({thermal_density_db:.1f} dBV)
