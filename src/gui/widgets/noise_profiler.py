@@ -111,6 +111,22 @@ class NoiseProfilerWidget(QWidget):
         
         ctrl_group.setLayout(ctrl_layout)
         left_panel.addWidget(ctrl_group)
+
+        # Display Options
+        disp_group = QGroupBox("Display")
+        disp_layout = QVBoxLayout()
+        
+        self.res_mode_chk = QCheckBox("Show as Resistance (Ω)")
+        self.res_mode_chk.toggled.connect(self.update_analysis)
+        disp_layout.addWidget(self.res_mode_chk)
+        
+        self.thermal_chk = QCheckBox("Show Thermal Limit")
+        self.thermal_chk.setChecked(True)
+        self.thermal_chk.toggled.connect(self.update_analysis)
+        disp_layout.addWidget(self.thermal_chk)
+        
+        disp_group.setLayout(disp_layout)
+        left_panel.addWidget(disp_group)
         
         # LNA Settings
         lna_group = QGroupBox("LNA / Input Settings")
@@ -184,47 +200,39 @@ class NoiseProfilerWidget(QWidget):
         self.fit_curve = self.plot_widget.plot(pen=pg.mkPen('r', style=Qt.PenStyle.DashLine, width=2), name='1/f Fit')
         self.hum_curve = self.plot_widget.plot(pen=None, symbol='o', symbolBrush='c', symbolSize=8, name='Hum')
         self.white_curve = self.plot_widget.plot(pen=pg.mkPen('g', style=Qt.PenStyle.DotLine), name='White Floor')
+        self.thermal_line = pg.InfiniteLine(angle=0, pen=pg.mkPen('m', style=Qt.PenStyle.DashDotLine, width=1), label='Thermal Limit', labelOpts={'position':0.9, 'color': (200,0,200), 'movable': True})
+        self.plot_widget.addItem(self.thermal_line)
         
         center_panel.addWidget(self.plot_widget, 2)
         
-        # Radar Chart (Simulated with PlotWidget)
-        self.radar_widget = pg.PlotWidget(title="Noise Contribution")
-        self.radar_widget.setAspectLocked()
-        self.radar_widget.hideAxis('left')
-        self.radar_widget.hideAxis('bottom')
-        self.radar_widget.setXRange(-1.2, 1.2)
-        self.radar_widget.setYRange(-1.2, 1.2)
-        self.radar_widget.disableAutoRange()
-        # Lock mouse interaction to prevent user from accidentally shifting the view
-        self.radar_widget.getPlotItem().getViewBox().setMouseEnabled(x=False, y=False)
-        self.radar_widget.getPlotItem().getViewBox().setMenuEnabled(False)
+        # Stacked Bar Chart (Noise Contribution)
+        self.stack_widget = pg.PlotWidget(title="Noise Contribution (%)")
+        self.stack_widget.setMouseEnabled(x=False, y=False)
+        self.stack_widget.setMenuEnabled(False)
+        self.stack_widget.hideAxis('left')
+        self.stack_widget.setXRange(0, 100)
+        self.stack_widget.setYRange(0, 1)
+        self.stack_widget.getPlotItem().hideButtons()
         
-        # Initialize Radar Chart Background
-        self.radar_axes = ['Hum', 'White', '1/f Corner', 'Total Noise']
-        n = len(self.radar_axes)
-        angles = np.linspace(0, 2*np.pi, n, endpoint=False)
-        self.radar_angles = angles
+        # Add Legend
+        self.stack_legend = self.stack_widget.addLegend(offset=(10, 10))
         
-        # Draw Web
-        for r in [0.25, 0.5, 0.75, 1.0]:
-            x_web = r * np.cos(angles)
-            y_web = r * np.sin(angles)
-            x_web = np.append(x_web, x_web[0])
-            y_web = np.append(y_web, y_web[0])
-            self.radar_widget.plot(x_web, y_web, pen=pg.mkPen('#444', style=Qt.PenStyle.DotLine))
-            
-        # Draw Axes and Labels
-        for i in range(n):
-            self.radar_widget.plot([0, np.cos(angles[i])], [0, np.sin(angles[i])], pen=pg.mkPen('#444'))
-            # Labels
-            text = pg.TextItem(self.radar_axes[i], anchor=(0.5, 0.5), color='#aaa')
-            text.setPos(1.1*np.cos(angles[i]), 1.1*np.sin(angles[i]))
-            self.radar_widget.addItem(text)
-            
-        # Data Polygon (Initialize empty)
-        self.radar_curve = self.radar_widget.plot(pen=pg.mkPen('c', width=2), fillLevel=0, brush=pg.mkBrush(0, 255, 255, 50))
+        # Bars (using BarGraphItem logic manually or stacked curves)
+        # We will use 3 BarGraphItems for Hum, White, 1/f
+        # Horizontal bars: x0 (left), width (length), y (center), height (thickness)
+        # Note: pyqtgraph BarGraphItem arguments: x, height (vertical) OR x0, x1, y, height?
+        # Let's check docs or common usage. usually x, height, width, brush.
+        # For horizontal: y, height, width (length), x0 (start).
         
-        center_panel.addWidget(self.radar_widget, 1)
+        self.bar_hum = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush='c', name='Hum')
+        self.bar_white = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush='g', name='White')
+        self.bar_flicker = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush='r', name='1/f')
+        
+        self.stack_widget.addItem(self.bar_hum)
+        self.stack_widget.addItem(self.bar_white)
+        self.stack_widget.addItem(self.bar_flicker)
+        
+        center_panel.addWidget(self.stack_widget, 1)
         
         layout.addLayout(center_panel, 3)
         
@@ -313,33 +321,101 @@ class NoiseProfilerWidget(QWidget):
             self.module.last_results = results
             
             # 3. Update Plots
-            # Main Spectrum
-            mag_db = 20 * np.log10(avg_mag + 1e-15)
-            self.plot_curve.setData(freqs[1:], mag_db[1:]) # Skip DC
             
-            # 1/f Fit Line
-            if results['flicker_slope'] != 0:
-                # Generate line points
-                f_fit = np.logspace(0, 2, 100) # 1Hz to 100Hz
-                y_fit = results['flicker_slope'] * np.log10(f_fit) + results['flicker_intercept']
-                self.fit_curve.setData(f_fit, y_fit)
-            else:
-                self.fit_curve.setData([], [])
+            # Constants
+            k = 1.380649e-23
+            T = self.module.temperature_c + 273.15
+            R_in = self.module.input_impedance
+            
+            # Thermal Noise Density (V/rtHz)
+            thermal_density = np.sqrt(4 * k * T * R_in)
+            
+            # Resistance Mode Logic
+            is_res_mode = self.res_mode_chk.isChecked()
+            
+            if is_res_mode:
+                # Convert to Ohms: R = V^2 / (4kT)
+                # Avoid division by zero
+                denom = 4 * k * T
+                mag_plot = (avg_mag**2) / denom
                 
-            # Hum Markers
-            hum_freqs = [h[0] for h in results['hum_components']]
-            hum_amps = []
-            for f in hum_freqs:
-                idx = np.argmin(np.abs(freqs - f))
-                hum_amps.append(mag_db[idx])
-            self.hum_curve.setData(hum_freqs, hum_amps)
-            
-            # White Noise Floor
-            white_level_db = 20 * np.log10(results['white_density'] + 1e-15)
-            self.white_curve.setData([10, 20000], [white_level_db, white_level_db])
-            
-            # 4. Update Radar Chart
-            self.update_radar_chart(results)
+                # Thermal Limit (Ohms) -> R_in
+                thermal_limit_val = R_in
+                
+                # Update Labels
+                self.plot_widget.setLabel('left', 'Equivalent Resistance', units='Ω')
+                self.plot_widget.setTitle("Noise Resistance (Log-Log)")
+                
+                # Update Curves
+                self.plot_curve.setData(freqs[1:], mag_plot[1:])
+                
+                # Fit Line (Convert V fit to R fit)
+                if results['flicker_slope'] != 0:
+                    f_fit = np.logspace(0, 2, 100)
+                    # V density fit (log10)
+                    y_fit_v_log = results['flicker_slope'] * np.log10(f_fit) + results['flicker_intercept']
+                    y_fit_v = 10**(y_fit_v_log) # Convert log10(V) to Linear V
+                    y_fit_r = (y_fit_v**2) / denom
+                    self.fit_curve.setData(f_fit, y_fit_r)
+                else:
+                    self.fit_curve.setData([], [])
+                
+                # Hum Markers
+                hum_freqs = [h[0] for h in results['hum_components']]
+                hum_vals = []
+                for f in hum_freqs:
+                    idx = np.argmin(np.abs(freqs - f))
+                    hum_vals.append(mag_plot[idx])
+                self.hum_curve.setData(hum_freqs, hum_vals)
+                
+                # White Noise Floor
+                white_r = (results['white_density']**2) / denom
+                self.white_curve.setData([10, 20000], [white_r, white_r])
+                
+            else:
+                # Voltage Mode (PSD dBV)
+                mag_plot = 20 * np.log10(avg_mag + 1e-15)
+                
+                # Thermal Limit (dBV)
+                thermal_limit_val = 20 * np.log10(thermal_density + 1e-15)
+                
+                # Update Labels
+                self.plot_widget.setLabel('left', 'Noise Density', units='dBV/√Hz')
+                self.plot_widget.setTitle("Noise PSD (Log-Log)")
+                
+                self.plot_curve.setData(freqs[1:], mag_plot[1:])
+                
+                # Fit Line
+                if results['flicker_slope'] != 0:
+                    f_fit = np.logspace(0, 2, 100)
+                    # fit is log10(V), we need 20*log10(V)
+                    y_fit_log = results['flicker_slope'] * np.log10(f_fit) + results['flicker_intercept']
+                    y_fit_db = 20 * y_fit_log
+                    self.fit_curve.setData(f_fit, y_fit_db)
+                else:
+                    self.fit_curve.setData([], [])
+                    
+                # Hum Markers
+                hum_freqs = [h[0] for h in results['hum_components']]
+                hum_vals = []
+                for f in hum_freqs:
+                    idx = np.argmin(np.abs(freqs - f))
+                    hum_vals.append(mag_plot[idx])
+                self.hum_curve.setData(hum_freqs, hum_vals)
+                
+                # White Noise Floor
+                white_level_db = 20 * np.log10(results['white_density'] + 1e-15)
+                self.white_curve.setData([10, 20000], [white_level_db, white_level_db])
+
+            # Update Thermal Limit Line
+            if self.thermal_chk.isChecked():
+                self.thermal_line.show()
+                self.thermal_line.setValue(thermal_limit_val)
+            else:
+                self.thermal_line.hide()
+
+            # 4. Update Stacked Bar Chart
+            self.update_stack_chart(results)
             
             # 5. Update Report
             self.update_report(results)
@@ -349,51 +425,44 @@ class NoiseProfilerWidget(QWidget):
             import traceback
             traceback.print_exc()
         
-    def update_radar_chart(self, results):
-        # Categories: Hum, White, 1/f (Corner), Total RMS
-        # Normalize values to 0-1 range for display
+    def update_stack_chart(self, results):
+        # Calculate Power Contributions
+        # Total Power = (RMS)^2
+        p_total = results['noise_rms_20k']**2
         
-        # Hum: Relative to Total RMS?
-        hum_rms = results['hum_rms']
-        white_rms = results['noise_rms_20k']
-        # 1/f contribution? Maybe Corner Freq relative to 1kHz?
-        corner = results['corner_freq']
+        # Hum Power
+        p_hum = results['hum_rms']**2
         
-        # Let's define axes
-        # axes = ['Hum', 'White', '1/f Corner', 'Total Noise']
-        values = []
+        # White Noise Power (Density^2 * BW)
+        # BW is approx 20kHz
+        p_white = (results['white_density']**2) * 20000
         
-        # Normalize logic (heuristic)
-        # Hum: Log scale, -120dB to -60dB -> 0 to 1
-        hum_db = 20 * np.log10(hum_rms + 1e-15)
-        val_hum = np.clip((hum_db + 120) / 60, 0, 1)
+        # 1/f Power (Remainder)
+        p_flicker = p_total - p_hum - p_white
+        if p_flicker < 0: p_flicker = 0
         
-        # White: Log scale density, -160dB to -100dB -> 0 to 1
-        white_db = 20 * np.log10(results['white_density'] + 1e-15)
-        val_white = np.clip((white_db + 160) / 60, 0, 1)
+        # Normalize to %
+        if p_total > 0:
+            pct_hum = (p_hum / p_total) * 100
+            pct_white = (p_white / p_total) * 100
+            pct_flicker = (p_flicker / p_total) * 100
+        else:
+            pct_hum = 0
+            pct_white = 0
+            pct_flicker = 0
+            
+        # Update Bars
+        # Hum (Cyan) starts at 0
+        self.bar_hum.setOpts(width=[pct_hum], x0=[0])
         
-        # Corner: Log scale, 1Hz to 1000Hz -> 0 to 1
-        val_corner = np.clip(np.log10(corner + 1e-1) / 3, 0, 1)
+        # White (Green) starts after Hum
+        self.bar_white.setOpts(width=[pct_white], x0=[pct_hum])
         
-        # Total: Log scale, -100dB to -40dB -> 0 to 1
-        total_db = 20 * np.log10(results['noise_rms_20k'] + 1e-15)
-        val_total = np.clip((total_db + 100) / 60, 0, 1)
+        # Flicker (Red) starts after White
+        self.bar_flicker.setOpts(width=[pct_flicker], x0=[pct_hum + pct_white])
         
-        values = np.array([val_hum, val_white, val_corner, val_total])
-        # Handle NaNs
-        values = np.nan_to_num(values)
-        
-        # Draw Polygon
-        angles = self.radar_angles
-        x = values * np.cos(angles)
-        y = values * np.sin(angles)
-        
-        # Close loop
-        x = np.append(x, x[0])
-        y = np.append(y, y[0])
-        
-        # Update Data
-        self.radar_curve.setData(x, y)
+        # Update Title with Total RMS
+        self.stack_widget.setTitle(f"Noise Contribution (Total: {results['noise_rms_20k']*1e6:.2f} µVrms)")
         
     def update_report(self, results):
         # Calculate Input Referred Noise
