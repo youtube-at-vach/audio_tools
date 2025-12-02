@@ -222,11 +222,11 @@ class NoiseProfilerWidget(QWidget):
         self.stack_widget.setMenuEnabled(False)
         self.stack_widget.hideAxis('left')
         self.stack_widget.setXRange(0, 100)
-        self.stack_widget.setYRange(0, 1)
+        self.stack_widget.setYRange(0, 2) # Increase range to make room for legend
         self.stack_widget.getPlotItem().hideButtons()
         
         # Add Legend
-        self.stack_legend = self.stack_widget.addLegend(offset=(10, 10))
+        self.stack_legend = self.stack_widget.addLegend(offset=(10, 5)) # Top-left with small padding
         
         # Bars (using BarGraphItem logic manually or stacked curves)
         # We will use 3 BarGraphItems for Hum, White, 1/f
@@ -238,10 +238,12 @@ class NoiseProfilerWidget(QWidget):
         self.bar_hum = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush='c', name='Hum')
         self.bar_white = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush='g', name='White')
         self.bar_flicker = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush='r', name='1/f')
+        self.bar_other = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush=pg.mkBrush(150, 0, 255), name='Other')
         
         self.stack_widget.addItem(self.bar_hum)
         self.stack_widget.addItem(self.bar_white)
         self.stack_widget.addItem(self.bar_flicker)
+        self.stack_widget.addItem(self.bar_other)
         
         center_panel.addWidget(self.stack_widget, 1)
         
@@ -541,19 +543,24 @@ class NoiseProfilerWidget(QWidget):
         # BW is approx 20kHz
         p_white = (results['white_density']**2) * 20000
         
-        # 1/f Power (Remainder)
-        p_flicker = p_total - p_hum - p_white
-        if p_flicker < 0: p_flicker = 0
+        # 1/f Power (Explicit)
+        p_flicker = results.get('flicker_rms', 0.0)**2
+        
+        # Other Power (Residual)
+        p_other = p_total - p_hum - p_white - p_flicker
+        if p_other < 0: p_other = 0
         
         # Normalize to %
         if p_total > 0:
             pct_hum = (p_hum / p_total) * 100
             pct_white = (p_white / p_total) * 100
             pct_flicker = (p_flicker / p_total) * 100
+            pct_other = (p_other / p_total) * 100
         else:
             pct_hum = 0
             pct_white = 0
             pct_flicker = 0
+            pct_other = 0
             
         # Update Bars
         # Hum (Cyan) starts at 0
@@ -564,6 +571,9 @@ class NoiseProfilerWidget(QWidget):
         
         # Flicker (Red) starts after White
         self.bar_flicker.setOpts(width=[pct_flicker], x0=[pct_hum + pct_white])
+        
+        # Other (Purple) starts after Flicker
+        self.bar_other.setOpts(width=[pct_other], x0=[pct_hum + pct_white + pct_flicker])
         
         # Update Title with Total RMS
         # Show unit
@@ -631,7 +641,7 @@ class NoiseProfilerWidget(QWidget):
         <br>
         <b>Hum ({results['hum_freq']:.0f}Hz):</b><br>
         RMS: {hum_rms*1e6:.2f} µ{unit_suffix}<br>
-        THD+N (Hum): {20*np.log10(hum_rms/total_rms+1e-15):.1f} dB<br>
+        THD+N (Hum): {20*np.log10(hum_rms/total_rms+1e-15) if total_rms > 1e-12 else -100.0:.1f} dB<br>
         <br>
         <b>White Noise:</b><br>
         Density: {white_dens*1e9:.2f} n{unit_suffix}/√Hz<br>
@@ -640,6 +650,10 @@ class NoiseProfilerWidget(QWidget):
         <b>1/f Noise:</b><br>
         Corner Freq: {results['corner_freq']:.1f} Hz<br>
         Slope: {results['flicker_slope']:.2f} dB/dec<br>
+        <br>
+        <b>Peak Noise:</b><br>
+        Freq: {results.get('peak_freq', 0):.1f} Hz<br>
+        Amp: {results.get('peak_amp', 0)*1e9:.2f} n{unit_suffix}/√Hz<br>
         <br>
         <b>Integrated RMS (20k):</b><br>
         Total: {total_rms*1e6:.2f} µ{unit_suffix}<br>
