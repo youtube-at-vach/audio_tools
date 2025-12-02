@@ -14,17 +14,16 @@ PythonとPyQt6で構築されており、高精度な信号生成、解析、測
 4.  **Loopback Finder**: オーディオデバイスの遅延測定。
 5.  **Distortion Analyzer**: THD, THD+N, SINAD, IMD (SMPTE/CCIF) の測定。
 6.  **Advanced Distortion Meter**: MIM、SPDR、PIM測定を含む高度な歪み解析。
-7.  **IMD Analyzer**: 相互変調歪み (IMD) の専用解析ツール。
-8.  **Network Analyzer**: 周波数特性(ゲイン・位相)の測定。
-9.  **Oscilloscope**: 波形の時間軸表示とトリガー機能。リアルタイムフィルタリング対応。
-10. **Lock-in Amplifier**: 微小信号の位相敏感検波 (LIA)。周波数応答解析 (FRA) モード、ハーモニクス測定搭載。
-11. **Impedance Analyzer**: インピーダンス測定とOSL (Open/Short/Load) キャリブレーション。R/X、Q、C/Lプロット対応。
-12. **Frequency Counter**: 高精度な周波数測定とアラン分散プロット。
-13. **Spectrogram**: 時間-周波数表示のスペクトログラム。
-14. **Boxcar Averager**: ボックスカー平均によるノイズ低減。外部リファレンス同期対応。
-15. **Goniometer**: ステレオ信号の位相相関と空間分布の可視化。
-16. **Noise Profiler**: ノイズ特性の詳細解析。1/fノイズ、ハムノイズ、ホワイトノイズの自動検出と定量化。
-17. **Settings**: デバイス設定、キャリブレーション、テーマ選択など。
+7.  **Network Analyzer**: 周波数特性(ゲイン・位相)の測定。
+8.  **Oscilloscope**: 波形の時間軸表示とトリガー機能。リアルタイムフィルタリング対応。
+9. **Lock-in Amplifier**: 微小信号の位相敏感検波 (LIA)。周波数応答解析 (FRA) モード、ハーモニクス測定搭載。
+10. **Impedance Analyzer**: インピーダンス測定とOSL (Open/Short/Load) キャリブレーション。R/X、Q、C/Lプロット対応。
+11. **Frequency Counter**: 高精度な周波数測定とアラン分散プロット。
+12. **Spectrogram**: 時間-周波数表示のスペクトログラム。
+13. **Boxcar Averager**: ボックスカー平均によるノイズ低減。外部リファレンス同期対応。
+14. **Goniometer**: ステレオ信号の位相相関と空間分布の可視化。
+15. **Noise Profiler**: ノイズ特性の詳細解析。1/fノイズ、ハムノイズ、ホワイトノイズの自動検出と定量化。
+16. **Settings**: デバイス設定、キャリブレーション、テーマ選択など。
 
 ### 🌍 多言語対応 (Localization)
 世界中の主要な言語をサポートしています。設定画面から切り替え可能です。
