@@ -109,6 +109,13 @@ class NoiseProfilerWidget(QWidget):
         self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; color: black; } QPushButton:checked { background-color: #ffcccc; color: black; }")
         ctrl_layout.addWidget(self.toggle_btn)
         
+        # Input Channel Selection
+        self.channel_combo = QComboBox()
+        self.channel_combo.addItems(["Left (CH1)", "Right (CH2)"])
+        self.channel_combo.currentIndexChanged.connect(self.update_analysis)
+        ctrl_layout.addWidget(QLabel("Input Channel:"))
+        ctrl_layout.addWidget(self.channel_combo)
+        
         ctrl_group.setLayout(ctrl_layout)
         left_panel.addWidget(ctrl_group)
 
@@ -149,6 +156,11 @@ class NoiseProfilerWidget(QWidget):
         self.gain_spin.setValue(0.0)
         self.gain_spin.valueChanged.connect(self.on_lna_changed)
         lna_layout.addRow("Pre-Amp Gain:", self.gain_spin)
+        
+        self.apply_gain_chk = QCheckBox("Apply to Plot")
+        self.apply_gain_chk.setToolTip("Subtract LNA gain from plot and results (Input Referred)")
+        self.apply_gain_chk.toggled.connect(self.update_analysis)
+        lna_layout.addRow("", self.apply_gain_chk)
         
         self.temp_spin = QDoubleSpinBox()
         self.temp_spin.setRange(-273, 500)
@@ -308,7 +320,14 @@ class NoiseProfilerWidget(QWidget):
             psd_factor = np.sqrt(2 / (fs * sum_w2))
             
             # FFT
-            fft_data = np.fft.rfft(data[:, 0] * window) # Use Left channel for now
+            # Select Channel
+            ch_idx = self.channel_combo.currentIndex() # 0=Left, 1=Right
+            if data.shape[1] > ch_idx:
+                fft_input = data[:, ch_idx]
+            else:
+                fft_input = data[:, 0]
+                
+            fft_data = np.fft.rfft(fft_input * window)
             mag_v_rthz = np.abs(fft_data) * psd_factor
             
             freqs = np.fft.rfftfreq(len(data), 1/fs)
@@ -337,6 +356,12 @@ class NoiseProfilerWidget(QWidget):
                 # 0 dBu = 0.775V = -2.218 dBV
                 # dBu = dBV + 2.218
                 offset_db += 2.2184
+            
+            # Apply LNA Gain Offset if requested
+            if self.apply_gain_chk.isChecked():
+                # Subtract Gain (Input Referred)
+                # Gain is in dB
+                offset_db -= self.module.lna_gain_db
                 
             # Apply offset to linear magnitude
             # magnitude_new = magnitude_old * 10^(offset_db/20)
@@ -620,9 +645,63 @@ class NoiseProfilerWidget(QWidget):
             white_volts = results['white_density']
         else:
             cal_offset = self.module.audio_engine.calibration.get_input_offset_db()
-            white_volts = results['white_density'] * 10**(cal_offset/20)
+            # If LNA Gain was applied to plot, cal_offset already includes -gain_db?
+            # No, cal_offset comes from audio_engine.calibration.
+            # But "results" come from "avg_mag_cal" which had "offset_db" applied.
+            # offset_db included -gain_db if checked.
             
-        white_density_in = white_volts / gain_linear
+            # If checked: avg_mag_cal is Input Referred.
+            # So white_volts is Input Referred.
+            # We don't need to divide by gain again.
+            
+            # If NOT checked: avg_mag_cal is Output Referred.
+            # We need to divide by gain.
+            
+            # Let's reconstruct based on check state.
+            white_volts = results['white_density'] * 10**(cal_offset/20) # Revert cal offset? No.
+            # Wait, results['white_density'] is in Display Units.
+            # If dBFS, Display Unit is FS.
+            # We want Volts.
+            # Volts = FS * 10^(cal_offset/20).
+            # But if we applied LNA gain to plot, we subtracted gain from offset.
+            # So FS is "Input Referred FS".
+            # Volts = FS * 10^((cal_offset - gain)/20) ? No.
+            
+            # Let's simplify.
+            # We want Input Referred Density in Volts.
+            # If "Apply to Plot" is ON:
+            #   results['white_density'] IS Input Referred (in Display Units).
+            #   If Display Unit is Volts (dBV), it IS Input Referred Volts.
+            #   If Display Unit is dBu, it IS Input Referred dBu (linearized).
+            #   If Display Unit is dBFS, it IS Input Referred FS.
+            
+            pass
+            
+        # Recalculate Input Referred Density based on current state
+        if self.apply_gain_chk.isChecked():
+            # Already Input Referred
+            if "dBu" in unit_mode:
+                white_density_in = results['white_density'] * 0.775
+            elif "dBV" in unit_mode:
+                white_density_in = results['white_density']
+            else:
+                # dBFS
+                # We need to convert Input Referred FS to Input Referred Volts.
+                # 0dBFS = 1V (usually) * Calibration.
+                # Calibration is Output/Input ratio of interface.
+                cal_offset = self.module.audio_engine.calibration.get_input_offset_db()
+                white_density_in = results['white_density'] * 10**(cal_offset/20)
+        else:
+            # Output Referred. Need to divide by Gain.
+            if "dBu" in unit_mode:
+                white_volts = results['white_density'] * 0.775
+            elif "dBV" in unit_mode:
+                white_volts = results['white_density']
+            else:
+                cal_offset = self.module.audio_engine.calibration.get_input_offset_db()
+                white_volts = results['white_density'] * 10**(cal_offset/20)
+            
+            white_density_in = white_volts / gain_linear
         white_density_in_db = 20 * np.log10(white_density_in + 1e-15)
         
         # Report Values (Display Units)

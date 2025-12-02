@@ -205,13 +205,6 @@ class AudioCalc:
                 h_freq = freqs[h_peak_idx]
                 
                 relative_amp = h_amp / max_amplitude if max_amplitude > 0 else 0
-                # The instruction seems to refer to a line that is not present in the original code.
-                # Assuming the intent was to ensure all log10 calculations have an epsilon,
-                # the existing `amp_db` calculation already includes `+ 1e-12`.
-                # If a new `y_fit` variable is intended, it needs `mag` and `fit_mask` defined.
-                # As per instructions, I will insert the line exactly as provided,
-                # but note that `mag` and `fit_mask` are not defined in this context.
-                y_fit = 20 * np.log10(mag[fit_mask] + 1e-15) # dB               
                 amp_db = 20 * np.log10(relative_amp + 1e-12)
                 
                 harmonic_results.append({
