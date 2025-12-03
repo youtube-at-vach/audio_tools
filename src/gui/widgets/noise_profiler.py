@@ -2,7 +2,7 @@ import argparse
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QComboBox, QCheckBox, QGroupBox, QFormLayout, QSpinBox, QDoubleSpinBox)
+                             QComboBox, QCheckBox, QGroupBox, QFormLayout, QSpinBox, QDoubleSpinBox, QTabWidget)
 from PyQt6.QtCore import QTimer, Qt
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
@@ -30,6 +30,17 @@ class NoiseProfiler(MeasurementModule):
         
         # Results
         self.last_results = {}
+        
+        # Average Mode State
+        self.average_mode = False
+        self.target_averages = 1000
+        self.current_avg_count = 0
+        self.accumulated_magnitude = None
+        
+    def reset_average(self):
+        self.current_avg_count = 0
+        self.accumulated_magnitude = None
+        self._avg_magnitude = None
 
     @property
     def name(self) -> str:
@@ -48,14 +59,14 @@ class NoiseProfiler(MeasurementModule):
     def set_buffer_size(self, size):
         self.buffer_size = size
         self.input_data = np.zeros((self.buffer_size, 2))
-        self._avg_magnitude = None
+        self.reset_average()
 
     def start_analysis(self):
         if self.is_running:
             return
 
         self.is_running = True
-        self._avg_magnitude = None
+        self.reset_average()
         self.input_data = np.zeros((self.buffer_size, 2))
         
         def callback(indata, outdata, frames, time, status):
@@ -100,51 +111,60 @@ class NoiseProfilerWidget(QWidget):
         # --- Left Panel: Controls ---
         left_panel = QVBoxLayout()
         
-        # Analysis Control
-        ctrl_group = QGroupBox("Control")
-        ctrl_layout = QVBoxLayout()
+        # Top Controls (Always Visible)
+        top_ctrl_layout = QVBoxLayout()
+        
         self.toggle_btn = QPushButton("Start Profiling")
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
         self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; color: black; } QPushButton:checked { background-color: #ffcccc; color: black; }")
-        ctrl_layout.addWidget(self.toggle_btn)
+        top_ctrl_layout.addWidget(self.toggle_btn)
         
         # Input Channel Selection
+        chan_layout = QHBoxLayout()
+        chan_layout.addWidget(QLabel("Input Channel:"))
         self.channel_combo = QComboBox()
         self.channel_combo.addItems(["Left (CH1)", "Right (CH2)"])
         self.channel_combo.currentIndexChanged.connect(self.update_analysis)
-        ctrl_layout.addWidget(QLabel("Input Channel:"))
-        ctrl_layout.addWidget(self.channel_combo)
+        chan_layout.addWidget(self.channel_combo)
+        top_ctrl_layout.addLayout(chan_layout)
         
-        ctrl_group.setLayout(ctrl_layout)
-        left_panel.addWidget(ctrl_group)
-
-        # Display Options
-        disp_group = QGroupBox("Display")
-        disp_layout = QVBoxLayout()
+        left_panel.addLayout(top_ctrl_layout)
         
-        self.res_mode_chk = QCheckBox("Show as Resistance (Ω)")
-        self.res_mode_chk.toggled.connect(self.update_analysis)
-        disp_layout.addWidget(self.res_mode_chk)
+        # Tab Widget for Settings
+        self.settings_tabs = QTabWidget()
         
-        self.thermal_chk = QCheckBox("Show Thermal Limit")
-        self.thermal_chk.setChecked(True)
-        self.thermal_chk.toggled.connect(self.update_analysis)
-        disp_layout.addWidget(self.thermal_chk)
+        # --- Tab 1: Measurement ---
+        tab_meas = QWidget()
+        tab_meas_layout = QVBoxLayout()
         
-        disp_group.setLayout(disp_layout)
-        left_panel.addWidget(disp_group)
+        # Average Mode Control
+        avg_group = QGroupBox("Average Mode")
+        avg_layout = QVBoxLayout()
         
-        # Unit Selection
-        unit_group = QGroupBox("Units")
-        unit_layout = QVBoxLayout()
-        self.unit_combo = QComboBox()
-        self.unit_combo.addItems(["dBFS/√Hz", "dBV/√Hz", "dBu/√Hz"])
-        self.unit_combo.setCurrentText("dBV/√Hz") # Default to match Spectrum Analyzer request
-        self.unit_combo.currentTextChanged.connect(self.update_analysis)
-        unit_layout.addWidget(self.unit_combo)
-        unit_group.setLayout(unit_layout)
-        left_panel.addWidget(unit_group)
+        self.avg_mode_chk = QCheckBox("Enable Averaging")
+        self.avg_mode_chk.toggled.connect(self.on_avg_mode_toggled)
+        avg_layout.addWidget(self.avg_mode_chk)
+        
+        avg_ctrl_layout = QHBoxLayout()
+        avg_ctrl_layout.addWidget(QLabel("Count:"))
+        self.avg_count_spin = QSpinBox()
+        self.avg_count_spin.setRange(1, 100000)
+        self.avg_count_spin.setValue(1000)
+        self.avg_count_spin.valueChanged.connect(self.on_avg_count_changed)
+        avg_ctrl_layout.addWidget(self.avg_count_spin)
+        avg_layout.addLayout(avg_ctrl_layout)
+        
+        self.reset_avg_btn = QPushButton("Reset Average")
+        self.reset_avg_btn.clicked.connect(self.on_reset_average)
+        avg_layout.addWidget(self.reset_avg_btn)
+        
+        self.avg_progress_label = QLabel("0 / 1000")
+        self.avg_progress_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        avg_layout.addWidget(self.avg_progress_label)
+        
+        avg_group.setLayout(avg_layout)
+        tab_meas_layout.addWidget(avg_group)
         
         # LNA Settings
         lna_group = QGroupBox("LNA / Input Settings")
@@ -177,7 +197,50 @@ class NoiseProfilerWidget(QWidget):
         lna_layout.addRow("Input Z:", self.imp_spin)
         
         lna_group.setLayout(lna_layout)
-        left_panel.addWidget(lna_group)
+        tab_meas_layout.addWidget(lna_group)
+        
+        tab_meas_layout.addStretch()
+        tab_meas.setLayout(tab_meas_layout)
+        self.settings_tabs.addTab(tab_meas, "Measurement")
+        
+        # --- Tab 2: Display ---
+        tab_disp = QWidget()
+        tab_disp_layout = QVBoxLayout()
+        
+        # Unit Selection
+        unit_group = QGroupBox("Units")
+        unit_layout = QVBoxLayout()
+        self.unit_combo = QComboBox()
+        self.unit_combo.addItems(["dBFS/√Hz", "dBV/√Hz", "dBu/√Hz"])
+        self.unit_combo.setCurrentText("dBV/√Hz") # Default to match Spectrum Analyzer request
+        self.unit_combo.currentTextChanged.connect(self.update_analysis)
+        unit_layout.addWidget(self.unit_combo)
+        unit_group.setLayout(unit_layout)
+        tab_disp_layout.addWidget(unit_group)
+        
+        # Display Options
+        disp_group = QGroupBox("Display")
+        disp_layout = QVBoxLayout()
+        
+        self.res_mode_chk = QCheckBox("Show as Resistance (Ω)")
+        self.res_mode_chk.toggled.connect(self.update_analysis)
+        disp_layout.addWidget(self.res_mode_chk)
+        
+        self.thermal_chk = QCheckBox("Show Thermal Limit")
+        self.thermal_chk.setChecked(True)
+        self.thermal_chk.toggled.connect(self.update_analysis)
+        disp_layout.addWidget(self.thermal_chk)
+        
+        disp_group.setLayout(disp_layout)
+        tab_disp_layout.addWidget(disp_group)
+        
+        tab_disp_layout.addStretch()
+        tab_disp.setLayout(tab_disp_layout)
+        self.settings_tabs.addTab(tab_disp, "Display")
+        
+        # --- Tab 3: Analysis ---
+        tab_anal = QWidget()
+        tab_anal_layout = QVBoxLayout()
         
         # Manual Override
         manual_group = QGroupBox("Manual Analysis")
@@ -196,9 +259,13 @@ class NoiseProfilerWidget(QWidget):
         manual_layout.addRow("Corner Freq:", self.corner_spin)
         
         manual_group.setLayout(manual_layout)
-        left_panel.addWidget(manual_group)
+        tab_anal_layout.addWidget(manual_group)
         
-        left_panel.addStretch()
+        tab_anal_layout.addStretch()
+        tab_anal.setLayout(tab_anal_layout)
+        self.settings_tabs.addTab(tab_anal, "Analysis")
+        
+        left_panel.addWidget(self.settings_tabs)
         layout.addLayout(left_panel, 1)
         
         # --- Center Panel: Visualization ---
@@ -302,6 +369,22 @@ class NoiseProfilerWidget(QWidget):
     def on_manual_corner_changed(self):
         self.module.manual_corner_freq = self.corner_spin.value()
 
+    def on_avg_mode_toggled(self, checked):
+        self.module.average_mode = checked
+        self.module.reset_average()
+        self.update_avg_ui()
+
+    def on_avg_count_changed(self, val):
+        self.module.target_averages = val
+        self.update_avg_ui()
+        
+    def on_reset_average(self):
+        self.module.reset_average()
+        self.update_avg_ui()
+        
+    def update_avg_ui(self):
+        self.avg_progress_label.setText(f"{self.module.current_avg_count} / {self.module.target_averages}")
+
     def update_analysis(self):
         if not self.module.is_running:
             return
@@ -333,11 +416,29 @@ class NoiseProfilerWidget(QWidget):
             freqs = np.fft.rfftfreq(len(data), 1/fs)
             
             # Averaging
-            if self.module._avg_magnitude is None:
-                self.module._avg_magnitude = mag_v_rthz
+            if self.module.average_mode:
+                # Cumulative Average Logic
+                if self.module.current_avg_count < self.module.target_averages:
+                    if self.module.current_avg_count == 0:
+                        self.module.accumulated_magnitude = mag_v_rthz.copy()
+                        self.module.current_avg_count = 1
+                    else:
+                        self.module.accumulated_magnitude += mag_v_rthz
+                        self.module.current_avg_count += 1
+                    
+                    self.module._avg_magnitude = self.module.accumulated_magnitude / self.module.current_avg_count
+                    self.update_avg_ui()
+                else:
+                    # Target reached, hold result
+                    if self.module._avg_magnitude is None:
+                         self.module._avg_magnitude = mag_v_rthz # Should not happen if count > 0
             else:
-                alpha = 0.8 # Fixed smoothing
-                self.module._avg_magnitude = alpha * self.module._avg_magnitude + (1 - alpha) * mag_v_rthz
+                # Exponential Moving Average
+                if self.module._avg_magnitude is None:
+                    self.module._avg_magnitude = mag_v_rthz
+                else:
+                    alpha = 0.8 # Fixed smoothing
+                    self.module._avg_magnitude = alpha * self.module._avg_magnitude + (1 - alpha) * mag_v_rthz
                 
             avg_mag = self.module._avg_magnitude
             
