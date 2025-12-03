@@ -25,8 +25,6 @@ class NoiseProfiler(MeasurementModule):
         # State
         self._avg_magnitude = None
         self.callback_id = None
-        self.manual_corner_enabled = False
-        self.manual_corner_freq = 100.0
         
         # Results
         self.last_results = {}
@@ -238,32 +236,7 @@ class NoiseProfilerWidget(QWidget):
         tab_disp.setLayout(tab_disp_layout)
         self.settings_tabs.addTab(tab_disp, "Display")
         
-        # --- Tab 3: Analysis ---
-        tab_anal = QWidget()
-        tab_anal_layout = QVBoxLayout()
-        
-        # Manual Override
-        manual_group = QGroupBox("Manual Analysis")
-        manual_layout = QFormLayout()
-        
-        self.manual_corner_chk = QCheckBox("Manual 1/f Corner")
-        self.manual_corner_chk.toggled.connect(self.on_manual_corner_toggled)
-        manual_layout.addRow(self.manual_corner_chk)
-        
-        self.corner_spin = QDoubleSpinBox()
-        self.corner_spin.setRange(1.0, 20000.0)
-        self.corner_spin.setSuffix(" Hz")
-        self.corner_spin.setValue(100.0)
-        self.corner_spin.setEnabled(False)
-        self.corner_spin.valueChanged.connect(self.on_manual_corner_changed)
-        manual_layout.addRow("Corner Freq:", self.corner_spin)
-        
-        manual_group.setLayout(manual_layout)
-        tab_anal_layout.addWidget(manual_group)
-        
-        tab_anal_layout.addStretch()
-        tab_anal.setLayout(tab_anal_layout)
-        self.settings_tabs.addTab(tab_anal, "Analysis")
+
         
         left_panel.addWidget(self.settings_tabs)
         layout.addLayout(left_panel, 1)
@@ -360,14 +333,7 @@ class NoiseProfilerWidget(QWidget):
         self.module.temperature_c = self.temp_spin.value()
         self.module.input_impedance = self.imp_spin.value()
 
-    def on_manual_corner_toggled(self, checked):
-        self.corner_spin.setEnabled(checked)
-        self.module.manual_corner_enabled = checked
-        if checked:
-            self.module.manual_corner_freq = self.corner_spin.value()
 
-    def on_manual_corner_changed(self):
-        self.module.manual_corner_freq = self.corner_spin.value()
 
     def on_avg_mode_toggled(self, checked):
         self.module.average_mode = checked
@@ -472,10 +438,6 @@ class NoiseProfilerWidget(QWidget):
             # 2. Analyze Noise (using calibrated magnitude)
             results = AudioCalc.calculate_noise_profile(avg_mag_cal, freqs, fs)
             
-            # Apply Manual Override
-            if self.module.manual_corner_enabled:
-                results['corner_freq'] = self.module.manual_corner_freq
-                
             self.module.last_results = results
             
             # 3. Update Plots
