@@ -31,7 +31,13 @@ class AudioEngine:
         self.lock = threading.Lock()
         
         # Status Monitoring
-        self.accumulated_status = sd.CallbackFlags()
+        # Loopback State
+        self.loopback = False
+        self.last_output_buffer = None
+
+    def set_loopback(self, enabled):
+        self.loopback = enabled
+        self.logger.info(f"Set software loopback: {enabled}")
 
     def list_devices(self):
         """Returns a list of available audio devices."""
@@ -111,6 +117,9 @@ class AudioEngine:
         hw_in_ch = 2 if in_mode in ['right', 'stereo'] else 1
         hw_out_ch = 2 if out_mode in ['right', 'stereo'] else 1
         
+        # Reset loopback buffer
+        self.last_output_buffer = None
+        
         def master_callback(indata, outdata, frames, time, status):
             if status:
                 self.accumulated_status |= status
@@ -120,46 +129,50 @@ class AudioEngine:
             
             # Prepare logical input for clients
             # Map Hardware Input -> Logical Input (Stereo usually, or as requested)
-            # For simplicity, we'll provide stereo (or 1ch) to clients based on what we have.
-            # But clients currently expect (frames, channels).
-            # Let's standardize on passing what we have.
             
-            # Mapping logic similar to previous implementation
-            if in_mode == 'left':
-                logical_in = indata[:, 0:1]
-            elif in_mode == 'right':
-                if indata.shape[1] >= 2:
-                    logical_in = indata[:, 1:2]
-                else:
-                    logical_in = np.zeros((frames, 1))
-            else: # stereo
-                logical_in = indata[:, 0:2]
+            # If Loopback is enabled, use the last output buffer as input
+            if self.loopback and self.last_output_buffer is not None and len(self.last_output_buffer) == frames:
+                # We use the mixed output from the previous block
+                # last_output_buffer is (frames, logical_out_ch)
+                # We need to map it to logical_in (frames, 2)
+                
+                # Assuming logical_out_ch is 2 (stereo) or 1 (mono)
+                # logical_in is usually stereo (2)
+                
+                lb_src = self.last_output_buffer
+                logical_in = np.zeros((frames, 2), dtype='float32')
+                
+                if lb_src.shape[1] >= 2:
+                    logical_in[:, :2] = lb_src[:, :2]
+                elif lb_src.shape[1] == 1:
+                    logical_in[:, 0] = lb_src[:, 0]
+                    logical_in[:, 1] = lb_src[:, 0]
+            else:
+                # Standard Hardware Input Mapping
+                if in_mode == 'left':
+                    logical_in = indata[:, 0:1]
+                elif in_mode == 'right':
+                    if indata.shape[1] >= 2:
+                        logical_in = indata[:, 1:2]
+                    else:
+                        logical_in = np.zeros((frames, 1))
+                else: # stereo
+                    logical_in = indata[:, 0:2]
 
-            # We need a temporary buffer for clients to write to, so we can sum them.
-            # Clients expect to write to 'outdata'.
-            # If we pass 'outdata' directly, the first client writes, second overwrites?
-            # No, we must sum.
-            
             # Create a temp output buffer for clients
-            # We'll assume clients want to write stereo or mono based on out_mode.
-            # If out_mode is stereo, logical_out_ch = 2
             logical_out_ch = 2 if out_mode == 'stereo' else 1
-            
-            # Iterate over a copy of items to avoid issues if modified during iteration
-            # (though we have a lock for add/remove, iteration inside callback should be safe 
-            # if we copy keys or use a thread-safe structure. Python dict iteration is not thread-safe 
-            # if modified. But we modify under lock. Callback runs in a separate thread.)
-            
-            # To be safe, acquire lock briefly or copy. 
-            # Acquiring lock in audio callback is risky (priority inversion).
-            # Better to copy callbacks dict when modifying, or use a flag.
-            # For now, we'll try to be quick.
             
             # Snapshot of callbacks
             with self.lock:
                 active_callbacks = list(self.callbacks.values())
             
             if not active_callbacks:
+                # Even if no callbacks, we might need to update last_output_buffer (silence)
+                if self.loopback:
+                    if self.last_output_buffer is None or len(self.last_output_buffer) != frames:
+                         self.last_output_buffer = np.zeros((frames, logical_out_ch), dtype='float32')
+                    else:
+                         self.last_output_buffer.fill(0)
                 return
 
             # Mix buffer
@@ -177,6 +190,10 @@ class AudioEngine:
                 
                 # Sum to mix
                 mix_buffer += client_out
+            
+            # Store for next loopback cycle
+            if self.loopback:
+                self.last_output_buffer = mix_buffer.copy()
             
             # Map Logical Output -> Hardware Output
             if out_mode == 'stereo':

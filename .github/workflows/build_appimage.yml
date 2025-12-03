@@ -22,7 +22,7 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libasound2-dev libxcb-cursor0
+        sudo apt-get install -y libasound2-dev libxcb-cursor0 libsndfile1
 
     - name: Install Python dependencies
       run: |
@@ -36,7 +36,7 @@ jobs:
         # Create libs directory if it doesn't exist (though not strictly needed for system-wide pyinstaller)
         mkdir -p libs
         # Run PyInstaller
-        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.png --add-data "src:src" --exclude-module matplotlib --collect-all backports main_gui.py
+        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.png --add-data "src:src" --exclude-module matplotlib --collect-all backports --collect-all soundfile main_gui.py
 
     - name: Build AppImage
       run: |

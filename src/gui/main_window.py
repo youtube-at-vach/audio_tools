@@ -19,6 +19,7 @@ from src.gui.widgets.boxcar_averager import BoxcarAverager
 from src.gui.widgets.goniometer import Goniometer
 from src.gui.widgets.impedance_analyzer import ImpedanceAnalyzer
 from src.gui.widgets.noise_profiler import NoiseProfiler
+from src.gui.widgets.recorder_player import RecorderPlayer
 from src.core.localization import get_manager, tr
 
 class MainWindow(QMainWindow):
@@ -112,7 +113,8 @@ class MainWindow(QMainWindow):
             BoxcarAverager(self.audio_engine),
             Goniometer(self.audio_engine),
             ImpedanceAnalyzer(self.audio_engine),
-            NoiseProfiler(self.audio_engine)
+            NoiseProfiler(self.audio_engine),
+            RecorderPlayer(self.audio_engine)
         ]
         
         # Main layout container

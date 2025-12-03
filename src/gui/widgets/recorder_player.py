@@ -1,0 +1,357 @@
+import numpy as np
+import soundfile as sf
+import scipy.signal
+import os
+import time
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
+                             QFileDialog, QComboBox, QCheckBox, QGroupBox, QProgressBar,
+                             QStyle, QMessageBox)
+from PyQt6.QtCore import QTimer, Qt
+from src.measurement_modules.base import MeasurementModule
+from src.core.audio_engine import AudioEngine
+from src.core.localization import tr
+
+class RecorderPlayer(MeasurementModule):
+    def __init__(self, audio_engine: AudioEngine):
+        self.audio_engine = audio_engine
+        
+        # State
+        self.is_playing = False
+        self.is_recording = False
+        self.loop_playback = False
+        
+        # Buffers
+        self.playback_buffer = None # numpy array (samples, channels)
+        self.playback_pos = 0
+        self.record_buffer = [] # List of numpy arrays
+        self.recorded_samples = 0
+        
+        # Settings
+        self.input_mode = 'Stereo' # Stereo, Left, Right
+        self.output_mode = 'Stereo' # Stereo, Left, Right, Mono
+        
+        self.callback_id = None
+        self.widget = None
+
+    @property
+    def name(self) -> str:
+        return "Recorder & Player"
+
+    @property
+    def description(self) -> str:
+        return "Record and play audio files (WAV, MP3, FLAC, etc.)"
+
+    def run(self, args):
+        pass
+
+    def get_widget(self):
+        if self.widget is None:
+            self.widget = RecorderPlayerWidget(self)
+        return self.widget
+
+    def load_file(self, filepath):
+        try:
+            data, file_sr = sf.read(filepath, always_2d=True)
+            engine_sr = self.audio_engine.sample_rate
+            
+            msg_extra = ""
+            
+            # Resample if needed
+            if file_sr != engine_sr:
+                print(f"Resampling {os.path.basename(filepath)}: {file_sr}Hz -> {engine_sr}Hz")
+                # Calculate new number of samples
+                num_samples = int(len(data) * engine_sr / file_sr)
+                
+                # Use scipy.signal.resample (Fourier method)
+                # Note: For very large files, this might be slow and memory intensive.
+                # But for typical measurement signals it's fine.
+                data = scipy.signal.resample(data, num_samples)
+                msg_extra = f" (Resampled from {file_sr}Hz)"
+            
+            self.playback_buffer = data
+            self.playback_pos = 0
+            return True, f"Loaded: {os.path.basename(filepath)} ({engine_sr}Hz{msg_extra}, {data.shape[1]}ch, {len(data)/engine_sr:.2f}s)"
+        except Exception as e:
+            return False, str(e)
+
+    def save_recording(self, filepath, format=None, subtype=None):
+        if not self.record_buffer:
+            return False, "No recording data"
+        
+        try:
+            data = np.concatenate(self.record_buffer, axis=0)
+            sf.write(filepath, data, self.audio_engine.sample_rate, format=format, subtype=subtype)
+            return True, f"Saved: {filepath}"
+        except Exception as e:
+            return False, str(e)
+
+    def start_playback(self):
+        if self.playback_buffer is None:
+            return
+        self.is_playing = True
+        self._ensure_callback()
+
+    def stop_playback(self):
+        self.is_playing = False
+        self._check_stop_callback()
+
+    def start_recording(self):
+        self.record_buffer = []
+        self.recorded_samples = 0
+        self.is_recording = True
+        self._ensure_callback()
+
+    def stop_recording(self):
+        self.is_recording = False
+        self._check_stop_callback()
+
+    def _ensure_callback(self):
+        if self.callback_id is None:
+            self.callback_id = self.audio_engine.register_callback(self.audio_callback)
+
+    def _check_stop_callback(self):
+        if not self.is_playing and not self.is_recording:
+            if self.callback_id is not None:
+                self.audio_engine.unregister_callback(self.callback_id)
+                self.callback_id = None
+
+    def audio_callback(self, indata, outdata, frames, time_info, status):
+        # Recording
+        if self.is_recording:
+            # Select channels based on input_mode
+            if self.input_mode == 'Stereo':
+                rec_data = indata.copy()
+            elif self.input_mode == 'Left':
+                rec_data = indata[:, 0:1] # Keep 2D
+            elif self.input_mode == 'Right':
+                if indata.shape[1] > 1:
+                    rec_data = indata[:, 1:2]
+                else:
+                    rec_data = np.zeros((frames, 1), dtype=indata.dtype)
+            
+            self.record_buffer.append(rec_data)
+            self.recorded_samples += frames
+
+        # Playback
+        if self.is_playing and self.playback_buffer is not None:
+            pb_len = len(self.playback_buffer)
+            current_idx = 0
+            
+            while current_idx < frames:
+                remaining = frames - current_idx
+                available = pb_len - self.playback_pos
+                
+                to_copy = min(remaining, available)
+                
+                # Get chunk from buffer
+                chunk = self.playback_buffer[self.playback_pos : self.playback_pos + to_copy]
+                
+                # Target slice in outdata
+                out_slice = outdata[current_idx : current_idx + to_copy]
+                
+                file_ch = chunk.shape[1]
+                out_ch = out_slice.shape[1]
+                
+                if self.output_mode == 'Stereo':
+                    if file_ch == 1:
+                        out_slice[:, 0] = chunk[:, 0]
+                        if out_ch > 1: out_slice[:, 1] = chunk[:, 0]
+                    else:
+                        limit = min(file_ch, out_ch)
+                        out_slice[:, :limit] = chunk[:, :limit]
+                elif self.output_mode == 'Left':
+                    out_slice[:, 0] = chunk[:, 0]
+                    if out_ch > 1: out_slice[:, 1] = 0
+                elif self.output_mode == 'Right':
+                    if out_ch > 1: 
+                        out_slice[:, 1] = chunk[:, 0] if file_ch == 1 else chunk[:, 1] if file_ch > 1 else 0
+                        out_slice[:, 0] = 0
+                elif self.output_mode == 'Mono':
+                    # Mix down to mono and send to all outputs
+                    if file_ch > 1:
+                        mono = np.mean(chunk, axis=1)
+                    else:
+                        mono = chunk[:, 0]
+                    
+                    out_slice[:, 0] = mono
+                    if out_ch > 1: out_slice[:, 1] = mono
+                
+                self.playback_pos += to_copy
+                current_idx += to_copy
+                
+                if self.playback_pos >= pb_len:
+                    if self.loop_playback:
+                        self.playback_pos = 0
+                    else:
+                        self.is_playing = False
+                        # Fill rest with zeros
+                        outdata[current_idx:] = 0
+                        break
+        else:
+            outdata.fill(0)
+
+class RecorderPlayerWidget(QWidget):
+    def __init__(self, module: RecorderPlayer):
+        super().__init__()
+        self.module = module
+        self.init_ui()
+        
+        # Update timer
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_ui)
+        self.timer.start(100)
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+        
+        # --- Playback Section ---
+        pb_group = QGroupBox("Playback")
+        pb_layout = QVBoxLayout()
+        
+        # File Info
+        self.file_label = QLabel("No file loaded")
+        self.file_label.setWordWrap(True)
+        pb_layout.addWidget(self.file_label)
+        
+        # Controls
+        ctrl_layout = QHBoxLayout()
+        self.load_btn = QPushButton("Load File")
+        self.load_btn.clicked.connect(self.on_load)
+        self.play_btn = QPushButton("Play")
+        self.play_btn.clicked.connect(self.on_play_toggle)
+        self.loop_check = QCheckBox("Loop")
+        self.loop_check.toggled.connect(self.on_loop_toggle)
+        
+        ctrl_layout.addWidget(self.load_btn)
+        ctrl_layout.addWidget(self.play_btn)
+        ctrl_layout.addWidget(self.loop_check)
+        pb_layout.addLayout(ctrl_layout)
+        
+        # Progress
+        self.pb_progress = QProgressBar()
+        self.pb_progress.setTextVisible(True)
+        pb_layout.addWidget(self.pb_progress)
+        
+        # Output Mode
+        out_layout = QHBoxLayout()
+        out_layout.addWidget(QLabel("Output Mode:"))
+        self.out_mode_combo = QComboBox()
+        self.out_mode_combo.addItems(['Stereo', 'Left', 'Right', 'Mono'])
+        self.out_mode_combo.currentTextChanged.connect(self.on_out_mode_changed)
+        out_layout.addWidget(self.out_mode_combo)
+        pb_layout.addLayout(out_layout)
+        
+        pb_group.setLayout(pb_layout)
+        layout.addWidget(pb_group)
+        
+        # --- Recording Section ---
+        rec_group = QGroupBox("Recording")
+        rec_layout = QVBoxLayout()
+        
+        # Controls
+        rec_ctrl_layout = QHBoxLayout()
+        self.rec_btn = QPushButton("Record")
+        self.rec_btn.setCheckable(True)
+        self.rec_btn.clicked.connect(self.on_record_toggle)
+        self.save_btn = QPushButton("Save Recording")
+        self.save_btn.clicked.connect(self.on_save)
+        self.save_btn.setEnabled(False)
+        
+        rec_ctrl_layout.addWidget(self.rec_btn)
+        rec_ctrl_layout.addWidget(self.save_btn)
+        rec_layout.addLayout(rec_ctrl_layout)
+        
+        # Info
+        self.rec_info_label = QLabel("Recorded: 0.00s")
+        rec_layout.addWidget(self.rec_info_label)
+        
+        # Input Mode
+        in_layout = QHBoxLayout()
+        in_layout.addWidget(QLabel("Input Mode:"))
+        self.in_mode_combo = QComboBox()
+        self.in_mode_combo.addItems(['Stereo', 'Left', 'Right'])
+        self.in_mode_combo.currentTextChanged.connect(self.on_in_mode_changed)
+        in_layout.addWidget(self.in_mode_combo)
+        rec_layout.addLayout(in_layout)
+        
+        # Internal Loopback
+        self.loopback_check = QCheckBox("Internal Loopback (Software)")
+        self.loopback_check.setToolTip("Record internal audio output instead of microphone. Also allows Spectrum Analyzer to see playback.")
+        self.loopback_check.toggled.connect(self.on_loopback_toggled)
+        rec_layout.addWidget(self.loopback_check)
+        
+        rec_group.setLayout(rec_layout)
+        layout.addWidget(rec_group)
+        
+        layout.addStretch()
+        self.setLayout(layout)
+
+    def on_load(self):
+        fname, _ = QFileDialog.getOpenFileName(self, "Open Audio File", "", "Audio Files (*.wav *.mp3 *.flac *.m4a *.ogg);;All Files (*)")
+        if fname:
+            success, msg = self.module.load_file(fname)
+            if success:
+                self.file_label.setText(msg)
+                self.pb_progress.setValue(0)
+            else:
+                QMessageBox.critical(self, "Error", f"Failed to load file:\n{msg}")
+
+    def on_play_toggle(self):
+        if self.module.is_playing:
+            self.module.stop_playback()
+        else:
+            self.module.start_playback()
+
+    def on_loop_toggle(self, checked):
+        self.module.loop_playback = checked
+
+    def on_out_mode_changed(self, text):
+        self.module.output_mode = text
+
+    def on_record_toggle(self):
+        if self.rec_btn.isChecked():
+            self.module.start_recording()
+            self.rec_btn.setText("Stop Recording")
+            self.rec_btn.setStyleSheet("background-color: #ffcccc; color: red; font-weight: bold;")
+            self.save_btn.setEnabled(False)
+        else:
+            self.module.stop_recording()
+            self.rec_btn.setText("Record")
+            self.rec_btn.setStyleSheet("")
+            self.save_btn.setEnabled(True)
+
+    def on_save(self):
+        fname, selected_filter = QFileDialog.getSaveFileName(self, "Save Recording", "recording.wav", "WAV (*.wav);;FLAC (*.flac);;OGG (*.ogg)")
+        if fname:
+            # Determine format/subtype if needed, or let soundfile guess from extension
+            success, msg = self.module.save_recording(fname)
+            if success:
+                QMessageBox.information(self, "Success", msg)
+            else:
+                QMessageBox.critical(self, "Error", f"Failed to save:\n{msg}")
+
+    def on_in_mode_changed(self, text):
+        self.module.input_mode = text
+
+    def on_loopback_toggled(self, checked):
+        self.module.audio_engine.set_loopback(checked)
+
+    def update_ui(self):
+        # Update Playback UI
+        if self.module.is_playing:
+            self.play_btn.setText("Stop")
+            if self.module.playback_buffer is not None:
+                total = len(self.module.playback_buffer)
+                if total > 0:
+                    progress = int(100 * self.module.playback_pos / total)
+                    self.pb_progress.setValue(progress)
+        else:
+            self.play_btn.setText("Play")
+            
+        # Update Recording UI
+        if self.module.is_recording:
+            duration = self.module.recorded_samples / self.module.audio_engine.sample_rate
+            self.rec_info_label.setText(f"Recorded: {duration:.2f}s")
+        elif self.module.recorded_samples > 0:
+            duration = self.module.recorded_samples / self.module.audio_engine.sample_rate
+            self.rec_info_label.setText(f"Recorded: {duration:.2f}s (Stopped)")
