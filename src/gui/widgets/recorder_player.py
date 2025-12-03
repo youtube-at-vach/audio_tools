@@ -5,11 +5,44 @@ import os
 import time
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
                              QFileDialog, QComboBox, QCheckBox, QGroupBox, QProgressBar,
-                             QStyle, QMessageBox)
-from PyQt6.QtCore import QTimer, Qt
+                             QStyle, QMessageBox, QProgressDialog)
+from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 from src.core.localization import tr
+
+class FileLoadWorker(QThread):
+    finished = pyqtSignal(bool, object, str) # success, data, message
+
+    def __init__(self, filepath, target_sr):
+        super().__init__()
+        self.filepath = filepath
+        self.target_sr = target_sr
+
+    def run(self):
+        try:
+            # First read basic info to check length/sr
+            info = sf.info(self.filepath)
+            file_sr = info.samplerate
+            
+            # Read data
+            data, _ = sf.read(self.filepath, always_2d=True)
+            
+            msg_extra = ""
+            if file_sr != self.target_sr:
+                # Resample
+                num_samples = int(len(data) * self.target_sr / file_sr)
+                # scipy.signal.resample is Fourier method, good for quality but slow for huge files
+                # For this task, we assume it's acceptable as long as it's in a thread
+                data = scipy.signal.resample(data, num_samples)
+                msg_extra = f" (Resampled from {file_sr}Hz)"
+            
+            result_msg = f"Loaded: {os.path.basename(self.filepath)} ({self.target_sr}Hz{msg_extra}, {data.shape[1]}ch, {len(data)/self.target_sr:.2f}s)"
+            self.finished.emit(True, data, result_msg)
+            
+        except Exception as e:
+            self.finished.emit(False, None, str(e))
+
 
 class RecorderPlayer(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -49,6 +82,11 @@ class RecorderPlayer(MeasurementModule):
             self.widget = RecorderPlayerWidget(self)
         return self.widget
 
+    def set_playback_data(self, data):
+        self.playback_buffer = data
+        self.playback_pos = 0
+
+    # Deprecated synchronous load, kept for compatibility if needed, but UI should use worker
     def load_file(self, filepath):
         try:
             data, file_sr = sf.read(filepath, always_2d=True)
@@ -196,6 +234,9 @@ class RecorderPlayerWidget(QWidget):
         self.module = module
         self.init_ui()
         
+        self.load_worker = None
+        self.progress_dialog = None
+        
         # Update timer
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_ui)
@@ -274,27 +315,86 @@ class RecorderPlayerWidget(QWidget):
         in_layout.addWidget(self.in_mode_combo)
         rec_layout.addLayout(in_layout)
         
+        rec_group.setLayout(rec_layout)
+        layout.addWidget(rec_group)
+
+        # --- Audio Routing Section ---
+        route_group = QGroupBox("Audio Routing")
+        route_layout = QVBoxLayout()
+        
         # Internal Loopback
         self.loopback_check = QCheckBox("Internal Loopback (Software)")
         self.loopback_check.setToolTip("Record internal audio output instead of microphone. Also allows Spectrum Analyzer to see playback.")
         self.loopback_check.toggled.connect(self.on_loopback_toggled)
-        rec_layout.addWidget(self.loopback_check)
+        route_layout.addWidget(self.loopback_check)
         
-        rec_group.setLayout(rec_layout)
-        layout.addWidget(rec_group)
+        route_group.setLayout(route_layout)
+        layout.addWidget(route_group)
         
         layout.addStretch()
         self.setLayout(layout)
 
     def on_load(self):
         fname, _ = QFileDialog.getOpenFileName(self, "Open Audio File", "", "Audio Files (*.wav *.mp3 *.flac *.m4a *.ogg);;All Files (*)")
-        if fname:
-            success, msg = self.module.load_file(fname)
-            if success:
-                self.file_label.setText(msg)
-                self.pb_progress.setValue(0)
-            else:
+        if not fname:
+            return
+
+        try:
+            # Check sample rate first
+            info = sf.info(fname)
+            file_sr = info.samplerate
+            engine_sr = self.module.audio_engine.sample_rate
+            
+            if file_sr != engine_sr:
+                reply = QMessageBox.question(
+                    self, 
+                    "Resample Required", 
+                    f"The file sample rate ({file_sr} Hz) differs from the engine rate ({engine_sr} Hz).\n"
+                    "Resampling is required to play correctly.\n\n"
+                    "Do you want to proceed? (This may take a moment for large files)",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+                    QMessageBox.StandardButton.Yes
+                )
+                
+                if reply == QMessageBox.StandardButton.No:
+                    return
+
+            # Start background loading
+            self.load_worker = FileLoadWorker(fname, engine_sr)
+            self.load_worker.finished.connect(self.on_load_finished)
+            
+            # Show progress dialog
+            self.progress_dialog = QProgressDialog("Loading and processing audio...", "Cancel", 0, 0, self)
+            self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+            self.progress_dialog.setMinimumDuration(0)
+            self.progress_dialog.canceled.connect(self.on_load_cancel)
+            self.progress_dialog.show()
+            
+            self.load_worker.start()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to read file info:\n{e}")
+
+    def on_load_finished(self, success, data, msg):
+        if self.progress_dialog:
+            self.progress_dialog.close()
+            self.progress_dialog = None
+            
+        if success:
+            self.module.set_playback_data(data)
+            self.file_label.setText(msg)
+            self.pb_progress.setValue(0)
+        else:
+            if msg != "Cancelled": # Don't show error if user cancelled
                 QMessageBox.critical(self, "Error", f"Failed to load file:\n{msg}")
+        
+        self.load_worker = None
+
+    def on_load_cancel(self):
+        if self.load_worker and self.load_worker.isRunning():
+            self.load_worker.terminate() # Terminate is harsh but effective for simple worker
+            self.load_worker.wait()
+            self.load_worker = None
 
     def on_play_toggle(self):
         if self.module.is_playing:
