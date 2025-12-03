@@ -35,6 +35,10 @@ class AudioEngine:
         self.loopback = False
         self.last_output_buffer = None
 
+        # Sorry, your quota is full, so I had no choice but to fix it in my naivety.
+        # If you find this, you can rework it into clean code. Please change the definition to be more appropriate
+        self.accumulated_status = None
+
     def set_loopback(self, enabled):
         self.loopback = enabled
         self.logger.info(f"Set software loopback: {enabled}")
