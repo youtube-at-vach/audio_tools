@@ -563,7 +563,7 @@ class AudioCalc:
         
         # Exclude hum
         for h_freq, h_amp in hum_components:
-            mask_1f &= ~((freqs >= h_freq - 2.0) & (freqs <= h_freq + 2.0))
+            mask_1f &= ~((freqs >= h_freq - 5.0) & (freqs <= h_freq + 5.0))
             
         if np.sum(mask_1f) > 5:
             f_log = np.log10(freqs[mask_1f])
