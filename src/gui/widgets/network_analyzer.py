@@ -609,6 +609,10 @@ class NetworkAnalyzerWidget(QWidget):
         self.apply_ref_check = QCheckBox("Apply Reference")
         self.apply_ref_check.toggled.connect(self.on_apply_reference_changed)
         cal_layout.addRow(self.apply_ref_check)
+        
+        self.gd_check = QCheckBox("Show Group Delay")
+        self.gd_check.toggled.connect(self.refresh_plots)
+        cal_layout.addRow(self.gd_check)
         cal_group.setLayout(cal_layout)
         
         # Buttons
@@ -643,6 +647,23 @@ class NetworkAnalyzerWidget(QWidget):
         self.phase_plot.setLogMode(x=True, y=False)
         self.phase_plot.showGrid(x=True, y=True)
         self.phase_curve = self.phase_plot.plot(pen='y')
+        
+        # Group Delay Axis (Right)
+        self.gd_layout = self.phase_plot.plotItem.layout
+        self.gd_axis = pg.AxisItem('right')
+        self.gd_axis.setLabel('Group Delay', units='ms')
+        self.gd_layout.addItem(self.gd_axis, 2, 2)
+        self.gd_view = pg.ViewBox()
+        self.gd_axis.linkToView(self.gd_view)
+        self.gd_view.setXLink(self.phase_plot.plotItem)
+        self.phase_plot.plotItem.scene().addItem(self.gd_view)
+        
+        self.gd_curve = pg.PlotCurveItem(pen='r')
+        self.gd_view.addItem(self.gd_curve)
+        
+        # Handle resizing
+        self.phase_plot.plotItem.vb.sigResized.connect(self.update_gd_views)
+        
         plot_layout.addWidget(self.phase_plot)
         
         layout.addLayout(plot_layout)
@@ -798,6 +819,7 @@ class NetworkAnalyzerWidget(QWidget):
             self.phases = []
             self.mag_curve.setData([], [])
             self.phase_curve.setData([], [])
+            self.gd_curve.setData([], [])
             self.start_btn.setText("Stop Sweep")
             self.module.start_sweep()
         else:
@@ -807,6 +829,11 @@ class NetworkAnalyzerWidget(QWidget):
     def on_sweep_finished(self):
         self.start_btn.setChecked(False)
         self.start_btn.setText("Start Sweep")
+
+    def update_gd_views(self):
+        # Keep the GD view aligned with the main view
+        self.gd_view.setGeometry(self.phase_plot.plotItem.vb.sceneBoundingRect())
+        self.gd_view.linkedViewChanged(self.phase_plot.plotItem.vb, self.gd_view.XAxis)
 
     def update_plot(self, freq, mag, phase):
         self.freqs.append(freq)
@@ -899,3 +926,54 @@ class NetworkAnalyzerWidget(QWidget):
 
         self.mag_curve.setData(self.freqs, y_values)
         self.phase_curve.setData(self.freqs, phases_to_plot)
+        
+        # Group Delay Calculation
+        if self.gd_check.isChecked() and len(self.freqs) > 1:
+            self.gd_axis.show()
+            self.gd_view.show()
+            
+            # Unwrap phase (in degrees) -> radians
+            # Note: phases_to_plot might be wrapped to [-180, 180] or relative
+            # We should use the raw accumulated phase for GD if possible, 
+            # but self.phases stores wrapped phase usually?
+            # self.phases stores what update_plot sends.
+            # In _analyze_tone, it returns degrees in [-180, 180].
+            # So we need to unwrap here.
+            
+            # Use the raw phases from self.phases, not the potentially modified phases_to_plot
+            raw_phases_deg = np.array(self.phases)
+            
+            # If reference is applied, we should probably calculate GD of the *corrected* phase?
+            # Yes, Group Delay of the system as displayed.
+            # So use phases_to_plot (which includes ref subtraction).
+            
+            # Unwrap requires radians usually, or we can just unwrap degrees with period 360
+            phases_rad = np.radians(phases_to_plot)
+            phases_unwrapped = np.unwrap(phases_rad)
+            
+            # dPhi / dOmega
+            # dOmega = 2 * pi * dF
+            # GD = - dPhi / dOmega
+            
+            # Calculate derivative
+            d_phi = np.diff(phases_unwrapped)
+            d_freq = np.diff(self.freqs)
+            
+            # Avoid div by zero
+            d_freq[d_freq == 0] = 1e-12
+            
+            group_delay_sec = - d_phi / (2 * np.pi * d_freq)
+            group_delay_ms = group_delay_sec * 1000.0
+            
+            # Plot against mid-points of freqs
+            freq_mids = (np.array(self.freqs)[:-1] + np.array(self.freqs)[1:]) / 2
+            
+            self.gd_curve.setData(freq_mids, group_delay_ms)
+            self.gd_view.setLogMode(x=True, y=False)
+            self.gd_view.enableAutoRange(axis=pg.ViewBox.YAxis, enable=True)
+            self.update_gd_views()
+            
+        else:
+            self.gd_axis.hide()
+            self.gd_view.hide()
+            self.gd_curve.setData([], [])
