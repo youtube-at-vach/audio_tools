@@ -657,7 +657,6 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.plot_right = pg.ViewBox()
         self.plot_widget.scene().addItem(self.plot_right)
         self.plot_widget.getPlotItem().showAxis('right')
-        self.plot_widget.getPlotItem().scene().addItem(self.plot_right)
         self.plot_widget.getPlotItem().getAxis('right').linkToView(self.plot_right)
         self.plot_right.setXLink(self.plot_widget.getPlotItem())
         self.plot_widget.getPlotItem().getAxis('right').setLabel('Phase', units='deg')
