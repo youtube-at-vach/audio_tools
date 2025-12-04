@@ -109,5 +109,15 @@
     "Input Channel": "Input Channel",
     "Signal Level": "Signal Level",
     "No loopback paths found.": "No loopback paths found.",
-    "Found {} loopback paths.": "Found {} loopback paths."
+    "Found {} loopback paths.": "Found {} loopback paths.",
+    "Start Metering": "Start Metering",
+    "Stop Metering": "Stop Metering",
+    "Reset Peaks": "Reset Peaks",
+    "Levels": "Levels",
+    "Pk: -INF": "Pk: -INF",
+    "CF: 0.0": "CF: 0.0",
+    "LUFS(M)": "LUFS(M)",
+    "LUFS(S)": "LUFS(S)",
+    "Momentary": "Momentary",
+    "Short-Term": "Short-Term"
 }

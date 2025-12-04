@@ -109,5 +109,15 @@
     "Input Channel": "Canal d'entrée",
     "Signal Level": "Niveau du signal",
     "No loopback paths found.": "Aucun chemin de bouclage trouvé.",
-    "Found {} loopback paths.": "{} chemins de bouclage trouvés."
+    "Found {} loopback paths.": "{} chemins de bouclage trouvés.",
+    "Start Metering": "Démarrer la mesure",
+    "Stop Metering": "Arrêter la mesure",
+    "Reset Peaks": "Réinitialiser les crêtes",
+    "Levels": "Niveaux",
+    "Pk: -INF": "Pk: -INF",
+    "CF: 0.0": "CF: 0.0",
+    "LUFS(M)": "LUFS(M)",
+    "LUFS(S)": "LUFS(S)",
+    "Momentary": "Momentané",
+    "Short-Term": "Court terme"
 }

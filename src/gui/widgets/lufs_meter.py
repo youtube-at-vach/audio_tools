@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLay
 from PyQt6.QtCore import QTimer, Qt
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
+from src.core.localization import tr
 
 class LufsMeter(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -190,18 +191,18 @@ class LufsMeterWidget(QWidget):
         
         # Controls
         controls_layout = QHBoxLayout()
-        self.toggle_btn = QPushButton("Start Metering")
+        self.toggle_btn = QPushButton(tr("Start Metering"))
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
         controls_layout.addWidget(self.toggle_btn)
         
-        self.reset_btn = QPushButton("Reset Peaks")
+        self.reset_btn = QPushButton(tr("Reset Peaks"))
         self.reset_btn.clicked.connect(self.module.reset_peaks)
         controls_layout.addWidget(self.reset_btn)
         layout.addLayout(controls_layout)
         
         # --- Meters Area ---
-        meters_group = QGroupBox("Levels")
+        meters_group = QGroupBox(tr("Levels"))
         grid = QGridLayout()
         
         # 1. Stereo RMS / Peak Meters
@@ -217,13 +218,13 @@ class LufsMeterWidget(QWidget):
         self.l_val_label = QLabel("-INF")
         grid.addWidget(self.l_val_label, 2, 1, Qt.AlignmentFlag.AlignHCenter)
         
-        self.l_peak_label = QLabel("Pk: -INF")
+        self.l_peak_label = QLabel(tr("Pk: -INF"))
         self.l_peak_label.setStyleSheet("color: red; font-size: 10px;")
         self.l_peak_label = QLabel("Pk: -INF")
         self.l_peak_label.setStyleSheet("color: red; font-size: 10px;")
         grid.addWidget(self.l_peak_label, 3, 1, Qt.AlignmentFlag.AlignHCenter)
         
-        self.l_cf_label = QLabel("CF: 0.0")
+        self.l_cf_label = QLabel(tr("CF: 0.0"))
         self.l_cf_label.setStyleSheet("color: cyan; font-size: 10px;")
         grid.addWidget(self.l_cf_label, 4, 1, Qt.AlignmentFlag.AlignHCenter)
 
@@ -239,13 +240,13 @@ class LufsMeterWidget(QWidget):
         self.r_val_label = QLabel("-INF")
         grid.addWidget(self.r_val_label, 2, 3, Qt.AlignmentFlag.AlignHCenter)
         
-        self.r_peak_label = QLabel("Pk: -INF")
+        self.r_peak_label = QLabel(tr("Pk: -INF"))
         self.r_peak_label.setStyleSheet("color: red; font-size: 10px;")
         self.r_peak_label = QLabel("Pk: -INF")
         self.r_peak_label.setStyleSheet("color: red; font-size: 10px;")
         grid.addWidget(self.r_peak_label, 3, 3, Qt.AlignmentFlag.AlignHCenter)
         
-        self.r_cf_label = QLabel("CF: 0.0")
+        self.r_cf_label = QLabel(tr("CF: 0.0"))
         self.r_cf_label.setStyleSheet("color: cyan; font-size: 10px;")
         grid.addWidget(self.r_cf_label, 4, 3, Qt.AlignmentFlag.AlignHCenter)
         
@@ -264,7 +265,7 @@ class LufsMeterWidget(QWidget):
         
         self.m_val_label = QLabel("-INF")
         grid.addWidget(self.m_val_label, 2, 6, Qt.AlignmentFlag.AlignHCenter)
-        grid.addWidget(QLabel("LUFS(M)"), 3, 6, Qt.AlignmentFlag.AlignHCenter)
+        grid.addWidget(QLabel(tr("LUFS(M)")), 3, 6, Qt.AlignmentFlag.AlignHCenter)
 
         # Short-term
         grid.addWidget(QLabel("S"), 0, 7)
@@ -277,23 +278,23 @@ class LufsMeterWidget(QWidget):
         
         self.s_val_label = QLabel("-INF")
         grid.addWidget(self.s_val_label, 2, 8, Qt.AlignmentFlag.AlignHCenter)
-        grid.addWidget(QLabel("LUFS(S)"), 3, 8, Qt.AlignmentFlag.AlignHCenter)
+        grid.addWidget(QLabel(tr("LUFS(S)")), 3, 8, Qt.AlignmentFlag.AlignHCenter)
 
         meters_group.setLayout(grid)
         layout.addWidget(meters_group)
         
         # --- Time Series Plot ---
         self.plot_widget = pg.PlotWidget()
-        self.plot_widget.setLabel('left', 'LUFS', units='dB')
-        self.plot_widget.setLabel('bottom', 'Time', units='s')
+        self.plot_widget.setLabel('left', tr('LUFS'), units='dB')
+        self.plot_widget.setLabel('bottom', tr('Time'), units='s')
         self.plot_widget.setYRange(-60, 0)
         self.plot_widget.showGrid(x=True, y=True)
         self.plot_widget.setBackground('k')
         self.plot_widget.setFixedHeight(200)
         
         # Curves
-        self.m_curve = self.plot_widget.plot(pen=pg.mkPen('c', width=1), name='Momentary') # Cyan
-        self.s_curve = self.plot_widget.plot(pen=pg.mkPen('y', width=2), name='Short-Term') # Yellow
+        self.m_curve = self.plot_widget.plot(pen=pg.mkPen('c', width=1), name=tr('Momentary')) # Cyan
+        self.s_curve = self.plot_widget.plot(pen=pg.mkPen('y', width=2), name=tr('Short-Term')) # Yellow
         
         # Target Line
         self.target_line = pg.InfiniteLine(angle=0, pos=-23, pen=pg.mkPen('g', style=Qt.PenStyle.DashLine))
@@ -308,11 +309,11 @@ class LufsMeterWidget(QWidget):
         if checked:
             self.module.start_meter()
             self.timer.start()
-            self.toggle_btn.setText("Stop Metering")
+            self.toggle_btn.setText(tr("Stop Metering"))
         else:
             self.module.stop_meter()
             self.timer.stop()
-            self.toggle_btn.setText("Start Metering")
+            self.toggle_btn.setText(tr("Start Metering"))
 
     def update_display(self):
         if not self.module.is_running:

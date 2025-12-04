@@ -109,5 +109,15 @@
     "Input Channel": "Canal de entrada",
     "Signal Level": "Nivel de señal",
     "No loopback paths found.": "No se encontraron rutas de bucle.",
-    "Found {} loopback paths.": "Se encontraron {} rutas de bucle."
+    "Found {} loopback paths.": "Se encontraron {} rutas de bucle.",
+    "Start Metering": "Iniciar medición",
+    "Stop Metering": "Detener medición",
+    "Reset Peaks": "Restablecer picos",
+    "Levels": "Niveles",
+    "Pk: -INF": "Pk: -INF",
+    "CF: 0.0": "CF: 0.0",
+    "LUFS(M)": "LUFS(M)",
+    "LUFS(S)": "LUFS(S)",
+    "Momentary": "Momentáneo",
+    "Short-Term": "Corto plazo"
 }

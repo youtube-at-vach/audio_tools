@@ -109,5 +109,15 @@
     "Input Channel": "Canal de entrada",
     "Signal Level": "Nível de sinal",
     "No loopback paths found.": "Nenhum caminho de loopback encontrado.",
-    "Found {} loopback paths.": "{} caminhos de loopback encontrados."
+    "Found {} loopback paths.": "{} caminhos de loopback encontrados.",
+    "Start Metering": "Iniciar medição",
+    "Stop Metering": "Parar medição",
+    "Reset Peaks": "Redefinir picos",
+    "Levels": "Níveis",
+    "Pk: -INF": "Pk: -INF",
+    "CF: 0.0": "CF: 0.0",
+    "LUFS(M)": "LUFS(M)",
+    "LUFS(S)": "LUFS(S)",
+    "Momentary": "Momentâneo",
+    "Short-Term": "Curto prazo"
 }

@@ -109,5 +109,15 @@
     "Input Channel": "Входной канал",
     "Signal Level": "Уровень сигнала",
     "No loopback paths found.": "Пути обратной связи не найдены.",
-    "Found {} loopback paths.": "Найдено {} путей обратной связи."
+    "Found {} loopback paths.": "Найдено {} путей обратной связи.",
+    "Start Metering": "Начать измерение",
+    "Stop Metering": "Остановить измерение",
+    "Reset Peaks": "Сбросить пики",
+    "Levels": "Уровни",
+    "Pk: -INF": "Pk: -INF",
+    "CF: 0.0": "CF: 0.0",
+    "LUFS(M)": "LUFS(M)",
+    "LUFS(S)": "LUFS(S)",
+    "Momentary": "Мгновенный",
+    "Short-Term": "Краткосрочный"
 }

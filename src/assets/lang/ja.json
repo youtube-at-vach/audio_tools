@@ -109,5 +109,15 @@
     "Input Channel": "入力チャンネル",
     "Signal Level": "信号レベル",
     "No loopback paths found.": "ループバックパスが見つかりませんでした。",
-    "Found {} loopback paths.": "{} 個のループバックパスが見つかりました。"
+    "Found {} loopback paths.": "{} 個のループバックパスが見つかりました。",
+    "Start Metering": "測定開始",
+    "Stop Metering": "測定停止",
+    "Reset Peaks": "ピークリセット",
+    "Levels": "レベル",
+    "Pk: -INF": "Pk: -INF",
+    "CF: 0.0": "CF: 0.0",
+    "LUFS(M)": "LUFS(M)",
+    "LUFS(S)": "LUFS(S)",
+    "Momentary": "瞬間",
+    "Short-Term": "短期"
 }
