@@ -462,5 +462,7 @@
     "Inductance": "电感",
     "Open Calibration Completed": "开路校准完成",
     "Short Calibration Completed": "短路校准完成",
-    "Load Calibration Completed": "负载校准完成"
+    "Load Calibration Completed": "负载校准完成",
+    "Recorder & Player": "Recorder & Player",
+    "Record and play audio files (WAV, MP3, FLAC, etc.)": "Record and play audio files (WAV, MP3, FLAC, etc.)"
 }

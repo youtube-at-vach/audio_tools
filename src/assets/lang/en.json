@@ -463,5 +463,7 @@
     "Inductance": "Inductance",
     "Open Calibration Completed": "Open Calibration Completed",
     "Short Calibration Completed": "Short Calibration Completed",
-    "Load Calibration Completed": "Load Calibration Completed"
+    "Load Calibration Completed": "Load Calibration Completed",
+    "Recorder & Player": "Recorder & Player",
+    "Record and play audio files (WAV, MP3, FLAC, etc.)": "Record and play audio files (WAV, MP3, FLAC, etc.)"
 }

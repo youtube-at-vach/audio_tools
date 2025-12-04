@@ -462,5 +462,7 @@
     "Inductance": "인덕턴스",
     "Open Calibration Completed": "개방 교정이 완료되었습니다",
     "Short Calibration Completed": "단락 교정이 완료되었습니다",
-    "Load Calibration Completed": "부하 교정이 완료되었습니다"
+    "Load Calibration Completed": "부하 교정이 완료되었습니다",
+    "Recorder & Player": "Recorder & Player",
+    "Record and play audio files (WAV, MP3, FLAC, etc.)": "Record and play audio files (WAV, MP3, FLAC, etc.)"
 }

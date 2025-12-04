@@ -462,5 +462,7 @@
     "Inductance": "インダクタンス",
     "Open Calibration Completed": "オープン校正が完了しました",
     "Short Calibration Completed": "ショート校正が完了しました",
-    "Load Calibration Completed": "負荷校正が完了しました"
+    "Load Calibration Completed": "負荷校正が完了しました",
+    "Recorder & Player": "レコーダー & プレーヤー",
+    "Record and play audio files (WAV, MP3, FLAC, etc.)": "オーディオファイルの録音と再生 (WAV, MP3, FLAC, etc.)"
 }

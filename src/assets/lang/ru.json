@@ -462,5 +462,7 @@
     "Inductance": "Индуктивность",
     "Open Calibration Completed": "Калибровка разомкнутой цепи завершена",
     "Short Calibration Completed": "Калибровка короткого замыкания завершена",
-    "Load Calibration Completed": "Калибровка нагрузки завершена"
+    "Load Calibration Completed": "Калибровка нагрузки завершена",
+    "Recorder & Player": "Recorder & Player",
+    "Record and play audio files (WAV, MP3, FLAC, etc.)": "Record and play audio files (WAV, MP3, FLAC, etc.)"
 }
