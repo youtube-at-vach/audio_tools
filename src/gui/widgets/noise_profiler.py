@@ -7,6 +7,7 @@ from PyQt6.QtCore import QTimer, Qt
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 from src.core.analysis import AudioCalc
+from src.core.localization import tr
 
 class NoiseProfiler(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -42,11 +43,11 @@ class NoiseProfiler(MeasurementModule):
 
     @property
     def name(self) -> str:
-        return "Noise Profiler"
+        return tr("Noise Profiler")
 
     @property
     def description(self) -> str:
-        return "Noise characterization and analysis tool."
+        return tr("Noise characterization and analysis tool.")
 
     def run(self, args: argparse.Namespace):
         print("Noise Profiler running from CLI (not fully implemented)")
@@ -112,7 +113,7 @@ class NoiseProfilerWidget(QWidget):
         # Top Controls (Always Visible)
         top_ctrl_layout = QVBoxLayout()
         
-        self.toggle_btn = QPushButton("Start Profiling")
+        self.toggle_btn = QPushButton(tr("Start Profiling"))
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
         self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; color: black; } QPushButton:checked { background-color: #ffcccc; color: black; }")
@@ -120,9 +121,9 @@ class NoiseProfilerWidget(QWidget):
         
         # Input Channel Selection
         chan_layout = QHBoxLayout()
-        chan_layout.addWidget(QLabel("Input Channel:"))
+        chan_layout.addWidget(QLabel(tr("Input Channel:")))
         self.channel_combo = QComboBox()
-        self.channel_combo.addItems(["Left (CH1)", "Right (CH2)"])
+        self.channel_combo.addItems([tr("Left (CH1)"), tr("Right (CH2)")])
         self.channel_combo.currentIndexChanged.connect(self.update_analysis)
         chan_layout.addWidget(self.channel_combo)
         top_ctrl_layout.addLayout(chan_layout)
@@ -137,15 +138,15 @@ class NoiseProfilerWidget(QWidget):
         tab_meas_layout = QVBoxLayout()
         
         # Average Mode Control
-        avg_group = QGroupBox("Average Mode")
+        avg_group = QGroupBox(tr("Average Mode"))
         avg_layout = QVBoxLayout()
         
-        self.avg_mode_chk = QCheckBox("Enable Averaging")
+        self.avg_mode_chk = QCheckBox(tr("Enable Averaging"))
         self.avg_mode_chk.toggled.connect(self.on_avg_mode_toggled)
         avg_layout.addWidget(self.avg_mode_chk)
         
         avg_ctrl_layout = QHBoxLayout()
-        avg_ctrl_layout.addWidget(QLabel("Count:"))
+        avg_ctrl_layout.addWidget(QLabel(tr("Count:")))
         self.avg_count_spin = QSpinBox()
         self.avg_count_spin.setRange(1, 100000)
         self.avg_count_spin.setValue(1000)
@@ -153,7 +154,7 @@ class NoiseProfilerWidget(QWidget):
         avg_ctrl_layout.addWidget(self.avg_count_spin)
         avg_layout.addLayout(avg_ctrl_layout)
         
-        self.reset_avg_btn = QPushButton("Reset Average")
+        self.reset_avg_btn = QPushButton(tr("Reset Average"))
         self.reset_avg_btn.clicked.connect(self.on_reset_average)
         avg_layout.addWidget(self.reset_avg_btn)
         
@@ -165,7 +166,7 @@ class NoiseProfilerWidget(QWidget):
         tab_meas_layout.addWidget(avg_group)
         
         # LNA Settings
-        lna_group = QGroupBox("LNA / Input Settings")
+        lna_group = QGroupBox(tr("LNA / Input Settings"))
         lna_layout = QFormLayout()
         
         self.gain_spin = QDoubleSpinBox()
@@ -173,10 +174,10 @@ class NoiseProfilerWidget(QWidget):
         self.gain_spin.setSuffix(" dB")
         self.gain_spin.setValue(0.0)
         self.gain_spin.valueChanged.connect(self.on_lna_changed)
-        lna_layout.addRow("Pre-Amp Gain:", self.gain_spin)
+        lna_layout.addRow(tr("Pre-Amp Gain:"), self.gain_spin)
         
-        self.apply_gain_chk = QCheckBox("Apply to Plot")
-        self.apply_gain_chk.setToolTip("Subtract LNA gain from plot and results (Input Referred)")
+        self.apply_gain_chk = QCheckBox(tr("Apply to Plot"))
+        self.apply_gain_chk.setToolTip(tr("Subtract LNA gain from plot and results (Input Referred)"))
         self.apply_gain_chk.toggled.connect(self.update_analysis)
         lna_layout.addRow("", self.apply_gain_chk)
         
@@ -185,28 +186,28 @@ class NoiseProfilerWidget(QWidget):
         self.temp_spin.setSuffix(" °C")
         self.temp_spin.setValue(25.0)
         self.temp_spin.valueChanged.connect(self.on_lna_changed)
-        lna_layout.addRow("Temperature:", self.temp_spin)
+        lna_layout.addRow(tr("Temperature:"), self.temp_spin)
         
         self.imp_spin = QDoubleSpinBox()
         self.imp_spin.setRange(1, 1e6)
         self.imp_spin.setSuffix(" Ω")
         self.imp_spin.setValue(50.0)
         self.imp_spin.valueChanged.connect(self.on_lna_changed)
-        lna_layout.addRow("Input Z:", self.imp_spin)
+        lna_layout.addRow(tr("Input Z:"), self.imp_spin)
         
         lna_group.setLayout(lna_layout)
         tab_meas_layout.addWidget(lna_group)
         
         tab_meas_layout.addStretch()
         tab_meas.setLayout(tab_meas_layout)
-        self.settings_tabs.addTab(tab_meas, "Measurement")
+        self.settings_tabs.addTab(tab_meas, tr("Measurement"))
         
         # --- Tab 2: Display ---
         tab_disp = QWidget()
         tab_disp_layout = QVBoxLayout()
         
         # Unit Selection
-        unit_group = QGroupBox("Units")
+        unit_group = QGroupBox(tr("Units"))
         unit_layout = QVBoxLayout()
         self.unit_combo = QComboBox()
         self.unit_combo.addItems(["dBFS/√Hz", "dBV/√Hz", "dBu/√Hz"])
@@ -217,14 +218,14 @@ class NoiseProfilerWidget(QWidget):
         tab_disp_layout.addWidget(unit_group)
         
         # Display Options
-        disp_group = QGroupBox("Display")
+        disp_group = QGroupBox(tr("Display"))
         disp_layout = QVBoxLayout()
         
-        self.res_mode_chk = QCheckBox("Show as Resistance (Ω)")
+        self.res_mode_chk = QCheckBox(tr("Show as Resistance (Ω)"))
         self.res_mode_chk.toggled.connect(self.update_analysis)
         disp_layout.addWidget(self.res_mode_chk)
         
-        self.thermal_chk = QCheckBox("Show Thermal Limit")
+        self.thermal_chk = QCheckBox(tr("Show Thermal Limit"))
         self.thermal_chk.setChecked(True)
         self.thermal_chk.toggled.connect(self.update_analysis)
         disp_layout.addWidget(self.thermal_chk)
@@ -234,7 +235,7 @@ class NoiseProfilerWidget(QWidget):
         
         tab_disp_layout.addStretch()
         tab_disp.setLayout(tab_disp_layout)
-        self.settings_tabs.addTab(tab_disp, "Display")
+        self.settings_tabs.addTab(tab_disp, tr("Display"))
         
 
         
@@ -245,10 +246,10 @@ class NoiseProfilerWidget(QWidget):
         center_panel = QVBoxLayout()
         
         # FFT Plot
-        self.plot_widget = pg.PlotWidget(title="Noise Spectrum (Log-Log)")
+        self.plot_widget = pg.PlotWidget(title=tr("Noise Spectrum (Log-Log)"))
         self.plot_widget.setLogMode(x=True, y=False)
-        self.plot_widget.setLabel('left', 'Noise Density', units='V/√Hz')
-        self.plot_widget.setLabel('bottom', 'Frequency', units='Hz')
+        self.plot_widget.setLabel('left', tr('Noise Density'), units='V/√Hz')
+        self.plot_widget.setLabel('bottom', tr('Frequency'), units='Hz')
         self.plot_widget.showGrid(x=True, y=True)
         self.plot_widget.setYRange(-160, -60) # Typical noise floor range
         self.plot_widget.setXRange(np.log10(10), np.log10(20000))
@@ -259,17 +260,17 @@ class NoiseProfilerWidget(QWidget):
         ticks_log = [(np.log10(t), str(t) if t < 1000 else f"{t/1000:.0f}k") for t in ticks]
         axis.setTicks([ticks_log])
         
-        self.plot_curve = self.plot_widget.plot(pen='y', name='PSD')
-        self.fit_curve = self.plot_widget.plot(pen=pg.mkPen('r', style=Qt.PenStyle.DashLine, width=2), name='1/f Fit')
-        self.hum_curve = self.plot_widget.plot(pen=None, symbol='o', symbolBrush='c', symbolSize=8, name='Hum')
-        self.white_curve = self.plot_widget.plot(pen=pg.mkPen('g', style=Qt.PenStyle.DotLine), name='White Floor')
-        self.thermal_line = pg.InfiniteLine(angle=0, pen=pg.mkPen('m', style=Qt.PenStyle.DashDotLine, width=1), label='Thermal Limit', labelOpts={'position':0.9, 'color': (200,0,200), 'movable': True})
+        self.plot_curve = self.plot_widget.plot(pen='y', name=tr('PSD'))
+        self.fit_curve = self.plot_widget.plot(pen=pg.mkPen('r', style=Qt.PenStyle.DashLine, width=2), name=tr('1/f Fit'))
+        self.hum_curve = self.plot_widget.plot(pen=None, symbol='o', symbolBrush='c', symbolSize=8, name=tr('Hum'))
+        self.white_curve = self.plot_widget.plot(pen=pg.mkPen('g', style=Qt.PenStyle.DotLine), name=tr('White Floor'))
+        self.thermal_line = pg.InfiniteLine(angle=0, pen=pg.mkPen('m', style=Qt.PenStyle.DashDotLine, width=1), label=tr('Thermal Limit'), labelOpts={'position':0.9, 'color': (200,0,200), 'movable': True})
         self.plot_widget.addItem(self.thermal_line)
         
         center_panel.addWidget(self.plot_widget, 2)
         
         # Stacked Bar Chart (Noise Contribution)
-        self.stack_widget = pg.PlotWidget(title="Noise Contribution (%)")
+        self.stack_widget = pg.PlotWidget(title=tr("Noise Contribution (%)"))
         self.stack_widget.setMouseEnabled(x=False, y=False)
         self.stack_widget.setMenuEnabled(False)
         self.stack_widget.hideAxis('left')
@@ -287,10 +288,10 @@ class NoiseProfilerWidget(QWidget):
         # Let's check docs or common usage. usually x, height, width, brush.
         # For horizontal: y, height, width (length), x0 (start).
         
-        self.bar_hum = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush='c', name='Hum')
-        self.bar_white = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush='g', name='White')
-        self.bar_flicker = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush='r', name='1/f')
-        self.bar_other = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush=pg.mkBrush(150, 0, 255), name='Other')
+        self.bar_hum = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush='c', name=tr('Hum'))
+        self.bar_white = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush='g', name=tr('White'))
+        self.bar_flicker = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush='r', name=tr('1/f'))
+        self.bar_other = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush=pg.mkBrush(150, 0, 255), name=tr('Other'))
         
         self.stack_widget.addItem(self.bar_hum)
         self.stack_widget.addItem(self.bar_white)
@@ -303,8 +304,8 @@ class NoiseProfilerWidget(QWidget):
         
         # --- Right Panel: Report ---
         right_panel = QVBoxLayout()
-        report_group = QGroupBox("Noise Report")
-        self.report_label = QLabel("Waiting for data...")
+        report_group = QGroupBox(tr("Noise Report"))
+        self.report_label = QLabel(tr("Waiting for data..."))
         self.report_label.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.report_label.setStyleSheet("font-family: monospace; font-size: 12px;")
         self.report_label.setWordWrap(True)
@@ -322,11 +323,11 @@ class NoiseProfilerWidget(QWidget):
         if checked:
             self.module.start_analysis()
             self.timer.start()
-            self.toggle_btn.setText("Stop Profiling")
+            self.toggle_btn.setText(tr("Stop Profiling"))
         else:
             self.module.stop_analysis()
             self.timer.stop()
-            self.toggle_btn.setText("Start Profiling")
+            self.toggle_btn.setText(tr("Start Profiling"))
 
     def on_lna_changed(self):
         self.module.lna_gain_db = self.gain_spin.value()
@@ -503,8 +504,8 @@ class NoiseProfilerWidget(QWidget):
                 thermal_limit_val = R_in
                 
                 # Update Labels
-                self.plot_widget.setLabel('left', 'Equivalent Resistance', units='Ω')
-                self.plot_widget.setTitle("Noise Resistance (Log-Log)")
+                self.plot_widget.setLabel('left', tr('Equivalent Resistance'), units='Ω')
+                self.plot_widget.setTitle(tr("Noise Resistance (Log-Log)"))
                 
                 # Update Curves
                 self.plot_curve.setData(freqs[1:], mag_plot[1:])
@@ -573,8 +574,8 @@ class NoiseProfilerWidget(QWidget):
                 thermal_limit_val = 20 * np.log10(thermal_disp + 1e-15)
                 
                 # Update Labels
-                self.plot_widget.setLabel('left', 'Noise Density', units=unit_mode)
-                self.plot_widget.setTitle(f"Noise PSD ({unit_mode})")
+                self.plot_widget.setLabel('left', tr('Noise Density'), units=unit_mode)
+                self.plot_widget.setTitle(f"{tr('Noise PSD')} ({unit_mode})")
                 
                 self.plot_curve.setData(freqs[1:], mag_plot[1:])
                 
@@ -666,7 +667,7 @@ class NoiseProfilerWidget(QWidget):
         # Update Title with Total RMS
         # Show unit
         unit_rms = unit_mode.replace("/√Hz", "")
-        self.stack_widget.setTitle(f"Noise Contribution (Total: {results['noise_rms_20k']*1e6:.2f} µ{unit_rms})") # Micro-units?
+        self.stack_widget.setTitle(f"{tr('Noise Contribution')} ({tr('Total')}: {results['noise_rms_20k']*1e6:.2f} µ{unit_rms})") # Micro-units?
         # If dBV, unit is Volts. uV is fine.
         # If dBu, unit is 0.775V scaled. u(dBu-linear)?
         # Maybe just show the value and unit.
@@ -681,7 +682,7 @@ class NoiseProfilerWidget(QWidget):
             val_disp = results['noise_rms_20k'] * 1e6
             unit_disp = "µFS"
             
-        self.stack_widget.setTitle(f"Noise Contribution (Total: {val_disp:.2f} {unit_disp})")
+        self.stack_widget.setTitle(f"{tr('Noise Contribution')} ({tr('Total')}: {val_disp:.2f} {unit_disp})")
         
     def update_report(self, results, unit_mode):
         # Calculate Input Referred Noise
@@ -779,28 +780,28 @@ class NoiseProfilerWidget(QWidget):
         unit_suffix = "V" if "dBV" in unit_mode else ("(dBu-lin)" if "dBu" in unit_mode else "FS")
         
         txt = f"""
-        <b>Noise Report</b><br>
+        <b>{tr('Noise Report')}</b><br>
         <br>
-        <b>Hum ({results['hum_freq']:.0f}Hz):</b><br>
+        <b>{tr('Hum')} ({results['hum_freq']:.0f}Hz):</b><br>
         RMS: {hum_rms*1e6:.2f} µ{unit_suffix}<br>
-        THD+N (Hum): {20*np.log10(hum_rms/total_rms+1e-15) if total_rms > 1e-12 else -100.0:.1f} dB<br>
+        THD+N ({tr('Hum')}): {20*np.log10(hum_rms/total_rms+1e-15) if total_rms > 1e-12 else -100.0:.1f} dB<br>
         <br>
-        <b>White Noise:</b><br>
-        Density: {white_dens*1e9:.2f} n{unit_suffix}/√Hz<br>
-        (Input Ref: {white_density_in*1e9:.2f} nV/√Hz)<br>
+        <b>{tr('White Noise')}:</b><br>
+        {tr('Density')}: {white_dens*1e9:.2f} n{unit_suffix}/√Hz<br>
+        ({tr('Input Ref')}: {white_density_in*1e9:.2f} nV/√Hz)<br>
         <br>
-        <b>1/f Noise:</b><br>
-        Corner Freq: {results['corner_freq']:.1f} Hz<br>
-        Slope: {results['flicker_slope']:.2f} dB/dec<br>
+        <b>{tr('1/f Noise')}:</b><br>
+        {tr('Corner Freq')}: {results['corner_freq']:.1f} Hz<br>
+        {tr('Slope')}: {results['flicker_slope']:.2f} dB/dec<br>
         <br>
-        <b>Peak Noise:</b><br>
-        Freq: {results.get('peak_freq', 0):.1f} Hz<br>
-        Amp: {results.get('peak_amp', 0)*1e9:.2f} n{unit_suffix}/√Hz<br>
+        <b>{tr('Peak Noise')}:</b><br>
+        {tr('Freq')}: {results.get('peak_freq', 0):.1f} Hz<br>
+        {tr('Amp')}: {results.get('peak_amp', 0)*1e9:.2f} n{unit_suffix}/√Hz<br>
         <br>
-        <b>Integrated RMS (20k):</b><br>
-        Total: {total_rms*1e6:.2f} µ{unit_suffix}<br>
+        <b>{tr('Integrated RMS')} (20k):</b><br>
+        {tr('Total')}: {total_rms*1e6:.2f} µ{unit_suffix}<br>
         <br>
-        <b>Thermal Limit ({R}Ω):</b><br>
+        <b>{tr('Thermal Limit')} ({R}Ω):</b><br>
         {thermal_density*1e9:.2f} nV/√Hz ({thermal_density_db:.1f} dBV)
         """
         self.report_label.setText(txt)
