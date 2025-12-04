@@ -32,6 +32,7 @@ class SignalParameters:
     
     # New Parameters
     pulse_width: float = 50.0 # %
+    sawtooth_type: str = 'Raising'
     noise_amplitude: float = 0.1
     phase_offset: float = 0.0 # Degrees
     
@@ -305,7 +306,10 @@ class SignalGenerator(MeasurementModule):
                 signal = params.amplitude * (2 * np.abs(2 * ((phase_t * params.frequency + off_cycles) % 1) - 1) - 1)
             elif params.waveform == 'sawtooth':
                 off_cycles = params.phase_offset / 360.0
-                signal = params.amplitude * (2 * ((phase_t * params.frequency + off_cycles) % 1) - 1)
+                raw_saw = 2 * ((phase_t * params.frequency + off_cycles) % 1) - 1
+                if params.sawtooth_type == 'Falling':
+                    raw_saw *= -1
+                signal = params.amplitude * raw_saw
             elif params.waveform == 'pulse':
                 duty = params.pulse_width / 100.0
                 off_cycles = params.phase_offset / 360.0
@@ -497,18 +501,28 @@ class SignalGeneratorWidget(QWidget):
         self.noise_amp_spin.valueChanged.connect(lambda v: self.update_param('noise_amplitude', v))
         tn_form.addRow(tr("Noise Amplitude:"), self.noise_amp_spin)
         
+        # 7. Sawtooth Params
+        self.sawtooth_widget = QWidget()
+        saw_form = QFormLayout(self.sawtooth_widget)
+        self.saw_type_combo = QComboBox()
+        self.saw_type_combo.addItems(['Raising', 'Falling'])
+        self.saw_type_combo.currentTextChanged.connect(lambda v: self.update_param('sawtooth_type', v))
+        saw_form.addRow(tr("Type:"), self.saw_type_combo)
+        
         self.param_layout.addWidget(self.noise_widget)
         self.param_layout.addWidget(self.multitone_widget)
         self.param_layout.addWidget(self.mls_widget)
         self.param_layout.addWidget(self.burst_widget)
         self.param_layout.addWidget(self.pulse_widget)
         self.param_layout.addWidget(self.tn_widget)
+        self.param_layout.addWidget(self.sawtooth_widget)
         self.noise_widget.hide()
         self.multitone_widget.hide()
         self.mls_widget.hide()
         self.burst_widget.hide()
         self.pulse_widget.hide()
         self.tn_widget.hide()
+        self.sawtooth_widget.hide()
         
         basic_layout.addRow(self.param_stack)
         
@@ -632,6 +646,7 @@ class SignalGeneratorWidget(QWidget):
         self.burst_on_spin.setValue(params.burst_on_cycles)
         self.burst_off_spin.setValue(params.burst_off_cycles)
         self.pulse_width_spin.setValue(params.pulse_width)
+        self.saw_type_combo.setCurrentText(params.sawtooth_type)
         self.noise_amp_spin.setValue(params.noise_amplitude)
         
         self.freq_spin.setValue(params.frequency)
@@ -655,7 +670,7 @@ class SignalGeneratorWidget(QWidget):
     def block_all_signals(self, block):
         widgets = [
             self.wave_combo, self.noise_combo, self.mt_count_spin, self.mls_order_combo,
-            self.burst_on_spin, self.burst_off_spin, self.pulse_width_spin, self.noise_amp_spin,
+            self.burst_on_spin, self.burst_off_spin, self.pulse_width_spin, self.saw_type_combo, self.noise_amp_spin,
             self.freq_spin, self.freq_slider, self.phase_spin, self.phase_slider,
             self.amp_spin, self.amp_slider, self.sweep_group, self.start_freq_spin,
             self.end_freq_spin, self.duration_spin, self.log_check
@@ -693,6 +708,7 @@ class SignalGeneratorWidget(QWidget):
         dst.burst_on_cycles = src.burst_on_cycles
         dst.burst_off_cycles = src.burst_off_cycles
         dst.pulse_width = src.pulse_width
+        dst.sawtooth_type = src.sawtooth_type
         dst.noise_amplitude = src.noise_amplitude
         dst.phase_offset = src.phase_offset
 
@@ -714,6 +730,7 @@ class SignalGeneratorWidget(QWidget):
         self.burst_widget.hide()
         self.pulse_widget.hide()
         self.tn_widget.hide()
+        self.sawtooth_widget.hide()
         
         if val == 'noise': self.noise_widget.show()
         elif val == 'multitone': self.multitone_widget.show()
@@ -721,6 +738,7 @@ class SignalGeneratorWidget(QWidget):
         elif val == 'burst': self.burst_widget.show()
         elif val == 'pulse': self.pulse_widget.show()
         elif val == 'tone_noise': self.tn_widget.show()
+        elif val == 'sawtooth': self.sawtooth_widget.show()
         
         use_freq = val not in ['noise', 'mls']
         self.freq_spin.setEnabled(use_freq)
