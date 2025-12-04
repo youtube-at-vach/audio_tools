@@ -2,7 +2,7 @@ import argparse
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-                             QComboBox, QCheckBox, QGroupBox, QSlider, QApplication)
+                             QComboBox, QCheckBox, QGroupBox, QSlider, QApplication, QSpinBox)
 from PyQt6.QtGui import QTransform
 from PyQt6.QtCore import QTimer, Qt
 from scipy.signal import get_window, lfilter
@@ -22,6 +22,8 @@ class Spectrogram(MeasurementModule):
         self.channel_mode = 'Left' # 'Left', 'Right', 'Average'
         self.history_length = 500 # Number of time steps to keep
         self.sweep_speed_index = 0 # 0: Fast, 1: Medium, 2: Slow, 3: Meteor
+        self.min_freq = 0
+        self.max_freq = 20000 # Default, will be updated by UI or sample rate
         
         # State
         self.input_buffer = np.zeros(self.fft_size) # For overlap processing
@@ -162,6 +164,24 @@ class SpectrogramWidget(QWidget):
         self.speed_combo.addItems([tr('Fast (Realtime)'), tr('Medium (1m)'), tr('Slow (5m)'), tr('Meteor (10m)')])
         self.speed_combo.currentIndexChanged.connect(self.on_speed_changed)
         controls_layout.addWidget(self.speed_combo)
+
+        # Min Freq
+        controls_layout.addWidget(QLabel(tr("Min Freq:")))
+        self.min_freq_spin = QSpinBox()
+        self.min_freq_spin.setRange(0, 96000)
+        self.min_freq_spin.setValue(int(self.module.min_freq))
+        self.min_freq_spin.setSuffix(" Hz")
+        self.min_freq_spin.valueChanged.connect(self.on_freq_range_changed)
+        controls_layout.addWidget(self.min_freq_spin)
+
+        # Max Freq
+        controls_layout.addWidget(QLabel(tr("Max Freq:")))
+        self.max_freq_spin = QSpinBox()
+        self.max_freq_spin.setRange(0, 96000)
+        self.max_freq_spin.setValue(int(self.module.max_freq))
+        self.max_freq_spin.setSuffix(" Hz")
+        self.max_freq_spin.valueChanged.connect(self.on_freq_range_changed)
+        controls_layout.addWidget(self.max_freq_spin)
         
         controls_group.setLayout(controls_layout)
         layout.addWidget(controls_group)
@@ -220,6 +240,11 @@ class SpectrogramWidget(QWidget):
         # Reset accumulator on speed change to avoid mixing
         self.module.accumulator = None
         self.module.acc_count = 0
+
+    def on_freq_range_changed(self):
+        self.module.min_freq = self.min_freq_spin.value()
+        self.module.max_freq = self.max_freq_spin.value()
+        self.plot.setYRange(self.module.min_freq, self.module.max_freq)
 
     def update_spectrogram(self):
         if not self.module.is_running: return
@@ -313,7 +338,7 @@ class SpectrogramWidget(QWidget):
         self.img.resetTransform()
         self.img.setTransform(QTransform().scale(1, y_scale))
         self.plot.setLimits(yMin=0, yMax=nyquist)
-        self.plot.setYRange(0, nyquist)
+        self.plot.setYRange(self.module.min_freq, self.module.max_freq)
 
     def apply_theme(self, theme_name):
         if theme_name == 'system' and hasattr(self.app, 'theme_manager'):
