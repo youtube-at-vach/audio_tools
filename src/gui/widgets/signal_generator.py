@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QDoubleSpinBox, QPush
 from PyQt6.QtCore import Qt, pyqtSignal
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
+from src.core.localization import tr
 
 @dataclass
 class SignalParameters:
@@ -363,7 +364,7 @@ class SignalGeneratorWidget(QWidget):
         top_bar = QHBoxLayout()
         
         # Start/Stop
-        self.toggle_btn = QPushButton("Start Output")
+        self.toggle_btn = QPushButton(tr("Start Output"))
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.setMinimumHeight(40)
         self.toggle_btn.clicked.connect(self.on_toggle)
@@ -371,11 +372,11 @@ class SignalGeneratorWidget(QWidget):
         top_bar.addWidget(self.toggle_btn, 2)
         
         # Output Routing
-        routing_group = QGroupBox("Output Routing")
+        routing_group = QGroupBox(tr("Output Routing"))
         routing_layout = QHBoxLayout()
-        self.route_l = QRadioButton("Left Only")
-        self.route_r = QRadioButton("Right Only")
-        self.route_stereo = QRadioButton("Stereo (L+R)")
+        self.route_l = QRadioButton(tr("Left Only"))
+        self.route_r = QRadioButton(tr("Right Only"))
+        self.route_stereo = QRadioButton(tr("Stereo (L+R)"))
         self.route_stereo.setChecked(True)
         
         self.route_group = QButtonGroup()
@@ -396,11 +397,11 @@ class SignalGeneratorWidget(QWidget):
         # --- Signal Parameters Control ---
         # Target Selector
         target_layout = QHBoxLayout()
-        target_layout.addWidget(QLabel("<b>Edit Settings For:</b>"))
+        target_layout.addWidget(QLabel(f"<b>{tr('Edit Settings For:')}</b>"))
         
-        self.target_l = QRadioButton("Left Channel")
-        self.target_r = QRadioButton("Right Channel")
-        self.target_link = QRadioButton("Linked (Both)")
+        self.target_l = QRadioButton(tr("Left Channel"))
+        self.target_r = QRadioButton(tr("Right Channel"))
+        self.target_link = QRadioButton(tr("Linked (Both)"))
         self.target_l.setChecked(True)
         
         self.target_group = QButtonGroup()
@@ -425,14 +426,14 @@ class SignalGeneratorWidget(QWidget):
         # --- Main Controls ---
         # We use the same widgets but update their values based on current_target
         
-        basic_group = QGroupBox("Signal Parameters")
+        basic_group = QGroupBox(tr("Signal Parameters"))
         basic_layout = QFormLayout()
         
         # Waveform
         self.wave_combo = QComboBox()
         self.wave_combo.addItems(['sine', 'square', 'triangle', 'sawtooth', 'pulse', 'tone_noise', 'noise', 'multitone', 'mls', 'burst'])
         self.wave_combo.currentTextChanged.connect(self.on_wave_changed)
-        basic_layout.addRow("Waveform:", self.wave_combo)
+        basic_layout.addRow(tr("Waveform:"), self.wave_combo)
         
         # Dynamic Parameters Stack
         self.param_stack = QWidget()
@@ -445,7 +446,7 @@ class SignalGeneratorWidget(QWidget):
         self.noise_combo = QComboBox()
         self.noise_combo.addItems(['white', 'pink', 'brown', 'blue', 'violet', 'grey'])
         self.noise_combo.currentTextChanged.connect(lambda v: self.update_param('noise_color', v))
-        noise_form.addRow("Color:", self.noise_combo)
+        noise_form.addRow(tr("Color:"), self.noise_combo)
         
         # 2. Multitone Params
         self.multitone_widget = QWidget()
@@ -453,7 +454,7 @@ class SignalGeneratorWidget(QWidget):
         self.mt_count_spin = QDoubleSpinBox()
         self.mt_count_spin.setDecimals(0); self.mt_count_spin.setRange(2, 1000); self.mt_count_spin.setValue(10)
         self.mt_count_spin.valueChanged.connect(lambda v: self.update_param('multitone_count', int(v)))
-        mt_form.addRow("Tone Count:", self.mt_count_spin)
+        mt_form.addRow(tr("Tone Count:"), self.mt_count_spin)
         
         # 3. MLS Params
         self.mls_widget = QWidget()
@@ -462,7 +463,7 @@ class SignalGeneratorWidget(QWidget):
         self.mls_order_combo.addItems([str(i) for i in range(10, 19)])
         self.mls_order_combo.setCurrentText("15")
         self.mls_order_combo.currentTextChanged.connect(lambda v: self.update_param('mls_order', int(v)))
-        mls_form.addRow("Order (N):", self.mls_order_combo)
+        mls_form.addRow(tr("Order (N):"), self.mls_order_combo)
         
         # 4. Burst Params
         self.burst_widget = QWidget()
@@ -470,11 +471,11 @@ class SignalGeneratorWidget(QWidget):
         self.burst_on_spin = QDoubleSpinBox()
         self.burst_on_spin.setDecimals(0); self.burst_on_spin.setRange(1, 1000); self.burst_on_spin.setValue(10)
         self.burst_on_spin.valueChanged.connect(lambda v: self.update_param('burst_on_cycles', int(v)))
-        burst_form.addRow("On Cycles:", self.burst_on_spin)
+        burst_form.addRow(tr("On Cycles:"), self.burst_on_spin)
         self.burst_off_spin = QDoubleSpinBox()
         self.burst_off_spin.setDecimals(0); self.burst_off_spin.setRange(1, 10000); self.burst_off_spin.setValue(90)
         self.burst_off_spin.valueChanged.connect(lambda v: self.update_param('burst_off_cycles', int(v)))
-        burst_form.addRow("Off Cycles:", self.burst_off_spin)
+        burst_form.addRow(tr("Off Cycles:"), self.burst_off_spin)
 
         # 5. Pulse Params
         self.pulse_widget = QWidget()
@@ -484,7 +485,7 @@ class SignalGeneratorWidget(QWidget):
         self.pulse_width_spin.setValue(50.0)
         self.pulse_width_spin.setSuffix("%")
         self.pulse_width_spin.valueChanged.connect(lambda v: self.update_param('pulse_width', v))
-        pulse_form.addRow("Pulse Width:", self.pulse_width_spin)
+        pulse_form.addRow(tr("Pulse Width:"), self.pulse_width_spin)
         
         # 6. Tone+Noise Params
         self.tn_widget = QWidget()
@@ -494,7 +495,7 @@ class SignalGeneratorWidget(QWidget):
         self.noise_amp_spin.setSingleStep(0.01)
         self.noise_amp_spin.setValue(0.1)
         self.noise_amp_spin.valueChanged.connect(lambda v: self.update_param('noise_amplitude', v))
-        tn_form.addRow("Noise Amplitude:", self.noise_amp_spin)
+        tn_form.addRow(tr("Noise Amplitude:"), self.noise_amp_spin)
         
         self.param_layout.addWidget(self.noise_widget)
         self.param_layout.addWidget(self.multitone_widget)
@@ -524,7 +525,7 @@ class SignalGeneratorWidget(QWidget):
         
         freq_layout.addWidget(self.freq_spin)
         freq_layout.addWidget(self.freq_slider)
-        basic_layout.addRow("Frequency (Hz):", freq_layout)
+        basic_layout.addRow(tr("Frequency (Hz):"), freq_layout)
         
         # Phase
         phase_layout = QHBoxLayout()
@@ -541,7 +542,7 @@ class SignalGeneratorWidget(QWidget):
         
         phase_layout.addWidget(self.phase_spin)
         phase_layout.addWidget(self.phase_slider)
-        basic_layout.addRow("Phase Offset:", phase_layout)
+        basic_layout.addRow(tr("Phase Offset:"), phase_layout)
         
         # Amplitude
         amp_layout = QHBoxLayout()
@@ -561,13 +562,13 @@ class SignalGeneratorWidget(QWidget):
         amp_layout.addWidget(self.amp_spin)
         amp_layout.addWidget(self.unit_combo)
         amp_layout.addWidget(self.amp_slider)
-        basic_layout.addRow("Amplitude:", amp_layout)
+        basic_layout.addRow(tr("Amplitude:"), amp_layout)
         
         basic_group.setLayout(basic_layout)
         layout.addWidget(basic_group)
         
         # --- Sweep Controls ---
-        sweep_group = QGroupBox("Frequency Sweep (Sine Only)")
+        sweep_group = QGroupBox(tr("Frequency Sweep (Sine Only)"))
         sweep_group.setCheckable(True)
         sweep_group.setChecked(False)
         sweep_group.toggled.connect(lambda v: self.update_param('sweep_enabled', v))
@@ -578,19 +579,19 @@ class SignalGeneratorWidget(QWidget):
         self.start_freq_spin = QDoubleSpinBox()
         self.start_freq_spin.setRange(20, 20000)
         self.start_freq_spin.valueChanged.connect(lambda v: self.update_param('start_freq', v))
-        sweep_layout.addRow("Start Freq:", self.start_freq_spin)
+        sweep_layout.addRow(tr("Start Freq:"), self.start_freq_spin)
         
         self.end_freq_spin = QDoubleSpinBox()
         self.end_freq_spin.setRange(20, 20000)
         self.end_freq_spin.valueChanged.connect(lambda v: self.update_param('end_freq', v))
-        sweep_layout.addRow("End Freq:", self.end_freq_spin)
+        sweep_layout.addRow(tr("End Freq:"), self.end_freq_spin)
         
         self.duration_spin = QDoubleSpinBox()
         self.duration_spin.setRange(0.1, 60.0)
         self.duration_spin.valueChanged.connect(lambda v: self.update_param('sweep_duration', v))
-        sweep_layout.addRow("Duration (s):", self.duration_spin)
+        sweep_layout.addRow(tr("Duration (s):"), self.duration_spin)
         
-        self.log_check = QCheckBox("Logarithmic Sweep")
+        self.log_check = QCheckBox(tr("Logarithmic Sweep"))
         self.log_check.toggled.connect(lambda v: self.update_param('log_sweep', v))
         sweep_layout.addRow(self.log_check)
         
@@ -853,7 +854,7 @@ class SignalGeneratorWidget(QWidget):
     def on_toggle(self, checked):
         if checked:
             self.module.start_generation()
-            self.toggle_btn.setText("Stop Output")
+            self.toggle_btn.setText(tr("Stop Output"))
         else:
             self.module.stop_generation()
-            self.toggle_btn.setText("Start Output")
+            self.toggle_btn.setText(tr("Start Output"))
