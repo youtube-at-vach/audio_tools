@@ -7,6 +7,7 @@ from PyQt6.QtCore import QTimer, Qt
 from scipy.signal.windows import dpss
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
+from src.core.localization import tr
 
 class SpectrumAnalyzer(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -173,14 +174,14 @@ class SpectrumAnalyzerWidget(QWidget):
         layout = QVBoxLayout()
         
         # --- Controls ---
-        controls_group = QGroupBox("Analysis Settings")
+        controls_group = QGroupBox(tr("Analysis Settings"))
         main_controls_layout = QVBoxLayout()
         
         # Row 1: Basic Controls
         row1_layout = QHBoxLayout()
         
         # Start/Stop
-        self.toggle_btn = QPushButton("Start Analysis")
+        self.toggle_btn = QPushButton(tr("Start Analysis"))
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
         
@@ -189,14 +190,14 @@ class SpectrumAnalyzerWidget(QWidget):
         row1_layout.addWidget(self.toggle_btn)
         
         # Mode Selection
-        row1_layout.addWidget(QLabel("Mode:"))
+        row1_layout.addWidget(QLabel(tr("Mode:")))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(['Spectrum', 'PSD', 'Cross Spectrum'])
+        self.mode_combo.addItems([tr('Spectrum'), tr('PSD'), tr('Cross Spectrum')])
         self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
         row1_layout.addWidget(self.mode_combo)
 
         # Channel Selection
-        row1_layout.addWidget(QLabel("Channel:"))
+        row1_layout.addWidget(QLabel(tr("Channel:")))
         self.channel_combo = QComboBox()
         self.channel_combo.addItems(['Left', 'Right', 'Average', 'Dual'])
         self.channel_combo.setCurrentText(self.module.channel_mode)
@@ -204,7 +205,7 @@ class SpectrumAnalyzerWidget(QWidget):
         row1_layout.addWidget(self.channel_combo)
 
         # FFT Size
-        row1_layout.addWidget(QLabel("FFT Size:"))
+        row1_layout.addWidget(QLabel(tr("FFT Size:")))
         self.fft_combo = QComboBox()
         self.fft_combo.addItems(['1024', '2048', '4096', '8192', '16384', '32768'])
         self.fft_combo.setCurrentText(str(self.module.buffer_size))
@@ -212,21 +213,21 @@ class SpectrumAnalyzerWidget(QWidget):
         row1_layout.addWidget(self.fft_combo)
 
         # Window Selection
-        row1_layout.addWidget(QLabel("Window:"))
+        row1_layout.addWidget(QLabel(tr("Window:")))
         self.window_combo = QComboBox()
         self.window_combo.addItems(['hanning', 'hamming', 'blackman', 'bartlett', 'rect'])
         self.window_combo.currentTextChanged.connect(self.on_window_changed)
         row1_layout.addWidget(self.window_combo)
 
         # Weighting Selection
-        row1_layout.addWidget(QLabel("Weighting:"))
+        row1_layout.addWidget(QLabel(tr("Weighting:")))
         self.weighting_combo = QComboBox()
         self.weighting_combo.addItems(['Z', 'A', 'C'])
         self.weighting_combo.currentTextChanged.connect(self.on_weighting_changed)
         row1_layout.addWidget(self.weighting_combo)
 
         # Physical Units Checkbox (Moved here)
-        self.physical_units_check = QCheckBox("Physical Units (dBV)")
+        self.physical_units_check = QCheckBox(tr("Physical Units (dBV)"))
         self.physical_units_check.toggled.connect(self.on_physical_units_changed)
         row1_layout.addWidget(self.physical_units_check)
         
@@ -236,14 +237,14 @@ class SpectrumAnalyzerWidget(QWidget):
         row2_layout = QHBoxLayout()
         
         # Smoothing
-        row2_layout.addWidget(QLabel("Smoothing:"))
+        row2_layout.addWidget(QLabel(tr("Smoothing:")))
         self.smooth_combo = QComboBox()
-        self.smooth_combo.addItems(['None', '1/1 Octave', '1/3 Octave', '1/6 Octave', '1/12 Octave', '1/24 Octave'])
+        self.smooth_combo.addItems([tr('None'), tr('1/1 Octave'), tr('1/3 Octave'), tr('1/6 Octave'), tr('1/12 Octave'), tr('1/24 Octave')])
         self.smooth_combo.currentTextChanged.connect(self.on_smooth_changed)
         row2_layout.addWidget(self.smooth_combo)
 
         # Averaging
-        self.avg_label = QLabel("Avg: 0%")
+        self.avg_label = QLabel(tr("Avg: 0%"))
         row2_layout.addWidget(self.avg_label)
         self.avg_slider = QSlider(Qt.Orientation.Horizontal)
         self.avg_slider.setRange(0, 99) # Allow up to 99% for heavy averaging
@@ -253,17 +254,17 @@ class SpectrumAnalyzerWidget(QWidget):
         row2_layout.addWidget(self.avg_slider)
         
         # Multitaper
-        self.multitaper_check = QCheckBox("Multitaper")
+        self.multitaper_check = QCheckBox(tr("Multitaper"))
         self.multitaper_check.toggled.connect(self.on_multitaper_changed)
         row2_layout.addWidget(self.multitaper_check)
 
         # Peak Hold
-        self.peak_check = QCheckBox("Peak Hold")
+        self.peak_check = QCheckBox(tr("Peak Hold"))
         self.peak_check.toggled.connect(self.on_peak_changed)
         row2_layout.addWidget(self.peak_check)
         
         # Clear Peak
-        self.clear_peak_btn = QPushButton("Clear Peak")
+        self.clear_peak_btn = QPushButton(tr("Clear Peak"))
         self.clear_peak_btn.clicked.connect(self.on_clear_peak)
         row2_layout.addWidget(self.clear_peak_btn)
         
@@ -281,12 +282,12 @@ class SpectrumAnalyzerWidget(QWidget):
         info_layout = QHBoxLayout()
         
         # Overall Value
-        self.overall_label = QLabel("Overall: -- dB")
+        self.overall_label = QLabel(tr("Overall: -- dB"))
         self.overall_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #00ff00;")
         info_layout.addWidget(self.overall_label)
         
         # Cursor Value
-        self.cursor_label = QLabel("Cursor: -- Hz, -- dB")
+        self.cursor_label = QLabel(tr("Cursor: -- Hz, -- dB"))
         self.cursor_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #00ffff;")
         info_layout.addWidget(self.cursor_label)
         
@@ -295,8 +296,8 @@ class SpectrumAnalyzerWidget(QWidget):
         
         # --- Plot ---
         self.plot_widget = pg.PlotWidget()
-        self.plot_widget.setLabel('left', 'Magnitude', units='dB')
-        self.plot_widget.setLabel('bottom', 'Frequency', units='Hz')
+        self.plot_widget.setLabel('left', tr('Magnitude'), units='dB')
+        self.plot_widget.setLabel('bottom', tr('Frequency'), units='Hz')
         self.plot_widget.setLogMode(x=True, y=False)
         self.plot_widget.setYRange(-120, 0)
         self.plot_widget.showGrid(x=True, y=True)
@@ -385,11 +386,11 @@ class SpectrumAnalyzerWidget(QWidget):
         if checked:
             self.module.start_analysis()
             self.timer.start()
-            self.toggle_btn.setText("Stop Analysis")
+            self.toggle_btn.setText(tr("Stop Analysis"))
         else:
             self.module.stop_analysis()
             self.timer.stop()
-            self.toggle_btn.setText("Start Analysis")
+            self.toggle_btn.setText(tr("Start Analysis"))
 
     def on_mode_changed(self, val):
         self.module.analysis_mode = val
@@ -434,7 +435,7 @@ class SpectrumAnalyzerWidget(QWidget):
 
     def on_avg_changed(self, val):
         self.module.averaging = val / 100.0
-        self.avg_label.setText(f"Avg: {val}%")
+        self.avg_label.setText(tr("Avg: {}%").format(val))
 
     def on_multitaper_changed(self, checked):
         self.module.multitaper_enabled = checked
