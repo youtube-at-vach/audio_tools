@@ -367,6 +367,7 @@ class DistortionAnalyzerWidget(QWidget):
         self.out_mode_combo = QComboBox()
         self.out_mode_combo.addItems([tr("Off (External Source)"), tr("Sine Wave"), tr("SMPTE IMD"), tr("CCIF IMD"), tr("Multi-tone")])
         self.out_mode_combo.currentIndexChanged.connect(self.on_out_mode_changed)
+        self.out_mode_combo.setCurrentIndex(1) # Default to Sine Wave
         rt_layout.addRow(tr("Signal Generator:"), self.out_mode_combo)
         
         # Generator Settings Stack

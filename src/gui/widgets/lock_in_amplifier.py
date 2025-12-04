@@ -13,6 +13,7 @@ from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 import time
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
+from src.core.localization import tr
 
 class LockInAmplifier(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -352,11 +353,11 @@ class LockInAmplifierWidget(QWidget):
         manual_layout = QHBoxLayout(manual_widget)
         
         # --- Left Panel: Settings ---
-        settings_group = QGroupBox("Settings")
+        settings_group = QGroupBox(tr("Settings"))
         settings_layout = QFormLayout()
         
         # Output Controls
-        self.toggle_btn = QPushButton("Start Output & Measure")
+        self.toggle_btn = QPushButton(tr("Start Output & Measure"))
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
         
@@ -367,18 +368,18 @@ class LockInAmplifierWidget(QWidget):
         settings_layout.addRow(self.toggle_btn)
         
         # External Mode
-        self.ext_mode_check = QCheckBox("External Mode (No Output)")
+        self.ext_mode_check = QCheckBox(tr("External Mode (No Output)"))
         self.ext_mode_check.toggled.connect(self.on_ext_mode_toggled)
         settings_layout.addRow(self.ext_mode_check)
         
-        settings_layout.addRow(QLabel("<b>Output Generator</b>"))
+        settings_layout.addRow(QLabel(tr("<b>Output Generator</b>")))
         
         self.freq_spin = QDoubleSpinBox()
         self.freq_spin.setRange(20, 20000)
         self.freq_spin.setValue(1000)
         self.freq_spin.setSuffix(" Hz")
         self.freq_spin.valueChanged.connect(self.on_freq_changed)
-        settings_layout.addRow("Frequency:", self.freq_spin)
+        settings_layout.addRow(tr("Frequency:"), self.freq_spin)
         
         self.amp_spin = QDoubleSpinBox()
         self.amp_spin.setRange(-120, 0)
@@ -393,55 +394,55 @@ class LockInAmplifierWidget(QWidget):
         amp_layout = QHBoxLayout()
         amp_layout.addWidget(self.amp_spin)
         amp_layout.addWidget(self.gen_unit_combo)
-        settings_layout.addRow("Amplitude:", amp_layout)
+        settings_layout.addRow(tr("Amplitude:"), amp_layout)
         
         self.out_ch_combo = QComboBox()
-        self.out_ch_combo.addItems(["Left (Ch 1)", "Right (Ch 2)", "Stereo (Both)"])
+        self.out_ch_combo.addItems([tr("Left (Ch 1)"), tr("Right (Ch 2)"), tr("Stereo (Both)")])
         self.out_ch_combo.currentIndexChanged.connect(self.on_out_ch_changed)
-        settings_layout.addRow("Output Ch:", self.out_ch_combo)
+        settings_layout.addRow(tr("Output Ch:"), self.out_ch_combo)
         
-        settings_layout.addRow(QLabel("<b>Input Routing</b>"))
+        settings_layout.addRow(QLabel(tr("<b>Input Routing</b>")))
         
         self.sig_ch_combo = QComboBox()
-        self.sig_ch_combo.addItems(["Left (Ch 1)", "Right (Ch 2)"])
+        self.sig_ch_combo.addItems([tr("Left (Ch 1)"), tr("Right (Ch 2)")])
         self.sig_ch_combo.setCurrentIndex(0) # Default Signal L
         self.sig_ch_combo.currentIndexChanged.connect(self.on_sig_ch_changed)
-        settings_layout.addRow("Signal Input:", self.sig_ch_combo)
+        settings_layout.addRow(tr("Signal Input:"), self.sig_ch_combo)
         
         self.ref_ch_combo = QComboBox()
-        self.ref_ch_combo.addItems(["Left (Ch 1)", "Right (Ch 2)"])
+        self.ref_ch_combo.addItems([tr("Left (Ch 1)"), tr("Right (Ch 2)")])
         self.ref_ch_combo.setCurrentIndex(1) # Default Ref R
         self.ref_ch_combo.currentIndexChanged.connect(self.on_ref_ch_changed)
-        settings_layout.addRow("Reference Input:", self.ref_ch_combo)
+        settings_layout.addRow(tr("Reference Input:"), self.ref_ch_combo)
         
         # Integration Time (Buffer Size)
         self.time_combo = QComboBox()
-        self.time_combo.addItems(["Fast (2048 samples)", "Medium (4096 samples)", "Slow (16384 samples)"])
+        self.time_combo.addItems([tr("Fast (2048 samples)"), tr("Medium (4096 samples)"), tr("Slow (16384 samples)")])
         self.time_combo.setCurrentIndex(1)
         self.time_combo.currentIndexChanged.connect(self.on_time_changed)
-        settings_layout.addRow("Integration:", self.time_combo)
+        settings_layout.addRow(tr("Integration:"), self.time_combo)
         
         self.avg_spin = QSpinBox()
         self.avg_spin.setRange(1, 300)
         self.avg_spin.setValue(1)
         self.avg_spin.valueChanged.connect(lambda v: setattr(self.module, 'averaging_count', v))
-        settings_layout.addRow("Averaging:", self.avg_spin)
+        settings_layout.addRow(tr("Averaging:"), self.avg_spin)
         
         self.harmonic_spin = QSpinBox()
         self.harmonic_spin.setRange(1, 10)
         self.harmonic_spin.setValue(1)
         self.harmonic_spin.valueChanged.connect(lambda v: setattr(self.module, 'harmonic_order', v))
-        settings_layout.addRow("Harmonic:", self.harmonic_spin)
+        settings_layout.addRow(tr("Harmonic:"), self.harmonic_spin)
         
         settings_group.setLayout(settings_layout)
         manual_layout.addWidget(settings_group, stretch=1)
         
         # --- Right Panel: Meters ---
-        meters_group = QGroupBox("Measurements")
+        meters_group = QGroupBox(tr("Measurements"))
         meters_layout = QVBoxLayout()
         
         # Magnitude
-        meters_layout.addWidget(QLabel("Magnitude"))
+        meters_layout.addWidget(QLabel(tr("Magnitude")))
         
         # Unit Selection
         self.unit_combo = QComboBox()
@@ -463,7 +464,7 @@ class LockInAmplifierWidget(QWidget):
         meters_layout.addSpacing(20)
         
         # Phase
-        meters_layout.addWidget(QLabel("Phase"))
+        meters_layout.addWidget(QLabel(tr("Phase")))
         self.phase_label = QLabel("0.00 deg")
         self.phase_label.setStyleSheet("font-size: 36px; font-weight: bold; color: #00ffff;")
         self.phase_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -475,7 +476,7 @@ class LockInAmplifierWidget(QWidget):
         xy_layout = QHBoxLayout()
         
         x_group = QVBoxLayout()
-        x_group.addWidget(QLabel("X (In-phase)"))
+        x_group.addWidget(QLabel(tr("X (In-phase)")))
         self.x_label = QLabel("0.000 V")
         self.x_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #ffff00;")
         self.x_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -483,7 +484,7 @@ class LockInAmplifierWidget(QWidget):
         xy_layout.addLayout(x_group)
         
         y_group = QVBoxLayout()
-        y_group.addWidget(QLabel("Y (Quadrature)"))
+        y_group.addWidget(QLabel(tr("Y (Quadrature)")))
         self.y_label = QLabel("0.000 V")
         self.y_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #ff00ff;")
         self.y_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -496,8 +497,8 @@ class LockInAmplifierWidget(QWidget):
         
         # Reference Status
         ref_status_layout = QHBoxLayout()
-        ref_status_layout.addWidget(QLabel("Reference Status:"))
-        self.ref_status_label = QLabel("No Signal")
+        ref_status_layout.addWidget(QLabel(tr("Reference Status:")))
+        self.ref_status_label = QLabel(tr("No Signal"))
         self.ref_status_label.setStyleSheet("font-weight: bold; color: #ff0000;")
         ref_status_layout.addWidget(self.ref_status_label)
         meters_layout.addLayout(ref_status_layout)
@@ -506,43 +507,43 @@ class LockInAmplifierWidget(QWidget):
         meters_group.setLayout(meters_layout)
         manual_layout.addWidget(meters_group, stretch=2)
         
-        self.tabs.addTab(manual_widget, "Manual Control")
+        self.tabs.addTab(manual_widget, tr("Manual Control"))
         
         # --- Tab 2: Frequency Response Analyzer (FRA) ---
         fra_widget = QWidget()
         fra_layout = QHBoxLayout(fra_widget)
         
         # FRA Settings
-        fra_settings_group = QGroupBox("Sweep Settings")
+        fra_settings_group = QGroupBox(tr("Sweep Settings"))
         fra_form = QFormLayout()
         
         self.fra_start_spin = QDoubleSpinBox()
         self.fra_start_spin.setRange(20, 20000); self.fra_start_spin.setValue(20); self.fra_start_spin.setSuffix(" Hz")
-        fra_form.addRow("Start Freq:", self.fra_start_spin)
+        fra_form.addRow(tr("Start Freq:"), self.fra_start_spin)
         
         self.fra_end_spin = QDoubleSpinBox()
         self.fra_end_spin.setRange(20, 20000); self.fra_end_spin.setValue(20000); self.fra_end_spin.setSuffix(" Hz")
-        fra_form.addRow("End Freq:", self.fra_end_spin)
+        fra_form.addRow(tr("End Freq:"), self.fra_end_spin)
         
         self.fra_steps_spin = QSpinBox()
         self.fra_steps_spin.setRange(10, 1000); self.fra_steps_spin.setValue(50)
-        fra_form.addRow("Steps:", self.fra_steps_spin)
+        fra_form.addRow(tr("Steps:"), self.fra_steps_spin)
         
-        self.fra_log_check = QCheckBox("Log Sweep"); self.fra_log_check.setChecked(True)
+        self.fra_log_check = QCheckBox(tr("Log Sweep")); self.fra_log_check.setChecked(True)
         fra_form.addRow(self.fra_log_check)
         
         self.fra_settle_spin = QDoubleSpinBox()
         self.fra_settle_spin.setRange(0.1, 5.0); self.fra_settle_spin.setValue(0.5); self.fra_settle_spin.setSuffix(" s")
-        fra_form.addRow("Settling Time:", self.fra_settle_spin)
+        fra_form.addRow(tr("Settling Time:"), self.fra_settle_spin)
         
         # Plot Unit Selector
         self.fra_plot_unit_combo = QComboBox()
         self.fra_plot_unit_combo.addItems(['dBFS', 'dBV', 'dBu', 'Vrms', 'Vpeak'])
         self.fra_plot_unit_combo.setCurrentText('dBFS')
         self.fra_plot_unit_combo.currentTextChanged.connect(self.update_fra_plot)
-        fra_form.addRow("Plot Unit:", self.fra_plot_unit_combo)
+        fra_form.addRow(tr("Plot Unit:"), self.fra_plot_unit_combo)
         
-        self.fra_start_btn = QPushButton("Start Sweep")
+        self.fra_start_btn = QPushButton(tr("Start Sweep"))
         self.fra_start_btn.clicked.connect(self.on_fra_start)
         fra_form.addRow(self.fra_start_btn)
         
@@ -553,9 +554,9 @@ class LockInAmplifierWidget(QWidget):
         fra_layout.addWidget(fra_settings_group, stretch=1)
         
         # FRA Plot
-        self.fra_plot = pg.PlotWidget(title="Bode Plot")
-        self.fra_plot.setLabel('bottom', "Frequency", units='Hz')
-        self.fra_plot.setLabel('left', "Magnitude", units='dB')
+        self.fra_plot = pg.PlotWidget(title=tr("Bode Plot"))
+        self.fra_plot.setLabel('bottom', tr("Frequency"), units='Hz')
+        self.fra_plot.setLabel('left', tr("Magnitude"), units='dB')
         self.fra_plot.showGrid(x=True, y=True, alpha=0.3)
         self.fra_plot.addLegend()
         
@@ -569,7 +570,7 @@ class LockInAmplifierWidget(QWidget):
         self.fra_plot.getPlotItem().showAxis('right')
         self.fra_plot.getPlotItem().getAxis('right').linkToView(self.fra_plot_p)
         self.fra_plot_p.setXLink(self.fra_plot.getPlotItem())
-        self.fra_plot.getPlotItem().getAxis('right').setLabel('Phase', units='deg')
+        self.fra_plot.getPlotItem().getAxis('right').setLabel(tr('Phase'), units='deg')
         
         # Handle resizing
         def update_views():
@@ -577,57 +578,57 @@ class LockInAmplifierWidget(QWidget):
             self.fra_plot_p.linkedViewChanged(self.fra_plot.getPlotItem().vb, self.fra_plot_p.XAxis)
         self.fra_plot.getPlotItem().vb.sigResized.connect(update_views)
         
-        self.fra_curve_mag = self.fra_plot.plot(pen='g', name='Magnitude (dB)')
-        self.fra_curve_phase = pg.PlotCurveItem(pen='c', name='Phase (deg)')
+        self.fra_curve_mag = self.fra_plot.plot(pen='g', name=tr('Magnitude (dB)'))
+        self.fra_curve_phase = pg.PlotCurveItem(pen='c', name=tr('Phase (deg)'))
         self.fra_plot_p.addItem(self.fra_curve_phase)
         
         fra_layout.addWidget(self.fra_plot, stretch=3)
         
-        self.tabs.addTab(fra_widget, "Frequency Response")
+        self.tabs.addTab(fra_widget, tr("Frequency Response"))
         
         # --- Tab 3: Calibration ---
         cal_widget = QWidget()
         cal_layout = QHBoxLayout(cal_widget)
         
         # Settings
-        cal_settings = QGroupBox("Calibration Settings")
+        cal_settings = QGroupBox(tr("Calibration Settings"))
         cal_form = QFormLayout()
         
         self.cal_start_spin = QDoubleSpinBox()
         self.cal_start_spin.setRange(20, 20000); self.cal_start_spin.setValue(20); self.cal_start_spin.setSuffix(" Hz")
-        cal_form.addRow("Start Freq:", self.cal_start_spin)
+        cal_form.addRow(tr("Start Freq:"), self.cal_start_spin)
         
         self.cal_end_spin = QDoubleSpinBox()
         self.cal_end_spin.setRange(20, 20000); self.cal_end_spin.setValue(20000); self.cal_end_spin.setSuffix(" Hz")
-        cal_form.addRow("End Freq:", self.cal_end_spin)
+        cal_form.addRow(tr("End Freq:"), self.cal_end_spin)
         
         self.cal_steps_spin = QSpinBox()
         self.cal_steps_spin.setRange(10, 5000); self.cal_steps_spin.setValue(100)
-        cal_form.addRow("Steps:", self.cal_steps_spin)
+        cal_form.addRow(tr("Steps:"), self.cal_steps_spin)
         
         self.cal_settle_spin = QDoubleSpinBox()
         self.cal_settle_spin.setRange(0.1, 5.0); self.cal_settle_spin.setValue(0.5); self.cal_settle_spin.setSuffix(" s")
-        cal_form.addRow("Settling Time:", self.cal_settle_spin)
+        cal_form.addRow(tr("Settling Time:"), self.cal_settle_spin)
         
-        self.cal_start_btn = QPushButton("Run Relative Map Sweep")
+        self.cal_start_btn = QPushButton(tr("Run Relative Map Sweep"))
         self.cal_start_btn.clicked.connect(self.on_cal_start)
         cal_form.addRow(self.cal_start_btn)
         
-        self.cal_save_btn = QPushButton("Save Map")
+        self.cal_save_btn = QPushButton(tr("Save Map"))
         self.cal_save_btn.clicked.connect(self.on_cal_save)
         self.cal_save_btn.setEnabled(False)
         cal_form.addRow(self.cal_save_btn)
         
-        self.cal_load_btn = QPushButton("Load Map")
+        self.cal_load_btn = QPushButton(tr("Load Map"))
         self.cal_load_btn.clicked.connect(self.on_cal_load)
         cal_form.addRow(self.cal_load_btn)
         
-        self.cal_apply_check = QCheckBox("Apply Calibration")
+        self.cal_apply_check = QCheckBox(tr("Apply Calibration"))
         self.cal_apply_check.toggled.connect(self.on_cal_apply_toggled)
         cal_form.addRow(self.cal_apply_check)
         
         # Absolute Gain Calibration
-        cal_form.addRow(QLabel("<b>Absolute Gain Calibration</b>"))
+        cal_form.addRow(QLabel(tr("<b>Absolute Gain Calibration</b>")))
         
         self.abs_cal_target_spin = QDoubleSpinBox()
         self.abs_cal_target_spin.setRange(-200, 200)
@@ -641,13 +642,13 @@ class LockInAmplifierWidget(QWidget):
         abs_target_layout = QHBoxLayout()
         abs_target_layout.addWidget(self.abs_cal_target_spin)
         abs_target_layout.addWidget(self.abs_cal_unit_combo)
-        cal_form.addRow("Target Value:", abs_target_layout)
+        cal_form.addRow(tr("Target Value:"), abs_target_layout)
         
-        self.abs_cal_btn = QPushButton("Calibrate Absolute Gain (1-Point)")
+        self.abs_cal_btn = QPushButton(tr("Calibrate Absolute Gain (1-Point)"))
         self.abs_cal_btn.clicked.connect(self.on_abs_cal_click)
         cal_form.addRow(self.abs_cal_btn)
         
-        self.abs_cal_status = QLabel(f"Current Offset: {self.module.audio_engine.calibration.lockin_gain_offset:.3f} dB")
+        self.abs_cal_status = QLabel(tr("Current Offset: {0:.3f} dB").format(self.module.audio_engine.calibration.lockin_gain_offset))
         cal_form.addRow(self.abs_cal_status)
         
         self.cal_progress = QProgressBar()
@@ -657,15 +658,15 @@ class LockInAmplifierWidget(QWidget):
         cal_layout.addWidget(cal_settings, stretch=1)
         
         # Plot
-        self.cal_plot = pg.PlotWidget(title="Calibration Map")
-        self.cal_plot.setLabel('bottom', "Frequency", units='Hz')
-        self.cal_plot.setLabel('left', "Correction", units='dB')
+        self.cal_plot = pg.PlotWidget(title=tr("Calibration Map"))
+        self.cal_plot.setLabel('bottom', tr("Frequency"), units='Hz')
+        self.cal_plot.setLabel('left', tr("Correction"), units='dB')
         self.cal_plot.showGrid(x=True, y=True, alpha=0.3)
         self.cal_plot.addLegend()
         self.cal_plot.getPlotItem().getAxis('bottom').setLogMode(True)
         
-        self.cal_curve_mag = self.cal_plot.plot(pen='y', name='Mag Correction (dB)')
-        self.cal_curve_phase = pg.PlotCurveItem(pen='c', name='Phase Correction (deg)')
+        self.cal_curve_mag = self.cal_plot.plot(pen='y', name=tr('Mag Correction (dB)'))
+        self.cal_curve_phase = pg.PlotCurveItem(pen='c', name=tr('Phase Correction (deg)'))
         
         # Dual Axis for Phase
         self.cal_plot_p = pg.ViewBox()
@@ -673,7 +674,7 @@ class LockInAmplifierWidget(QWidget):
         self.cal_plot.getPlotItem().showAxis('right')
         self.cal_plot.getPlotItem().getAxis('right').linkToView(self.cal_plot_p)
         self.cal_plot_p.setXLink(self.cal_plot.getPlotItem())
-        self.cal_plot.getPlotItem().getAxis('right').setLabel('Phase', units='deg')
+        self.cal_plot.getPlotItem().getAxis('right').setLabel(tr('Phase'), units='deg')
         
         self.cal_plot_p.addItem(self.cal_curve_phase)
         
@@ -685,7 +686,7 @@ class LockInAmplifierWidget(QWidget):
         
         cal_layout.addWidget(self.cal_plot, stretch=3)
         
-        self.tabs.addTab(cal_widget, "Calibration")
+        self.tabs.addTab(cal_widget, tr("Calibration"))
         
         main_layout.addWidget(self.tabs)
         self.setLayout(main_layout)
