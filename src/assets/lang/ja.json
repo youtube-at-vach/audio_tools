@@ -275,5 +275,9 @@
     "Std Dev: {0:.5f} Hz": "標準偏差: {0:.5f} Hz",
     "Allan Dev: {0:.5f} Hz": "アラン偏差: {0:.5f} Hz",
     "Std Dev: -- Hz": "標準偏差: -- Hz",
-    "Allan Dev: -- Hz": "アラン偏差: -- Hz"
+    "Allan Dev: -- Hz": "アラン偏差: -- Hz",
+    "Display Mode:": "表示モード:",
+    "Color Palette:": "カラーパレット:",
+    "Persistence:": "残光:",
+    "Auto Gain": "自動ゲイン"
 }

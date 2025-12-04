@@ -275,5 +275,9 @@
     "Std Dev: {0:.5f} Hz": "Desv. Est.: {0:.5f} Hz",
     "Allan Dev: {0:.5f} Hz": "Desv. Allan: {0:.5f} Hz",
     "Std Dev: -- Hz": "Desv. Est.: -- Hz",
-    "Allan Dev: -- Hz": "Desv. Allan: -- Hz"
+    "Allan Dev: -- Hz": "Desv. Allan: -- Hz",
+    "Display Mode:": "Modo de visualización:",
+    "Color Palette:": "Paleta de colores:",
+    "Persistence:": "Persistencia:",
+    "Auto Gain": "Ganancia automática"
 }

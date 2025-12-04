@@ -6,9 +6,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushBut
 from PyQt6.QtCore import QTimer, Qt
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
-
-def tr(text):
-    return text
+from src.core.localization import tr
 
 class Goniometer(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
