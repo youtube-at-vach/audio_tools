@@ -91,5 +91,12 @@
     "Start Freq:": "시작 주파수:",
     "End Freq:": "종료 주파수:",
     "Duration (s):": "지속 시간 (초):",
-    "Logarithmic Sweep": "로그 스윕"
+    "Logarithmic Sweep": "로그 스윕",
+    "Start": "시작",
+    "Stop": "중지",
+    "Fast (Realtime)": "빠름 (실시간)",
+    "Medium (1m)": "보통 (1분)",
+    "Slow (5m)": "느림 (5분)",
+    "Meteor (10m)": "유성 (10분)",
+    "Time": "시간"
 }

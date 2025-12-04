@@ -8,6 +8,7 @@ from PyQt6.QtCore import QTimer, Qt
 from scipy.signal import get_window, lfilter
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
+from src.core.localization import tr
 
 class Spectrogram(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -107,11 +108,11 @@ class SpectrogramWidget(QWidget):
         layout = QVBoxLayout()
         
         # --- Controls ---
-        controls_group = QGroupBox("Settings")
+        controls_group = QGroupBox(tr("Settings"))
         controls_layout = QHBoxLayout()
         
         # Start/Stop
-        self.toggle_btn = QPushButton("Start")
+        self.toggle_btn = QPushButton(tr("Start"))
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
         
@@ -126,14 +127,14 @@ class SpectrogramWidget(QWidget):
         controls_layout.addWidget(self.toggle_btn)
         
         # Channel
-        controls_layout.addWidget(QLabel("Channel:"))
+        controls_layout.addWidget(QLabel(tr("Channel:")))
         self.channel_combo = QComboBox()
         self.channel_combo.addItems(['Left', 'Right', 'Average'])
         self.channel_combo.currentTextChanged.connect(self.on_channel_changed)
         controls_layout.addWidget(self.channel_combo)
         
         # FFT Size
-        controls_layout.addWidget(QLabel("FFT Size:"))
+        controls_layout.addWidget(QLabel(tr("FFT Size:")))
         self.fft_combo = QComboBox()
         self.fft_combo.addItems(['512', '1024', '2048', '4096', '8192'])
         self.fft_combo.setCurrentText(str(self.module.fft_size))
@@ -141,14 +142,14 @@ class SpectrogramWidget(QWidget):
         controls_layout.addWidget(self.fft_combo)
         
         # Window
-        controls_layout.addWidget(QLabel("Window:"))
+        controls_layout.addWidget(QLabel(tr("Window:")))
         self.window_combo = QComboBox()
         self.window_combo.addItems(['hann', 'hamming', 'blackman', 'bartlett', 'boxcar'])
         self.window_combo.currentTextChanged.connect(self.on_window_changed)
         controls_layout.addWidget(self.window_combo)
         
         # Colormap
-        controls_layout.addWidget(QLabel("Colormap:"))
+        controls_layout.addWidget(QLabel(tr("Colormap:")))
         self.cmap_combo = QComboBox()
         self.cmap_combo.addItems(['viridis', 'plasma', 'inferno', 'magma', 'cividis', 'turbo'])
         self.cmap_combo.currentTextChanged.connect(self.on_cmap_changed)
@@ -156,9 +157,9 @@ class SpectrogramWidget(QWidget):
         controls_layout.addWidget(self.cmap_combo)
         
         # Sweep Speed
-        controls_layout.addWidget(QLabel("Speed:"))
+        controls_layout.addWidget(QLabel(tr("Speed:")))
         self.speed_combo = QComboBox()
-        self.speed_combo.addItems(['Fast (Realtime)', 'Medium (1m)', 'Slow (5m)', 'Meteor (10m)'])
+        self.speed_combo.addItems([tr('Fast (Realtime)'), tr('Medium (1m)'), tr('Slow (5m)'), tr('Meteor (10m)')])
         self.speed_combo.currentIndexChanged.connect(self.on_speed_changed)
         controls_layout.addWidget(self.speed_combo)
         
@@ -171,9 +172,9 @@ class SpectrogramWidget(QWidget):
         layout.addWidget(self.win)
         
         # Plot Item
-        self.plot = self.win.addPlot(title="Spectrogram")
-        self.plot.setLabel('left', 'Frequency', units='Hz')
-        self.plot.setLabel('bottom', 'Time', units='frames')
+        self.plot = self.win.addPlot(title=tr("Spectrogram"))
+        self.plot.setLabel('left', tr('Frequency'), units='Hz')
+        self.plot.setLabel('bottom', tr('Time'), units='frames')
         
         # Image Item
         self.img = pg.ImageItem()
@@ -194,11 +195,11 @@ class SpectrogramWidget(QWidget):
         if checked:
             self.module.start_analysis()
             self.timer.start()
-            self.toggle_btn.setText("Stop")
+            self.toggle_btn.setText(tr("Stop"))
         else:
             self.module.stop_analysis()
             self.timer.stop()
-            self.toggle_btn.setText("Start")
+            self.toggle_btn.setText(tr("Start"))
 
     def on_channel_changed(self, val):
         self.module.channel_mode = val

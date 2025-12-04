@@ -91,5 +91,12 @@
     "Start Freq:": "Start Freq:",
     "End Freq:": "End Freq:",
     "Duration (s):": "Duration (s):",
-    "Logarithmic Sweep": "Logarithmic Sweep"
+    "Logarithmic Sweep": "Logarithmic Sweep",
+    "Start": "Start",
+    "Stop": "Stop",
+    "Fast (Realtime)": "Fast (Realtime)",
+    "Medium (1m)": "Medium (1m)",
+    "Slow (5m)": "Slow (5m)",
+    "Meteor (10m)": "Meteor (10m)",
+    "Time": "Time"
 }

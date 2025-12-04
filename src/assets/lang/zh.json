@@ -91,5 +91,12 @@
     "Start Freq:": "起始频率:",
     "End Freq:": "结束频率:",
     "Duration (s):": "持续时间 (秒):",
-    "Logarithmic Sweep": "对数扫描"
+    "Logarithmic Sweep": "对数扫描",
+    "Start": "开始",
+    "Stop": "停止",
+    "Fast (Realtime)": "快速 (实时)",
+    "Medium (1m)": "中速 (1分钟)",
+    "Slow (5m)": "慢速 (5分钟)",
+    "Meteor (10m)": "流星 (10分钟)",
+    "Time": "时间"
 }
