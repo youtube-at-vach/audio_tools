@@ -518,22 +518,29 @@ class NetworkAnalyzerWidget(QWidget):
         form = QFormLayout()
         
         # Mode
+        # Mode
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems([tr("Stepped Sine"), tr("Fast Chirp")])
-        self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
+        self.mode_combo.addItem(tr("Stepped Sine"), "Stepped Sine")
+        self.mode_combo.addItem(tr("Fast Chirp"), "Fast Chirp")
+        self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         form.addRow(tr("Sweep Mode:"), self.mode_combo)
         
         # Routing
+        # Routing
         self.out_combo = QComboBox()
-        self.out_combo.addItems([tr("Left"), tr("Right"), tr("Stereo")])
-        self.out_combo.setCurrentText(tr("Stereo"))
-        self.out_combo.currentTextChanged.connect(self.on_routing_changed)
+        self.out_combo.addItem(tr("Left"), "L")
+        self.out_combo.addItem(tr("Right"), "R")
+        self.out_combo.addItem(tr("Stereo"), "STEREO")
+        self.out_combo.setCurrentIndex(2)
+        self.out_combo.currentIndexChanged.connect(self.on_routing_changed)
         form.addRow(tr("Output Ch:"), self.out_combo)
         
         self.in_combo = QComboBox()
-        self.in_combo.addItems([tr("Left (Ch1)"), tr("Right (Ch2)"), tr("XFER (Ref=L, Meas=R)")])
-        self.in_combo.setCurrentText(tr("Left (Ch1)"))
-        self.in_combo.currentTextChanged.connect(self.on_routing_changed)
+        self.in_combo.addItem(tr("Left (Ch1)"), "L")
+        self.in_combo.addItem(tr("Right (Ch2)"), "R")
+        self.in_combo.addItem(tr("XFER (Ref=L, Meas=R)"), "XFER")
+        self.in_combo.setCurrentIndex(0)
+        self.in_combo.currentIndexChanged.connect(self.on_routing_changed)
         form.addRow(tr("Input Mode:"), self.in_combo)
         
         # Freqs
@@ -684,7 +691,8 @@ class NetworkAnalyzerWidget(QWidget):
         layout.addLayout(plot_layout)
         self.setLayout(layout)
 
-    def on_mode_changed(self, mode):
+    def on_mode_changed(self, index):
+        mode = self.mode_combo.itemData(index)
         self.module.sweep_mode = mode
         if mode == "Stepped Sine":
             self.steps_label.show(); self.steps_spin.show()
@@ -693,12 +701,9 @@ class NetworkAnalyzerWidget(QWidget):
             self.steps_label.hide(); self.steps_spin.hide()
             self.duration_label.show(); self.duration_spin.show()
 
-    def on_routing_changed(self, val):
-        out_map = {tr("Left"): "L", tr("Right"): "R", tr("Stereo"): "STEREO"}
-        in_map = {tr("Left (Ch1)"): "L", tr("Right (Ch2)"): "R", tr("XFER (Ref=L, Meas=R)"): "XFER"}
-        
-        self.module.output_channel = out_map.get(self.out_combo.currentText(), "STEREO")
-        self.module.input_mode = in_map.get(self.in_combo.currentText(), "L")
+    def on_routing_changed(self, index):
+        self.module.output_channel = self.out_combo.currentData()
+        self.module.input_mode = self.in_combo.currentData()
         
         # Update UI hints
         if self.module.input_mode == 'XFER':
