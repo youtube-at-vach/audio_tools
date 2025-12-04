@@ -649,10 +649,12 @@ class DistortionAnalyzerWidget(QWidget):
         self.on_unit_changed(self.unit_combo.currentText())
 
     def on_mode_changed(self, idx):
-        mode = self.mode_combo.currentText()
-        self.module.mode = mode # Update mode in module
+        # 0: Real-time, 1: Frequency Sweep, 2: Amplitude Sweep
+        modes = ["Real-time", "Frequency Sweep", "Amplitude Sweep"]
+        if 0 <= idx < len(modes):
+            self.module.mode = modes[idx]
         
-        if mode == "Real-time":
+        if idx == 0: # Real-time
             self.controls_stack.setCurrentIndex(0)
             self.meters_group.setVisible(True)
             self.set_meters_mode('thd')
@@ -662,7 +664,7 @@ class DistortionAnalyzerWidget(QWidget):
             self.meters_group.setVisible(False)
             self.tabs.setCurrentIndex(2)
             
-            if mode == "Frequency Sweep":
+            if idx == 1: # Frequency Sweep
                 self.sweep_start_spin.setSuffix(" Hz")
                 self.sweep_end_spin.setSuffix(" Hz")
                 self.sweep_start_spin.setValue(20)
@@ -788,12 +790,12 @@ class DistortionAnalyzerWidget(QWidget):
         self.module.gen_amplitude = amp_linear
 
     def on_action(self, checked):
-        mode = self.mode_combo.currentText()
-        if mode == "Real-time":
+        idx = self.mode_combo.currentIndex()
+        if idx == 0: # Real-time
             self.on_toggle_realtime(checked)
         else:
             if checked:
-                self.start_sweep(mode)
+                self.start_sweep(idx)
             else:
                 self.stop_sweep()
 
@@ -831,13 +833,13 @@ class DistortionAnalyzerWidget(QWidget):
             self.tdn_meter_widget.setVisible(False)
 
 
-    def start_sweep(self, mode):
+    def start_sweep(self, mode_idx):
         self.module.start_analysis() # Ensure audio is running
         self.action_btn.setText(tr("Stop Sweep"))
         self.module.sweep_results = []
         self.sweep_curve.setData([], [])
         
-        sweep_type = 'frequency' if mode == "Frequency Sweep" else 'amplitude'
+        sweep_type = 'frequency' if mode_idx == 1 else 'amplitude'
         start = self.sweep_start_spin.value()
         end = self.sweep_end_spin.value()
         steps = self.sweep_steps_spin.value()
@@ -869,11 +871,7 @@ class DistortionAnalyzerWidget(QWidget):
         x_data = [r['sweep_param'] for r in self.module.sweep_results]
         y_data = [r['thdn_db'] for r in self.module.sweep_results]
         
-        mode = self.mode_combo.currentText()
-        if mode == "Frequency Sweep":
-            x_plot = np.array(x_data)
-        else:
-            x_plot = np.array(x_data)
+        x_plot = np.array(x_data)
             
         self.sweep_curve.setData(x_plot, y_data)
 
