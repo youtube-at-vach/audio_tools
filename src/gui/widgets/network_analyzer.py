@@ -649,19 +649,22 @@ class NetworkAnalyzerWidget(QWidget):
         self.phase_curve = self.phase_plot.plot(pen='y')
         
         # Group Delay Axis (Right)
-        self.gd_layout = self.phase_plot.plotItem.layout
         self.gd_axis = pg.AxisItem('right')
         self.gd_axis.setLabel('Group Delay', units='ms')
-        self.gd_layout.addItem(self.gd_axis, 2, 2)
+        self.phase_plot.plotItem.layout.addItem(self.gd_axis, 2, 3)
+        
         self.gd_view = pg.ViewBox()
         self.gd_axis.linkToView(self.gd_view)
-        self.gd_view.setXLink(self.phase_plot.plotItem)
         self.phase_plot.plotItem.scene().addItem(self.gd_view)
+        self.gd_view.setXLink(self.phase_plot.plotItem.vb)
+        
+        # Disable log mode for the overlay view (we will manually log the data)
+        self.gd_view.setLogMode(False, False)
         
         self.gd_curve = pg.PlotCurveItem(pen='r')
         self.gd_view.addItem(self.gd_curve)
         
-        # Handle resizing
+        # 同期処理
         self.phase_plot.plotItem.vb.sigResized.connect(self.update_gd_views)
         
         plot_layout.addWidget(self.phase_plot)
@@ -833,7 +836,6 @@ class NetworkAnalyzerWidget(QWidget):
     def update_gd_views(self):
         # Keep the GD view aligned with the main view
         self.gd_view.setGeometry(self.phase_plot.plotItem.vb.sceneBoundingRect())
-        self.gd_view.linkedViewChanged(self.phase_plot.plotItem.vb, self.gd_view.XAxis)
 
     def update_plot(self, freq, mag, phase):
         self.freqs.append(freq)
@@ -930,7 +932,6 @@ class NetworkAnalyzerWidget(QWidget):
         # Group Delay Calculation
         if self.gd_check.isChecked() and len(self.freqs) > 1:
             self.gd_axis.show()
-            self.gd_view.show()
             
             # Unwrap phase (in degrees) -> radians
             # Note: phases_to_plot might be wrapped to [-180, 180] or relative
@@ -968,12 +969,13 @@ class NetworkAnalyzerWidget(QWidget):
             # Plot against mid-points of freqs
             freq_mids = (np.array(self.freqs)[:-1] + np.array(self.freqs)[1:]) / 2
             
-            self.gd_curve.setData(freq_mids, group_delay_ms)
-            self.gd_view.setLogMode(x=True, y=False)
+            # Manually log X for the overlay view
+            log_freq_mids = np.log10(freq_mids)
+            
+            self.gd_curve.setData(log_freq_mids, group_delay_ms)
             self.gd_view.enableAutoRange(axis=pg.ViewBox.YAxis, enable=True)
             self.update_gd_views()
             
         else:
             self.gd_axis.hide()
-            self.gd_view.hide()
             self.gd_curve.setData([], [])
