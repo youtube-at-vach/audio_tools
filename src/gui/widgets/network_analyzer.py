@@ -10,6 +10,7 @@ import threading
 
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
+from src.core.localization import tr
 
 class NetworkAnalyzerSignals(QObject):
     update_plot = pyqtSignal(float, float, float) # freq, mag_db, phase_deg
@@ -512,42 +513,42 @@ class NetworkAnalyzerWidget(QWidget):
         layout = QHBoxLayout()
         
         # Controls
-        controls_group = QGroupBox("Settings")
+        controls_group = QGroupBox(tr("Settings"))
         controls_group.setFixedWidth(300)
         form = QFormLayout()
         
         # Mode
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["Stepped Sine", "Fast Chirp"])
+        self.mode_combo.addItems([tr("Stepped Sine"), tr("Fast Chirp")])
         self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
-        form.addRow("Sweep Mode:", self.mode_combo)
+        form.addRow(tr("Sweep Mode:"), self.mode_combo)
         
         # Routing
         self.out_combo = QComboBox()
-        self.out_combo.addItems(["Left", "Right", "Stereo"])
-        self.out_combo.setCurrentText("Stereo")
+        self.out_combo.addItems([tr("Left"), tr("Right"), tr("Stereo")])
+        self.out_combo.setCurrentText(tr("Stereo"))
         self.out_combo.currentTextChanged.connect(self.on_routing_changed)
-        form.addRow("Output Ch:", self.out_combo)
+        form.addRow(tr("Output Ch:"), self.out_combo)
         
         self.in_combo = QComboBox()
-        self.in_combo.addItems(["Left (Ch1)", "Right (Ch2)", "XFER (Ref=L, Meas=R)"])
-        self.in_combo.setCurrentText("Left (Ch1)")
+        self.in_combo.addItems([tr("Left (Ch1)"), tr("Right (Ch2)"), tr("XFER (Ref=L, Meas=R)")])
+        self.in_combo.setCurrentText(tr("Left (Ch1)"))
         self.in_combo.currentTextChanged.connect(self.on_routing_changed)
-        form.addRow("Input Mode:", self.in_combo)
+        form.addRow(tr("Input Mode:"), self.in_combo)
         
         # Freqs
         self.start_spin = QDoubleSpinBox()
         self.start_spin.setRange(10, 20000); self.start_spin.setValue(20)
         self.start_spin.valueChanged.connect(lambda v: setattr(self.module, 'start_freq', v))
-        form.addRow("Start Freq:", self.start_spin)
+        form.addRow(tr("Start Freq:"), self.start_spin)
         
         self.end_spin = QDoubleSpinBox()
         self.end_spin.setRange(10, 24000); self.end_spin.setValue(20000)
         self.end_spin.valueChanged.connect(lambda v: setattr(self.module, 'end_freq', v))
-        form.addRow("End Freq:", self.end_spin)
+        form.addRow(tr("End Freq:"), self.end_spin)
 
         # Limit Plot Freq
-        self.limit_check = QCheckBox("Limit Plot Freq")
+        self.limit_check = QCheckBox(tr("Limit Plot Freq"))
         self.limit_check.toggled.connect(self.refresh_plots)
         self.limit_spin = QDoubleSpinBox()
         self.limit_spin.setRange(10, 24000); self.limit_spin.setValue(20000)
@@ -561,13 +562,13 @@ class NetworkAnalyzerWidget(QWidget):
         self.steps_spin.setDecimals(0)
         self.steps_spin.setRange(1, 48); self.steps_spin.setValue(12)
         self.steps_spin.valueChanged.connect(lambda v: setattr(self.module, 'steps_per_octave', int(v)))
-        self.steps_label = QLabel("Steps/Octave:")
+        self.steps_label = QLabel(tr("Steps/Octave:"))
         form.addRow(self.steps_label, self.steps_spin)
         
         self.duration_spin = QDoubleSpinBox()
         self.duration_spin.setRange(0.1, 60.0); self.duration_spin.setValue(1.0)
         self.duration_spin.valueChanged.connect(lambda v: setattr(self.module, 'chirp_duration', v))
-        self.duration_label = QLabel("Duration (s):")
+        self.duration_label = QLabel(tr("Duration (s):"))
         form.addRow(self.duration_label, self.duration_spin)
         self.duration_label.hide(); self.duration_spin.hide()
         
@@ -582,53 +583,53 @@ class NetworkAnalyzerWidget(QWidget):
         amp_layout = QHBoxLayout()
         amp_layout.addWidget(self.amp_spin)
         amp_layout.addWidget(self.gen_unit_combo)
-        form.addRow("Amplitude:", amp_layout)
+        form.addRow(tr("Amplitude:"), amp_layout)
         
         self.avg_spin = QDoubleSpinBox()
         self.avg_spin.setDecimals(0)
         self.avg_spin.setRange(1, 10); self.avg_spin.setValue(1)
         self.avg_spin.valueChanged.connect(lambda v: setattr(self.module, 'num_averages', int(v)))
-        form.addRow("Averages:", self.avg_spin)
+        form.addRow(tr("Averages:"), self.avg_spin)
         
         self.smooth_combo = QComboBox()
-        self.smooth_combo.addItems(["Off", "Light", "Medium", "Heavy"])
+        self.smooth_combo.addItems([tr("Off"), tr("Light"), tr("Medium"), tr("Heavy")])
         self.smooth_combo.currentTextChanged.connect(self.refresh_plots)
-        form.addRow("Smoothing:", self.smooth_combo)
+        form.addRow(tr("Smoothing:"), self.smooth_combo)
         
         self.unit_combo = QComboBox()
         self.unit_combo.addItems(["dBFS", "dBV", "dBu", "Vrms", "Vpeak"])
         self.unit_combo.currentTextChanged.connect(self.refresh_plots)
-        form.addRow("Unit:", self.unit_combo)
+        form.addRow(tr("Unit:"), self.unit_combo)
         
-        self.lat_btn = QPushButton("Calibrate Latency")
+        self.lat_btn = QPushButton(tr("Calibrate Latency"))
         self.lat_btn.clicked.connect(self.calibrate)
         form.addRow(self.lat_btn)
-        self.lat_label = QLabel("Latency: 0.00 ms")
+        self.lat_label = QLabel(tr("Latency: 0.00 ms"))
         form.addRow(self.lat_label)
         
         controls_group.setLayout(form)
         
         # Calibration
-        cal_group = QGroupBox("Calibration")
+        cal_group = QGroupBox(tr("Calibration"))
         cal_layout = QFormLayout()
-        self.store_ref_btn = QPushButton("Store Reference")
+        self.store_ref_btn = QPushButton(tr("Store Reference"))
         self.store_ref_btn.clicked.connect(self.on_store_reference)
         cal_layout.addRow(self.store_ref_btn)
-        self.clear_ref_btn = QPushButton("Clear Reference")
+        self.clear_ref_btn = QPushButton(tr("Clear Reference"))
         self.clear_ref_btn.clicked.connect(self.on_clear_reference)
         cal_layout.addRow(self.clear_ref_btn)
-        self.apply_ref_check = QCheckBox("Apply Reference")
+        self.apply_ref_check = QCheckBox(tr("Apply Reference"))
         self.apply_ref_check.toggled.connect(self.on_apply_reference_changed)
         cal_layout.addRow(self.apply_ref_check)
         
-        self.gd_check = QCheckBox("Show Group Delay")
+        self.gd_check = QCheckBox(tr("Show Group Delay"))
         self.gd_check.toggled.connect(self.refresh_plots)
         cal_layout.addRow(self.gd_check)
         cal_group.setLayout(cal_layout)
         
         # Buttons
         btn_layout = QVBoxLayout()
-        self.start_btn = QPushButton("Start Sweep")
+        self.start_btn = QPushButton(tr("Start Sweep"))
         self.start_btn.setCheckable(True)
         self.start_btn.clicked.connect(self.on_start_stop)
         btn_layout.addWidget(self.start_btn)
@@ -644,24 +645,24 @@ class NetworkAnalyzerWidget(QWidget):
         
         # Plots
         plot_layout = QVBoxLayout()
-        self.mag_plot = pg.PlotWidget(title="Magnitude Response")
-        self.mag_plot.setLabel('left', 'Magnitude', units='dB')
-        self.mag_plot.setLabel('bottom', 'Frequency', units='Hz')
+        self.mag_plot = pg.PlotWidget(title=tr("Magnitude Response"))
+        self.mag_plot.setLabel('left', tr('Magnitude'), units='dB')
+        self.mag_plot.setLabel('bottom', tr('Frequency'), units='Hz')
         self.mag_plot.setLogMode(x=True, y=False)
         self.mag_plot.showGrid(x=True, y=True)
         self.mag_curve = self.mag_plot.plot(pen='g')
         plot_layout.addWidget(self.mag_plot)
         
-        self.phase_plot = pg.PlotWidget(title="Phase Response")
-        self.phase_plot.setLabel('left', 'Phase', units='deg')
-        self.phase_plot.setLabel('bottom', 'Frequency', units='Hz')
+        self.phase_plot = pg.PlotWidget(title=tr("Phase Response"))
+        self.phase_plot.setLabel('left', tr('Phase'), units='deg')
+        self.phase_plot.setLabel('bottom', tr('Frequency'), units='Hz')
         self.phase_plot.setLogMode(x=True, y=False)
         self.phase_plot.showGrid(x=True, y=True)
         self.phase_curve = self.phase_plot.plot(pen='y')
         
         # Group Delay Axis (Right)
         self.gd_axis = pg.AxisItem('right')
-        self.gd_axis.setLabel('Group Delay', units='ms')
+        self.gd_axis.setLabel(tr('Group Delay'), units='ms')
         self.phase_plot.plotItem.layout.addItem(self.gd_axis, 2, 3)
         
         self.gd_view = pg.ViewBox()
@@ -693,18 +694,18 @@ class NetworkAnalyzerWidget(QWidget):
             self.duration_label.show(); self.duration_spin.show()
 
     def on_routing_changed(self, val):
-        out_map = {"Left": "L", "Right": "R", "Stereo": "STEREO"}
-        in_map = {"Left (Ch1)": "L", "Right (Ch2)": "R", "XFER (Ref=L, Meas=R)": "XFER"}
+        out_map = {tr("Left"): "L", tr("Right"): "R", tr("Stereo"): "STEREO"}
+        in_map = {tr("Left (Ch1)"): "L", tr("Right (Ch2)"): "R", tr("XFER (Ref=L, Meas=R)"): "XFER"}
         
         self.module.output_channel = out_map.get(self.out_combo.currentText(), "STEREO")
         self.module.input_mode = in_map.get(self.in_combo.currentText(), "L")
         
         # Update UI hints
         if self.module.input_mode == 'XFER':
-            self.mag_plot.setTitle("Transfer Function (Meas / Ref)")
+            self.mag_plot.setTitle(tr("Transfer Function (Meas / Ref)"))
             self.unit_combo.setEnabled(False) # XFER is always relative dB
         else:
-            self.mag_plot.setTitle("Magnitude Response")
+            self.mag_plot.setTitle(tr("Magnitude Response"))
             self.unit_combo.setEnabled(True)
 
     def on_gen_unit_changed(self, unit):
@@ -798,17 +799,17 @@ class NetworkAnalyzerWidget(QWidget):
 
     def calibrate(self):
         self.lat_btn.setEnabled(False)
-        self.lat_label.setText("Calibrating...")
+        self.lat_label.setText(tr("Calibrating..."))
         self.module.start_calibration()
 
     def on_latency_result(self, lat):
-        self.lat_label.setText(f"Latency: {lat*1000:.2f} ms")
+        self.lat_label.setText(tr("Latency: {0:.2f} ms").format(lat*1000))
         self.lat_btn.setEnabled(True)
     
     def on_error(self, msg):
         print(f"Error: {msg}")
         self.start_btn.setChecked(False)
-        self.start_btn.setText("Start Sweep")
+        self.start_btn.setText(tr("Start Sweep"))
 
     def on_store_reference(self):
         if not self.freqs: return
@@ -834,15 +835,15 @@ class NetworkAnalyzerWidget(QWidget):
             self.mag_curve.setData([], [])
             self.phase_curve.setData([], [])
             self.gd_curve.setData([], [])
-            self.start_btn.setText("Stop Sweep")
+            self.start_btn.setText(tr("Stop Sweep"))
             self.module.start_sweep()
         else:
             self.module.stop_sweep()
-            self.start_btn.setText("Start Sweep")
+            self.start_btn.setText(tr("Start Sweep"))
 
     def on_sweep_finished(self):
         self.start_btn.setChecked(False)
-        self.start_btn.setText("Start Sweep")
+        self.start_btn.setText(tr("Start Sweep"))
 
     def update_gd_views(self):
         # Keep the GD view aligned with the main view
@@ -881,7 +882,7 @@ class NetworkAnalyzerWidget(QWidget):
         if self.module.input_mode == 'XFER':
             # XFER is already in dB relative
             y_values = mags_to_plot
-            self.mag_plot.setLabel('left', 'Gain', units='dB')
+            self.mag_plot.setLabel('left', tr('Gain'), units='dB')
         else:
             # Standard conversion logic (same as before)
             mags_linear = 10 ** (mags_to_plot / 20)
@@ -892,24 +893,24 @@ class NetworkAnalyzerWidget(QWidget):
                 
             if unit == "dBFS":
                 y_values = mags_to_plot
-                self.mag_plot.setLabel('left', 'Magnitude', units='dBFS')
+                self.mag_plot.setLabel('left', tr('Magnitude'), units='dBFS')
             elif unit == "dBV":
                 v_peak = mags_linear * input_sensitivity
                 v_rms = v_peak / np.sqrt(2)
                 y_values = 20 * np.log10(v_rms + 1e-12)
-                self.mag_plot.setLabel('left', 'Magnitude', units='dBV')
+                self.mag_plot.setLabel('left', tr('Magnitude'), units='dBV')
             elif unit == "dBu":
                 v_peak = mags_linear * input_sensitivity
                 v_rms = v_peak / np.sqrt(2)
                 y_values = 20 * np.log10((v_rms + 1e-12) / 0.7746)
-                self.mag_plot.setLabel('left', 'Magnitude', units='dBu')
+                self.mag_plot.setLabel('left', tr('Magnitude'), units='dBu')
             elif unit == "Vrms":
                 v_peak = mags_linear * input_sensitivity
                 y_values = v_peak / np.sqrt(2)
-                self.mag_plot.setLabel('left', 'Magnitude', units='V')
+                self.mag_plot.setLabel('left', tr('Magnitude'), units='V')
             elif unit == "Vpeak":
                 y_values = mags_linear * input_sensitivity
-                self.mag_plot.setLabel('left', 'Magnitude', units='V')
+                self.mag_plot.setLabel('left', tr('Magnitude'), units='V')
             else:
                 y_values = mags_to_plot
         
