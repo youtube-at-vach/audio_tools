@@ -11,6 +11,7 @@ from PyQt6.QtGui import QFont
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 from src.core.analysis import AudioCalc
+from src.core.localization import tr
 
 class FrequencyCounter(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -260,7 +261,7 @@ class FrequencyCalibrationDialog(QDialog):
     def init_ui(self):
         layout = QVBoxLayout()
         
-        layout.addWidget(QLabel("<b>Step 1:</b> Connect a known reference signal."))
+        layout.addWidget(QLabel(tr("<b>Step 1:</b> Connect a known reference signal.")))
         
         # Reference Input
         form = QFormLayout()
@@ -268,20 +269,20 @@ class FrequencyCalibrationDialog(QDialog):
         self.ref_spin.setRange(0, 100000000)
         self.ref_spin.setDecimals(6)
         self.ref_spin.setValue(1000.0)
-        form.addRow("Reference Frequency (Hz):", self.ref_spin)
+        form.addRow(tr("Reference Frequency (Hz):"), self.ref_spin)
         layout.addLayout(form)
         
-        layout.addWidget(QLabel("<b>Step 2:</b> Measure current frequency."))
-        self.status_label = QLabel("Status: Idle")
+        layout.addWidget(QLabel(tr("<b>Step 2:</b> Measure current frequency.")))
+        self.status_label = QLabel(tr("Status: Idle"))
         layout.addWidget(self.status_label)
         
-        self.measure_btn = QPushButton("Measure & Calibrate")
+        self.measure_btn = QPushButton(tr("Measure & Calibrate"))
         self.measure_btn.clicked.connect(self.start_measurement)
         layout.addWidget(self.measure_btn)
         
         # Current Factor
         curr_factor = self.module.audio_engine.calibration.frequency_calibration
-        layout.addWidget(QLabel(f"Current Calibration Factor: {curr_factor:.8f}"))
+        layout.addWidget(QLabel(tr("Current Calibration Factor: {0:.8f}").format(curr_factor)))
         
         self.setLayout(layout)
         
@@ -289,7 +290,7 @@ class FrequencyCalibrationDialog(QDialog):
         self.measurements = []
         self.is_measuring = True
         self.measure_btn.setEnabled(False)
-        self.status_label.setText("Status: Measuring... (0/10)")
+        self.status_label.setText(tr("Status: Measuring... (0/10)"))
         self.timer.start(int(self.module.update_interval_ms))
         
     def on_measure_tick(self):
@@ -313,7 +314,7 @@ class FrequencyCalibrationDialog(QDialog):
         raw_freq = calibrated_freq / current_factor
         self.measurements.append(raw_freq)
         
-        self.status_label.setText(f"Status: Measuring... ({len(self.measurements)}/{self.target_samples})")
+        self.status_label.setText(tr("Status: Measuring... ({0}/{1})").format(len(self.measurements), self.target_samples))
         
         if len(self.measurements) >= self.target_samples:
             self.finish_calibration()
@@ -327,24 +328,21 @@ class FrequencyCalibrationDialog(QDialog):
         target = self.ref_spin.value()
         
         if avg_raw < 1e-6:
-            QMessageBox.warning(self, "Error", "Measured frequency is too low.")
+            QMessageBox.warning(self, tr("Error"), tr("Measured frequency is too low."))
             return
             
         new_factor = target / avg_raw
         
-        ret = QMessageBox.question(self, "Confirm Calibration", 
-                                   f"Average Raw Freq: {avg_raw:.6f} Hz\n"
-                                   f"Target Freq: {target:.6f} Hz\n"
-                                   f"New Factor: {new_factor:.8f}\n\n"
-                                   "Apply this calibration?",
+        ret = QMessageBox.question(self, tr("Confirm Calibration"), 
+                                   tr("Average Raw Freq: {0:.6f} Hz\nTarget Freq: {1:.6f} Hz\nNew Factor: {2:.8f}\n\nApply this calibration?").format(avg_raw, target, new_factor),
                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
                                    
         if ret == QMessageBox.StandardButton.Yes:
             self.module.audio_engine.calibration.set_frequency_calibration(new_factor)
-            QMessageBox.information(self, "Success", "Calibration applied.")
+            QMessageBox.information(self, tr("Success"), tr("Calibration applied."))
             self.accept()
         else:
-            self.status_label.setText("Status: Cancelled")
+            self.status_label.setText(tr("Status: Cancelled"))
 
 class FrequencyCounterWidget(QWidget):
     def __init__(self, module: FrequencyCounter):
@@ -402,7 +400,7 @@ class FrequencyCounterWidget(QWidget):
         
         # Gate
         gate_layout = QHBoxLayout()
-        gate_layout.addWidget(QLabel("Gate (dB):"))
+        gate_layout.addWidget(QLabel(tr("Gate (dB):")))
         self.gate_spin = QDoubleSpinBox()
         self.gate_spin.setRange(-120, 0)
         self.gate_spin.setValue(self.module.gate_threshold_db)
@@ -412,35 +410,35 @@ class FrequencyCounterWidget(QWidget):
 
         # Channel
         ch_layout = QHBoxLayout()
-        ch_layout.addWidget(QLabel("Channel:"))
+        ch_layout.addWidget(QLabel(tr("Channel:")))
         self.ch_combo = QComboBox()
-        self.ch_combo.addItems(["Ch 1", "Ch 2"])
+        self.ch_combo.addItems([tr("Ch 1"), tr("Ch 2")])
         self.ch_combo.currentIndexChanged.connect(lambda idx: setattr(self.module, 'selected_channel', idx))
         ch_layout.addWidget(self.ch_combo)
         controls_layout.addLayout(ch_layout)
         
         # Speed
         speed_layout = QHBoxLayout()
-        speed_layout.addWidget(QLabel("Update Rate:"))
+        speed_layout.addWidget(QLabel(tr("Update Rate:")))
         self.speed_combo = QComboBox()
-        self.speed_combo.addItem("Fast (10Hz)", 100)
-        self.speed_combo.addItem("Slow (2Hz)", 500)
-        self.speed_combo.addItem("1 Sec (1Hz)", 1000)
-        self.speed_combo.addItem("2 Sec (0.5Hz)", 2000)
-        self.speed_combo.addItem("5 Sec (0.2Hz)", 5000)
-        self.speed_combo.addItem("10 Sec (0.1Hz)", 10000)
+        self.speed_combo.addItem(tr("Fast (10Hz)"), 100)
+        self.speed_combo.addItem(tr("Slow (2Hz)"), 500)
+        self.speed_combo.addItem(tr("1 Sec (1Hz)"), 1000)
+        self.speed_combo.addItem(tr("2 Sec (0.5Hz)"), 2000)
+        self.speed_combo.addItem(tr("5 Sec (0.2Hz)"), 5000)
+        self.speed_combo.addItem(tr("10 Sec (0.1Hz)"), 10000)
         self.speed_combo.currentIndexChanged.connect(self.on_speed_changed)
         speed_layout.addWidget(self.speed_combo)
         controls_layout.addLayout(speed_layout)
         
         # Start/Stop
-        self.run_btn = QPushButton("Start")
+        self.run_btn = QPushButton(tr("Start"))
         self.run_btn.setCheckable(True)
         self.run_btn.clicked.connect(self.on_run_toggle)
         controls_layout.addWidget(self.run_btn)
         
         # Calibration
-        self.cal_btn = QPushButton("Calibrate")
+        self.cal_btn = QPushButton(tr("Calibrate"))
         self.cal_btn.clicked.connect(self.open_calibration)
         controls_layout.addWidget(self.cal_btn)
         
@@ -452,27 +450,27 @@ class FrequencyCounterWidget(QWidget):
         layout.addWidget(self.tab_widget)
         
         # Tab 1: Frequency Drift
-        self.plot_widget = pg.PlotWidget(title="Frequency Drift")
-        self.plot_widget.setLabel('left', 'Frequency', units='Hz')
-        self.plot_widget.setLabel('bottom', 'Time', units='s')
+        self.plot_widget = pg.PlotWidget(title=tr("Frequency Drift"))
+        self.plot_widget.setLabel('left', tr('Frequency'), units='Hz')
+        self.plot_widget.setLabel('bottom', tr('Time'), units='s')
         self.plot_widget.showGrid(x=True, y=True)
         self.curve = self.plot_widget.plot(pen='y')
-        self.tab_widget.addTab(self.plot_widget, "Frequency Drift")
+        self.tab_widget.addTab(self.plot_widget, tr("Frequency Drift"))
         
         # Tab 2: Allan Deviation
-        self.allan_plot = pg.PlotWidget(title="Allan Deviation")
-        self.allan_plot.setLabel('left', 'Sigma_y(tau)')
-        self.allan_plot.setLabel('bottom', 'Tau', units='s')
+        self.allan_plot = pg.PlotWidget(title=tr("Allan Deviation"))
+        self.allan_plot.setLabel('left', tr('Sigma_y(tau)'))
+        self.allan_plot.setLabel('bottom', tr('Tau'), units='s')
         self.allan_plot.showGrid(x=True, y=True)
         self.allan_plot.setLogMode(x=True, y=True)
         self.allan_curve = self.allan_plot.plot(pen='c', symbol='o', symbolSize=5)
-        self.tab_widget.addTab(self.allan_plot, "Allan Deviation")
+        self.tab_widget.addTab(self.allan_plot, tr("Allan Deviation"))
         
         self.setLayout(layout)
 
     def open_calibration(self):
         if not self.module.is_running:
-            QMessageBox.warning(self, "Warning", "Please start the counter first.")
+            QMessageBox.warning(self, tr("Warning"), tr("Please start the counter first."))
             return
             
         dlg = FrequencyCalibrationDialog(self.module, self)
@@ -490,12 +488,12 @@ class FrequencyCounterWidget(QWidget):
         if checked:
             self.module.start_analysis()
             self.timer.start()
-            self.run_btn.setText("Stop")
+            self.run_btn.setText(tr("Stop"))
             self.module.start_time = time.time()
         else:
             self.module.stop_analysis()
             self.timer.stop()
-            self.run_btn.setText("Start")
+            self.run_btn.setText(tr("Start"))
 
     def update_display(self):
         freq = self.module.process()
@@ -514,8 +512,8 @@ class FrequencyCounterWidget(QWidget):
             
             # Update Stats
             self.module.calculate_stats()
-            self.std_label.setText(f"Std Dev: {self.module.std_dev:.5f} Hz")
-            self.allan_label.setText(f"Allan Dev: {self.module.allan_deviation:.5f} Hz")
+            self.std_label.setText(tr("Std Dev: {0:.5f} Hz").format(self.module.std_dev))
+            self.allan_label.setText(tr("Allan Dev: {0:.5f} Hz").format(self.module.allan_deviation))
             
             # Update Plots based on visibility
             current_tab = self.tab_widget.currentIndex()
@@ -535,5 +533,5 @@ class FrequencyCounterWidget(QWidget):
                         self.allan_curve.setData(taus, devs)
         else:
             self.freq_label.setText("---.----- Hz")
-            self.std_label.setText("Std Dev: -- Hz")
-            self.allan_label.setText("Allan Dev: -- Hz")
+            self.std_label.setText(tr("Std Dev: -- Hz"))
+            self.allan_label.setText(tr("Allan Dev: -- Hz"))
