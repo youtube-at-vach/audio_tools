@@ -706,11 +706,11 @@ class LockInAmplifierWidget(QWidget):
         if checked:
             self.module.start_analysis()
             self.timer.start()
-            self.toggle_btn.setText("Stop")
+            self.toggle_btn.setText(tr("Stop"))
         else:
             self.module.stop_analysis()
             self.timer.stop()
-            self.toggle_btn.setText("Start Output & Measure")
+            self.toggle_btn.setText(tr("Start Output & Measure"))
 
     def on_freq_changed(self, val):
         self.module.gen_frequency = val
@@ -915,19 +915,19 @@ class LockInAmplifierWidget(QWidget):
         coherence = self.module.ref_coherence
         
         if coherence >= 0.95:
-            self.ref_status_label.setText(f"Locked ({ref_freq:.1f} Hz, Coh: {coherence:.2f})")
+            self.ref_status_label.setText(tr("Locked ({0:.1f} Hz, Coh: {1:.2f})").format(ref_freq, coherence))
             self.ref_status_label.setStyleSheet("font-weight: bold; color: #00ff00;")
         elif coherence >= 0.8:
-            self.ref_status_label.setText(f"Unstable ({ref_freq:.1f} Hz, Coh: {coherence:.2f})")
+            self.ref_status_label.setText(tr("Unstable ({0:.1f} Hz, Coh: {1:.2f})").format(ref_freq, coherence))
             self.ref_status_label.setStyleSheet("font-weight: bold; color: #ffff00;")
         else:
-            self.ref_status_label.setText(f"Unlocked ({ref_freq:.1f} Hz, Coh: {coherence:.2f})")
+            self.ref_status_label.setText(tr("Unlocked ({0:.1f} Hz, Coh: {1:.2f})").format(ref_freq, coherence))
             self.ref_status_label.setStyleSheet("font-weight: bold; color: #ff0000;")
 
     def on_fra_start(self):
         if self.fra_worker is not None and self.fra_worker.isRunning():
             self.fra_worker.cancel()
-            self.fra_start_btn.setText("Stopping...")
+            self.fra_start_btn.setText(tr("Stopping..."))
             self.fra_start_btn.setEnabled(False)
             # Do not wait() here, let the finished signal handle cleanup
             return
@@ -978,7 +978,7 @@ class LockInAmplifierWidget(QWidget):
         self.fra_worker.finished_sweep.connect(self.on_fra_finished)
         self.fra_worker.start()
         
-        self.fra_start_btn.setText("Stop Sweep")
+        self.fra_start_btn.setText(tr("Stop Sweep"))
         
     def on_fra_result(self, f, mag, phase):
         self.fra_freqs.append(f)
@@ -1037,7 +1037,7 @@ class LockInAmplifierWidget(QWidget):
         self.fra_curve_phase.setData(self.fra_log_freqs, self.fra_phases)
 
     def on_fra_finished(self):
-        self.fra_start_btn.setText("Start Sweep")
+        self.fra_start_btn.setText(tr("Start Sweep"))
         self.fra_start_btn.setEnabled(True)
         self.module.stop_analysis() # Stop generator
         
@@ -1046,7 +1046,7 @@ class LockInAmplifierWidget(QWidget):
     def on_cal_start(self):
         if self.cal_worker is not None and self.cal_worker.isRunning():
             self.cal_worker.cancel()
-            self.cal_start_btn.setText("Stopping...")
+            self.cal_start_btn.setText(tr("Stopping..."))
             self.cal_start_btn.setEnabled(False)
             return
             
@@ -1080,7 +1080,7 @@ class LockInAmplifierWidget(QWidget):
         self.cal_worker.finished_sweep.connect(self.on_cal_finished)
         self.cal_worker.start()
         
-        self.cal_start_btn.setText("Stop Calibration")
+        self.cal_start_btn.setText(tr("Stop Calibration"))
         self.cal_save_btn.setEnabled(False)
         
     def on_cal_result(self, f, mag, phase):
@@ -1102,7 +1102,7 @@ class LockInAmplifierWidget(QWidget):
         self.cal_curve_phase.setData(log_freqs, phases)
         
     def on_cal_finished(self):
-        self.cal_start_btn.setText("Run Relative Map Sweep")
+        self.cal_start_btn.setText(tr("Run Relative Map Sweep"))
         self.cal_start_btn.setEnabled(True)
         self.cal_save_btn.setEnabled(True)
         self.module.stop_analysis()
@@ -1135,14 +1135,14 @@ class LockInAmplifierWidget(QWidget):
         self.cal_curve_mag.setData(log_freqs, norm_mags)
         self.cal_curve_phase.setData(log_freqs, norm_phases)
         
-        QMessageBox.information(self, "Calibration Complete", 
-                              f"Sweep completed.\nMap normalized to 1kHz (Ref: {ref_mag:.2f} dB, {ref_phase:.2f} deg).\n"
+        QMessageBox.information(self, tr("Calibration Complete"), 
+                              tr("Sweep completed.\nMap normalized to 1kHz (Ref: {0:.2f} dB, {1:.2f} deg).\n"
                               "This map captures RELATIVE frequency response.\n"
-                              "Use 'Absolute Gain Calibration' to fix the absolute level.")
+                              "Use 'Absolute Gain Calibration' to fix the absolute level.").format(ref_mag, ref_phase))
 
     def on_abs_cal_click(self):
         if not self.module.is_running:
-            QMessageBox.warning(self, "Error", "Please start the measurement first (Manual Control -> Start).")
+            QMessageBox.warning(self, tr("Error"), tr("Please start the measurement first (Manual Control -> Start)."))
             return
             
         # Get Current Measurement (Uncorrected or Corrected? Should be Uncorrected for calculating offset?)
@@ -1179,7 +1179,7 @@ class LockInAmplifierWidget(QWidget):
         # Let's use the current magnitude from module (which is linear 0-1 FS).
         current_mag_linear = self.module.current_magnitude
         if current_mag_linear <= 0:
-            QMessageBox.warning(self, "Error", "Signal too low for calibration.")
+            QMessageBox.warning(self, tr("Error"), tr("Signal too low for calibration."))
             return
             
         current_mag_dbfs = 20 * np.log10(current_mag_linear + 1e-12)
@@ -1253,8 +1253,8 @@ class LockInAmplifierWidget(QWidget):
         # We need the Map value at current frequency.
         
         if not self.module.apply_calibration:
-            ret = QMessageBox.question(self, "Enable Calibration?", 
-                                     "Calibration is currently disabled. To calibrate absolute gain correctly with the frequency map, we should enable calibration first.\n\nEnable and proceed?",
+            ret = QMessageBox.question(self, tr("Enable Calibration?"), 
+                                     tr("Calibration is currently disabled. To calibrate absolute gain correctly with the frequency map, we should enable calibration first.\n\nEnable and proceed?"),
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if ret == QMessageBox.StandardButton.Yes:
                 self.cal_apply_check.setChecked(True)
@@ -1278,26 +1278,26 @@ class LockInAmplifierWidget(QWidget):
         new_offset = old_offset + diff
         
         self.module.audio_engine.calibration.set_lockin_gain_offset(new_offset)
-        self.abs_cal_status.setText(f"Current Offset: {new_offset:.3f} dB")
+        self.abs_cal_status.setText(tr("Current Offset: {0:.3f} dB").format(new_offset))
         
-        QMessageBox.information(self, "Success", f"Absolute Gain Calibrated.\nOffset adjusted by {diff:+.3f} dB.\nNew Offset: {new_offset:.3f} dB")
+        QMessageBox.information(self, tr("Success"), tr("Absolute Gain Calibrated.\nOffset adjusted by {0:+.3f} dB.\nNew Offset: {1:.3f} dB").format(diff, new_offset))
         
     def on_cal_save(self):
         if not self.cal_data:
             return
             
-        path, _ = QFileDialog.getSaveFileName(self, "Save Calibration Map", "", "JSON Files (*.json)")
+        path, _ = QFileDialog.getSaveFileName(self, tr("Save Calibration Map"), "", tr("JSON Files (*.json)"))
         if path:
             if self.module.audio_engine.calibration.save_frequency_map(path, self.cal_data):
-                QMessageBox.information(self, "Success", "Calibration map saved successfully.")
+                QMessageBox.information(self, tr("Success"), tr("Calibration map saved successfully."))
             else:
-                QMessageBox.critical(self, "Error", "Failed to save calibration map.")
+                QMessageBox.critical(self, tr("Error"), tr("Failed to save calibration map."))
                 
     def on_cal_load(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Load Calibration Map", "", "JSON Files (*.json)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("Load Calibration Map"), "", tr("JSON Files (*.json)"))
         if path:
             if self.module.audio_engine.calibration.load_frequency_map(path):
-                QMessageBox.information(self, "Success", "Calibration map loaded successfully.")
+                QMessageBox.information(self, tr("Success"), tr("Calibration map loaded successfully."))
                 # Update plot with loaded data
                 self.cal_data = self.module.audio_engine.calibration.frequency_map
                 freqs = [x[0] for x in self.cal_data]
@@ -1307,7 +1307,7 @@ class LockInAmplifierWidget(QWidget):
                 self.cal_curve_mag.setData(log_freqs, mags)
                 self.cal_curve_phase.setData(log_freqs, phases)
             else:
-                QMessageBox.critical(self, "Error", "Failed to load calibration map.")
+                QMessageBox.critical(self, tr("Error"), tr("Failed to load calibration map."))
 
     def on_cal_apply_toggled(self, checked):
         self.module.apply_calibration = checked
