@@ -35,7 +35,7 @@ jobs:
     - name: Build with PyInstaller
       run: |
         # Note: Windows uses ; as separator for add-data
-        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.ico --add-data "src;src" --exclude-module matplotlib --exclude-module scipy.cluster --exclude-module scipy.interpolate --exclude-module scipy.io --exclude-module scipy.misc --exclude-module scipy.ndimage --exclude-module scipy.odr --exclude-module scipy.spatial --exclude-module scipy.stats --collect-all backports --collect-all soundfile main_gui.py
+        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.ico --add-data "src;src" --exclude-module matplotlib --exclude-module scipy.cluster --exclude-module scipy.interpolate --exclude-module scipy.io --exclude-module scipy.misc --exclude-module scipy.ndimage --exclude-module scipy.odr --exclude-module scipy.stats --collect-all backports --collect-all soundfile main_gui.py
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
