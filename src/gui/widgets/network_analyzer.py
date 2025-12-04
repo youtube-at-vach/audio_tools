@@ -545,6 +545,17 @@ class NetworkAnalyzerWidget(QWidget):
         self.end_spin.setRange(10, 24000); self.end_spin.setValue(20000)
         self.end_spin.valueChanged.connect(lambda v: setattr(self.module, 'end_freq', v))
         form.addRow("End Freq:", self.end_spin)
+
+        # Limit Plot Freq
+        self.limit_check = QCheckBox("Limit Plot Freq")
+        self.limit_check.toggled.connect(self.refresh_plots)
+        self.limit_spin = QDoubleSpinBox()
+        self.limit_spin.setRange(10, 24000); self.limit_spin.setValue(20000)
+        self.limit_spin.valueChanged.connect(self.refresh_plots)
+        limit_layout = QHBoxLayout()
+        limit_layout.addWidget(self.limit_check)
+        limit_layout.addWidget(self.limit_spin)
+        form.addRow(limit_layout)
         
         self.steps_spin = QDoubleSpinBox() 
         self.steps_spin.setDecimals(0)
@@ -849,8 +860,23 @@ class NetworkAnalyzerWidget(QWidget):
         smooth_mode = self.smooth_combo.currentText()
         unit = self.unit_combo.currentText()
         
-        mags_to_plot = np.array(self.mags)
-        phases_to_plot = np.array(self.phases)
+        # Filter data if limit is enabled
+        freqs_arr = np.array(self.freqs)
+        mags_arr = np.array(self.mags)
+        phases_arr = np.array(self.phases)
+        
+        if self.limit_check.isChecked():
+            limit = self.limit_spin.value()
+            mask = freqs_arr <= limit
+            freqs_to_plot = freqs_arr[mask]
+            mags_to_plot = mags_arr[mask]
+            phases_to_plot = phases_arr[mask]
+        else:
+            freqs_to_plot = freqs_arr
+            mags_to_plot = mags_arr
+            phases_to_plot = phases_arr
+            
+        if len(freqs_to_plot) == 0: return
         
         if self.module.input_mode == 'XFER':
             # XFER is already in dB relative
@@ -891,7 +917,7 @@ class NetworkAnalyzerWidget(QWidget):
         if self.apply_ref_check.isChecked() and self.module.reference_trace is not None:
             ref = self.module.reference_trace
             if len(ref['freqs']) > 1:
-                interp_mags = np.interp(self.freqs, ref['freqs'], ref['mags'])
+                interp_mags = np.interp(freqs_to_plot, ref['freqs'], ref['mags'])
                 
                 # If XFER, just subtract dB
                 if self.module.input_mode == 'XFER':
@@ -921,16 +947,16 @@ class NetworkAnalyzerWidget(QWidget):
                         
             # Phase Subtraction
             if len(ref['phases']) > 1:
-                interp_phases = np.interp(self.freqs, ref['freqs'], ref['phases'])
+                interp_phases = np.interp(freqs_to_plot, ref['freqs'], ref['phases'])
                 phases_to_plot -= interp_phases
                 # Wrap to [-180, 180]
                 phases_to_plot = (phases_to_plot + 180) % 360 - 180
 
-        self.mag_curve.setData(self.freqs, y_values)
-        self.phase_curve.setData(self.freqs, phases_to_plot)
+        self.mag_curve.setData(freqs_to_plot, y_values)
+        self.phase_curve.setData(freqs_to_plot, phases_to_plot)
         
         # Group Delay Calculation
-        if self.gd_check.isChecked() and len(self.freqs) > 1:
+        if self.gd_check.isChecked() and len(freqs_to_plot) > 1:
             self.gd_axis.show()
             
             # Unwrap phase (in degrees) -> radians
@@ -942,7 +968,21 @@ class NetworkAnalyzerWidget(QWidget):
             # So we need to unwrap here.
             
             # Use the raw phases from self.phases, not the potentially modified phases_to_plot
-            raw_phases_deg = np.array(self.phases)
+            # But we need to filter them too if we are filtering
+            # Actually phases_to_plot IS filtered above.
+            # But wait, the original code used self.phases (raw) here.
+            # If we want raw phases but filtered, we should use the filtered raw phases.
+            # Let's re-extract raw filtered phases if needed, or just use phases_to_plot if that's what we want.
+            # The comment says "Use the raw phases from self.phases".
+            # So we should use the filtered version of self.phases.
+            # We already have phases_to_plot which is filtered self.phases (before ref subtraction).
+            # Wait, phases_to_plot is modified by ref subtraction in lines 925.
+            # So we need a clean filtered raw phase.
+            
+            if self.limit_check.isChecked():
+                raw_phases_deg = phases_arr[mask]
+            else:
+                raw_phases_deg = phases_arr
             
             # If reference is applied, we should probably calculate GD of the *corrected* phase?
             # Yes, Group Delay of the system as displayed.
@@ -958,7 +998,7 @@ class NetworkAnalyzerWidget(QWidget):
             
             # Calculate derivative
             d_phi = np.diff(phases_unwrapped)
-            d_freq = np.diff(self.freqs)
+            d_freq = np.diff(freqs_to_plot)
             
             # Avoid div by zero
             d_freq[d_freq == 0] = 1e-12
@@ -967,7 +1007,7 @@ class NetworkAnalyzerWidget(QWidget):
             group_delay_ms = group_delay_sec * 1000.0
             
             # Plot against mid-points of freqs
-            freq_mids = (np.array(self.freqs)[:-1] + np.array(self.freqs)[1:]) / 2
+            freq_mids = (freqs_to_plot[:-1] + freqs_to_plot[1:]) / 2
             
             # Manually log X for the overlay view
             log_freq_mids = np.log10(freq_mids)
