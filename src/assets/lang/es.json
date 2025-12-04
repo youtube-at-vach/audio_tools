@@ -197,5 +197,19 @@
     "Enable Cursors": "Activar cursores",
     "Cutoff (Hz):": "Corte (Hz):",
     "Low (Hz):": "Bajo (Hz):",
-    "High (Hz):": "Alto (Hz):"
+    "High (Hz):": "Alto (Hz):",
+    "Measurement Mode": "Modo de medición",
+    "MIM (Multitone)": "MIM (Multitono)",
+    "SPDR": "SPDR",
+    "PIM": "PIM",
+    "Tone Count:": "Número de tonos:",
+    "Min Freq:": "Frec. mín:",
+    "Max Freq:": "Frec. máx:",
+    "Standard 1kHz Tone": "Tono estándar de 1kHz",
+    "Freq 1 (Hz):": "Frec 1 (Hz):",
+    "Freq 2 (Hz):": "Frec 2 (Hz):",
+    "Amplitude (Lin):": "Amplitud (Lin):",
+    "Start Measurement": "Iniciar medición",
+    "Stop Measurement": "Detener medición",
+    "Results": "Resultados"
 }

@@ -8,6 +8,7 @@ from PyQt6.QtCore import QTimer, Qt
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 from src.core.analysis import AudioCalc
+from src.core.localization import tr
 
 class AdvancedDistortionMeter(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -195,11 +196,11 @@ class AdvancedDistortionMeterWidget(QWidget):
         left_panel.setSpacing(10)
         
         # Mode
-        mode_group = QGroupBox("Measurement Mode")
+        mode_group = QGroupBox(tr("Measurement Mode"))
         mode_layout = QVBoxLayout()
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["MIM (Multitone)", "SPDR", "PIM"])
-        self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
+        self.mode_combo.addItems([tr("MIM (Multitone)"), tr("SPDR"), tr("PIM")])
+        self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         mode_layout.addWidget(self.mode_combo)
         mode_group.setLayout(mode_layout)
         left_panel.addWidget(mode_group)
@@ -215,19 +216,19 @@ class AdvancedDistortionMeterWidget(QWidget):
         self.mim_count_spin.setRange(3, 100)
         self.mim_count_spin.setValue(self.module.mim_tone_count)
         self.mim_count_spin.valueChanged.connect(lambda v: setattr(self.module, 'mim_tone_count', v))
-        mim_layout.addRow("Tone Count:", self.mim_count_spin)
+        mim_layout.addRow(tr("Tone Count:"), self.mim_count_spin)
         
         self.mim_min_spin = QDoubleSpinBox()
         self.mim_min_spin.setRange(10, 20000)
         self.mim_min_spin.setValue(self.module.mim_min_freq)
         self.mim_min_spin.valueChanged.connect(lambda v: setattr(self.module, 'mim_min_freq', v))
-        mim_layout.addRow("Min Freq:", self.mim_min_spin)
+        mim_layout.addRow(tr("Min Freq:"), self.mim_min_spin)
         
         self.mim_max_spin = QDoubleSpinBox()
         self.mim_max_spin.setRange(10, 24000)
         self.mim_max_spin.setValue(self.module.mim_max_freq)
         self.mim_max_spin.valueChanged.connect(lambda v: setattr(self.module, 'mim_max_freq', v))
-        mim_layout.addRow("Max Freq:", self.mim_max_spin)
+        mim_layout.addRow(tr("Max Freq:"), self.mim_max_spin)
         
         mim_widget.setLayout(mim_layout)
         self.settings_stack.addWidget(mim_widget)
@@ -235,7 +236,7 @@ class AdvancedDistortionMeterWidget(QWidget):
         # 2. SPDR Settings
         spdr_widget = QWidget()
         spdr_layout = QFormLayout()
-        spdr_layout.addRow(QLabel("Standard 1kHz Tone"))
+        spdr_layout.addRow(QLabel(tr("Standard 1kHz Tone")))
         spdr_widget.setLayout(spdr_layout)
         self.settings_stack.addWidget(spdr_widget)
         
@@ -247,13 +248,13 @@ class AdvancedDistortionMeterWidget(QWidget):
         self.pim_f1_spin.setRange(10, 20000)
         self.pim_f1_spin.setValue(self.module.pim_f1)
         self.pim_f1_spin.valueChanged.connect(lambda v: setattr(self.module, 'pim_f1', v))
-        pim_layout.addRow("Freq 1 (Hz):", self.pim_f1_spin)
+        pim_layout.addRow(tr("Freq 1 (Hz):"), self.pim_f1_spin)
         
         self.pim_f2_spin = QDoubleSpinBox()
         self.pim_f2_spin.setRange(10, 20000)
         self.pim_f2_spin.setValue(self.module.pim_f2)
         self.pim_f2_spin.valueChanged.connect(lambda v: setattr(self.module, 'pim_f2', v))
-        pim_layout.addRow("Freq 2 (Hz):", self.pim_f2_spin)
+        pim_layout.addRow(tr("Freq 2 (Hz):"), self.pim_f2_spin)
         
         pim_widget.setLayout(pim_layout)
         self.settings_stack.addWidget(pim_widget)
@@ -261,32 +262,32 @@ class AdvancedDistortionMeterWidget(QWidget):
         left_panel.addWidget(self.settings_stack)
         
         # Amplitude
-        amp_group = QGroupBox("Generator")
+        amp_group = QGroupBox(tr("Generator"))
         amp_layout = QFormLayout()
         self.amp_spin = QDoubleSpinBox()
         self.amp_spin.setRange(0, 1.0)
         self.amp_spin.setSingleStep(0.01)
         self.amp_spin.setValue(self.module.gen_amplitude)
         self.amp_spin.valueChanged.connect(lambda v: setattr(self.module, 'gen_amplitude', v))
-        amp_layout.addRow("Amplitude (Lin):", self.amp_spin)
+        amp_layout.addRow(tr("Amplitude (Lin):"), self.amp_spin)
         
         self.out_ch_combo = QComboBox()
-        self.out_ch_combo.addItems(["Left", "Right"])
+        self.out_ch_combo.addItems([tr("Left"), tr("Right")])
         self.out_ch_combo.currentIndexChanged.connect(lambda i: setattr(self.module, 'output_channel', i))
-        amp_layout.addRow("Output Ch:", self.out_ch_combo)
+        amp_layout.addRow(tr("Output Ch:"), self.out_ch_combo)
         
         amp_group.setLayout(amp_layout)
         left_panel.addWidget(amp_group)
         
         # Control Buttons
-        self.start_btn = QPushButton("Start Measurement")
+        self.start_btn = QPushButton(tr("Start Measurement"))
         self.start_btn.setCheckable(True)
         self.start_btn.clicked.connect(self.on_start_clicked)
         self.start_btn.setStyleSheet("QPushButton:checked { background-color: #ccffcc; }")
         left_panel.addWidget(self.start_btn)
         
         # Results Display
-        self.results_group = QGroupBox("Results")
+        self.results_group = QGroupBox(tr("Results"))
         results_layout = QVBoxLayout()
         
         self.main_metric_label = QLabel("--")
@@ -308,8 +309,8 @@ class AdvancedDistortionMeterWidget(QWidget):
         right_panel = QVBoxLayout()
         
         self.plot_widget = pg.PlotWidget()
-        self.plot_widget.setLabel('left', 'Amplitude', units='dB')
-        self.plot_widget.setLabel('bottom', 'Frequency', units='Hz')
+        self.plot_widget.setLabel('left', tr('Amplitude'), units='dB')
+        self.plot_widget.setLabel('bottom', tr('Frequency'), units='Hz')
         self.plot_widget.setLogMode(x=True, y=False)
         self.plot_widget.setYRange(-140, 0)
         self.plot_widget.showGrid(x=True, y=True)
@@ -320,14 +321,14 @@ class AdvancedDistortionMeterWidget(QWidget):
         
         self.setLayout(layout)
 
-    def on_mode_changed(self, mode_name):
-        if "MIM" in mode_name:
+    def on_mode_changed(self, index):
+        if index == 0: # MIM
             self.module.mode = 'MIM'
             self.settings_stack.setCurrentIndex(0)
-        elif "SPDR" in mode_name:
+        elif index == 1: # SPDR
             self.module.mode = 'SPDR'
             self.settings_stack.setCurrentIndex(1)
-        elif "PIM" in mode_name:
+        elif index == 2: # PIM
             self.module.mode = 'PIM'
             self.settings_stack.setCurrentIndex(2)
             
@@ -339,11 +340,11 @@ class AdvancedDistortionMeterWidget(QWidget):
         if checked:
             self.module.start_analysis()
             self.timer.start()
-            self.start_btn.setText("Stop Measurement")
+            self.start_btn.setText(tr("Stop Measurement"))
         else:
             self.module.stop_analysis()
             self.timer.stop()
-            self.start_btn.setText("Start Measurement")
+            self.start_btn.setText(tr("Start Measurement"))
 
     def update_analysis(self):
         if not self.module.is_running:

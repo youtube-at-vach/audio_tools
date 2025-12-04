@@ -197,5 +197,19 @@
     "Enable Cursors": "启用光标",
     "Cutoff (Hz):": "截止频率(Hz):",
     "Low (Hz):": "低频(Hz):",
-    "High (Hz):": "高频(Hz):"
+    "High (Hz):": "高频(Hz):",
+    "Measurement Mode": "测量模式",
+    "MIM (Multitone)": "MIM (多音)",
+    "SPDR": "SPDR",
+    "PIM": "PIM",
+    "Tone Count:": "音调数量:",
+    "Min Freq:": "最小频率:",
+    "Max Freq:": "最大频率:",
+    "Standard 1kHz Tone": "标准 1kHz 音调",
+    "Freq 1 (Hz):": "频率 1 (Hz):",
+    "Freq 2 (Hz):": "频率 2 (Hz):",
+    "Amplitude (Lin):": "幅度 (线性):",
+    "Start Measurement": "开始测量",
+    "Stop Measurement": "停止测量",
+    "Results": "结果"
 }

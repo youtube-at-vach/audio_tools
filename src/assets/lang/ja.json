@@ -197,5 +197,19 @@
     "Enable Cursors": "カーソル有効化",
     "Cutoff (Hz):": "カットオフ(Hz):",
     "Low (Hz):": "低域(Hz):",
-    "High (Hz):": "高域(Hz):"
+    "High (Hz):": "高域(Hz):",
+    "Measurement Mode": "測定モード",
+    "MIM (Multitone)": "MIM (マルチトーン)",
+    "SPDR": "SPDR",
+    "PIM": "PIM",
+    "Tone Count:": "トーン数:",
+    "Min Freq:": "最小周波数:",
+    "Max Freq:": "最大周波数:",
+    "Standard 1kHz Tone": "標準 1kHz トーン",
+    "Freq 1 (Hz):": "周波数 1 (Hz):",
+    "Freq 2 (Hz):": "周波数 2 (Hz):",
+    "Amplitude (Lin):": "振幅 (リニア):",
+    "Start Measurement": "測定開始",
+    "Stop Measurement": "測定停止",
+    "Results": "結果"
 }

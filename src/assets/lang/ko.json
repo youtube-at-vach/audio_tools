@@ -197,5 +197,19 @@
     "Enable Cursors": "커서 활성화",
     "Cutoff (Hz):": "차단 주파수(Hz):",
     "Low (Hz):": "저역(Hz):",
-    "High (Hz):": "고역(Hz):"
+    "High (Hz):": "고역(Hz):",
+    "Measurement Mode": "측정 모드",
+    "MIM (Multitone)": "MIM (멀티톤)",
+    "SPDR": "SPDR",
+    "PIM": "PIM",
+    "Tone Count:": "톤 수:",
+    "Min Freq:": "최소 주파수:",
+    "Max Freq:": "최대 주파수:",
+    "Standard 1kHz Tone": "표준 1kHz 톤",
+    "Freq 1 (Hz):": "주파수 1 (Hz):",
+    "Freq 2 (Hz):": "주파수 2 (Hz):",
+    "Amplitude (Lin):": "진폭 (선형):",
+    "Start Measurement": "측정 시작",
+    "Stop Measurement": "측정 중지",
+    "Results": "결과"
 }

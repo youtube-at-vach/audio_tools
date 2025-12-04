@@ -197,5 +197,19 @@
     "Enable Cursors": "Включить курсоры",
     "Cutoff (Hz):": "Частота среза (Hz):",
     "Low (Hz):": "Низкая (Hz):",
-    "High (Hz):": "Высокая (Hz):"
+    "High (Hz):": "Высокая (Hz):",
+    "Measurement Mode": "Режим измерения",
+    "MIM (Multitone)": "MIM (Мультитон)",
+    "SPDR": "SPDR",
+    "PIM": "PIM",
+    "Tone Count:": "Количество тонов:",
+    "Min Freq:": "Мин. частота:",
+    "Max Freq:": "Макс. частота:",
+    "Standard 1kHz Tone": "Стандартный тон 1 кГц",
+    "Freq 1 (Hz):": "Частота 1 (Hz):",
+    "Freq 2 (Hz):": "Частота 2 (Hz):",
+    "Amplitude (Lin):": "Амплитуда (Лин):",
+    "Start Measurement": "Начать измерение",
+    "Stop Measurement": "Остановить измерение",
+    "Results": "Результаты"
 }
