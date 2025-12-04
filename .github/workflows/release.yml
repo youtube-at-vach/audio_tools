@@ -89,7 +89,7 @@ jobs:
     - name: Build standalone binary with PyInstaller
       run: |
         mkdir -p libs
-        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.png --add-data "src:src" --exclude-module matplotlib --exclude-module scipy.cluster --exclude-module scipy.interpolate --exclude-module scipy.io --exclude-module scipy.misc --exclude-module scipy.ndimage --exclude-module scipy.odr --exclude-module scipy.stats --collect-all backports main_gui.py
+        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.png --add-data "src:src" --exclude-module matplotlib --collect-all backports main_gui.py
 
     - name: Build AppImage
       run: |
