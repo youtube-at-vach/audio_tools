@@ -183,5 +183,19 @@
     "Level": "レベル",
     "Harmonic Order": "高調次数",
     "Harmonics": "高調波",
-    "Sweep Results": "スイープ結果"
+    "Sweep Results": "スイープ結果",
+    "Time/Div:": "時間/Div:",
+    "Slope:": "スロープ:",
+    "Rising": "立ち上がり",
+    "Falling": "立ち下がり",
+    "A + B": "A + B",
+    "A - B": "A - B",
+    "A * B": "A * B",
+    "A / B": "A / B",
+    "Derivative": "微分",
+    "Integral": "積分",
+    "Enable Cursors": "カーソル有効化",
+    "Cutoff (Hz):": "カットオフ(Hz):",
+    "Low (Hz):": "低域(Hz):",
+    "High (Hz):": "高域(Hz):"
 }

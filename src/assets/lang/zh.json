@@ -183,5 +183,19 @@
     "Level": "电平",
     "Harmonic Order": "谐波阶数",
     "Harmonics": "谐波",
-    "Sweep Results": "扫描结果"
+    "Sweep Results": "扫描结果",
+    "Time/Div:": "时间/格:",
+    "Slope:": "斜率:",
+    "Rising": "上升沿",
+    "Falling": "下降沿",
+    "A + B": "A + B",
+    "A - B": "A - B",
+    "A * B": "A * B",
+    "A / B": "A / B",
+    "Derivative": "微分",
+    "Integral": "积分",
+    "Enable Cursors": "启用光标",
+    "Cutoff (Hz):": "截止频率(Hz):",
+    "Low (Hz):": "低频(Hz):",
+    "High (Hz):": "高频(Hz):"
 }

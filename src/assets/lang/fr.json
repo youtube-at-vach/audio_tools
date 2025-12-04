@@ -183,5 +183,19 @@
     "Level": "Niveau",
     "Harmonic Order": "Ordre harmonique",
     "Harmonics": "Harmoniques",
-    "Sweep Results": "Résultats du balayage"
+    "Sweep Results": "Résultats du balayage",
+    "Time/Div:": "Temps/Div :",
+    "Slope:": "Pente :",
+    "Rising": "Montant",
+    "Falling": "Descendant",
+    "A + B": "A + B",
+    "A - B": "A - B",
+    "A * B": "A * B",
+    "A / B": "A / B",
+    "Derivative": "Dérivée",
+    "Integral": "Intégrale",
+    "Enable Cursors": "Activer les curseurs",
+    "Cutoff (Hz):": "Coupure (Hz) :",
+    "Low (Hz):": "Bas (Hz) :",
+    "High (Hz):": "Haut (Hz) :"
 }

@@ -183,5 +183,19 @@
     "Level": "Уровень",
     "Harmonic Order": "Порядок гармоник",
     "Harmonics": "Гармоники",
-    "Sweep Results": "Результаты развертки"
+    "Sweep Results": "Результаты развертки",
+    "Time/Div:": "Время/Дел:",
+    "Slope:": "Фронт:",
+    "Rising": "Нарастающий",
+    "Falling": "Спадающий",
+    "A + B": "A + B",
+    "A - B": "A - B",
+    "A * B": "A * B",
+    "A / B": "A / B",
+    "Derivative": "Производная",
+    "Integral": "Интеграл",
+    "Enable Cursors": "Включить курсоры",
+    "Cutoff (Hz):": "Частота среза (Hz):",
+    "Low (Hz):": "Низкая (Hz):",
+    "High (Hz):": "Высокая (Hz):"
 }

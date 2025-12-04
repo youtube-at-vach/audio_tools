@@ -7,6 +7,7 @@ from PyQt6.QtCore import QTimer, Qt
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 from src.core.analysis import AudioCalc
+from src.core.localization import tr
 
 class Oscilloscope(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -159,7 +160,7 @@ class OscilloscopeWidget(QWidget):
         left_layout = QVBoxLayout()
         
         # Measurements
-        meas_group = QGroupBox("Measurements")
+        meas_group = QGroupBox(tr("Measurements"))
         meas_layout = QHBoxLayout()
         
         self.meas_l_label = QLabel("L: Vrms: 0.000 V  Vpp: 0.000 V")
@@ -181,8 +182,8 @@ class OscilloscopeWidget(QWidget):
         
         # Plot
         self.plot_widget = pg.PlotWidget()
-        self.plot_widget.setLabel('left', 'Amplitude', units='V')
-        self.plot_widget.setLabel('bottom', 'Time', units='s')
+        self.plot_widget.setLabel('left', tr('Amplitude'), units='V')
+        self.plot_widget.setLabel('bottom', tr('Time'), units='s')
         self.plot_widget.setYRange(-1.1, 1.1)
         self.plot_widget.showGrid(x=True, y=True)
         
@@ -214,11 +215,11 @@ class OscilloscopeWidget(QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0)
         
         # 1. General Controls
-        gen_group = QGroupBox("General")
+        gen_group = QGroupBox(tr("General"))
         gen_layout = QVBoxLayout()
         
         # Start/Stop
-        self.toggle_btn = QPushButton("Start")
+        self.toggle_btn = QPushButton(tr("Start"))
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
         
@@ -234,7 +235,7 @@ class OscilloscopeWidget(QWidget):
         
         # Timebase
         hbox_tb = QHBoxLayout()
-        hbox_tb.addWidget(QLabel("Time/Div:"))
+        hbox_tb.addWidget(QLabel(tr("Time/Div:")))
         self.timebase_combo = QComboBox()
         self.timebase_options = {
             "10 us": 0.00001, "20 us": 0.00002, "50 us": 0.00005,
@@ -261,11 +262,11 @@ class OscilloscopeWidget(QWidget):
         right_layout.addWidget(gen_group)
         
         # 2. Vertical Controls
-        vert_group = QGroupBox("Vertical")
+        vert_group = QGroupBox(tr("Vertical"))
         vert_layout = QVBoxLayout()
         
         hbox_scale = QHBoxLayout()
-        hbox_scale.addWidget(QLabel("Scale:"))
+        hbox_scale.addWidget(QLabel(tr("Scale:")))
         self.vscale_combo = QComboBox()
         self.vscale_options = {
             "0.01x": 0.01, "0.02x": 0.02, "0.05x": 0.05,
@@ -290,12 +291,12 @@ class OscilloscopeWidget(QWidget):
         vert_layout.addWidget(self.vscale_slider)
         
         hbox_ch = QHBoxLayout()
-        self.chk_left = QCheckBox("Left Ch")
+        self.chk_left = QCheckBox(tr("Left Ch"))
         self.chk_left.setChecked(True)
         self.chk_left.toggled.connect(lambda x: setattr(self.module, 'show_left', x))
         hbox_ch.addWidget(self.chk_left)
         
-        self.chk_right = QCheckBox("Right Ch")
+        self.chk_right = QCheckBox(tr("Right Ch"))
         self.chk_right.setChecked(True)
         self.chk_right.toggled.connect(lambda x: setattr(self.module, 'show_right', x))
         hbox_ch.addWidget(self.chk_right)
@@ -305,21 +306,21 @@ class OscilloscopeWidget(QWidget):
         right_layout.addWidget(vert_group)
         
         # 3. Trigger Controls
-        trig_group = QGroupBox("Trigger")
+        trig_group = QGroupBox(tr("Trigger"))
         trig_layout = QVBoxLayout()
         
         hbox_src = QHBoxLayout()
-        hbox_src.addWidget(QLabel("Source:"))
+        hbox_src.addWidget(QLabel(tr("Source:")))
         self.trig_source_combo = QComboBox()
-        self.trig_source_combo.addItems(["Left", "Right"])
+        self.trig_source_combo.addItems([tr("Left"), tr("Right")])
         self.trig_source_combo.currentIndexChanged.connect(self.on_trig_source_changed)
         hbox_src.addWidget(self.trig_source_combo)
         trig_layout.addLayout(hbox_src)
         
         hbox_slope = QHBoxLayout()
-        hbox_slope.addWidget(QLabel("Slope:"))
+        hbox_slope.addWidget(QLabel(tr("Slope:")))
         self.trig_slope_combo = QComboBox()
-        self.trig_slope_combo.addItems(["Rising", "Falling"])
+        self.trig_slope_combo.addItems([tr("Rising"), tr("Falling")])
         self.trig_slope_combo.currentTextChanged.connect(self.on_trig_slope_changed)
         hbox_slope.addWidget(self.trig_slope_combo)
         trig_layout.addLayout(hbox_slope)
@@ -327,13 +328,13 @@ class OscilloscopeWidget(QWidget):
         hbox_mode = QHBoxLayout()
         hbox_mode.addWidget(QLabel("Mode:"))
         self.trig_mode_combo = QComboBox()
-        self.trig_mode_combo.addItems(["Auto", "Normal"])
+        self.trig_mode_combo.addItems([tr("Auto"), tr("Normal")])
         self.trig_mode_combo.currentTextChanged.connect(self.on_trig_mode_changed)
         hbox_mode.addWidget(self.trig_mode_combo)
         trig_layout.addLayout(hbox_mode)
         
         hbox_lvl = QHBoxLayout()
-        hbox_lvl.addWidget(QLabel("Level:"))
+        hbox_lvl.addWidget(QLabel(tr("Level:")))
         self.trig_level_spin = QDoubleSpinBox()
         self.trig_level_spin.setRange(-1.0, 1.0)
         self.trig_level_spin.setSingleStep(0.1)
@@ -346,18 +347,18 @@ class OscilloscopeWidget(QWidget):
         right_layout.addWidget(trig_group)
         
         # 4. Tools
-        tools_group = QGroupBox("Tools")
+        tools_group = QGroupBox(tr("Tools"))
         tools_layout = QVBoxLayout()
         
         hbox_math = QHBoxLayout()
-        hbox_math.addWidget(QLabel("Math:"))
+        hbox_math.addWidget(QLabel(tr("Math:")))
         self.math_combo = QComboBox()
-        self.math_combo.addItems(['Off', 'A + B', 'A - B', 'A * B', 'A / B', 'Derivative', 'Integral'])
+        self.math_combo.addItems([tr('Off'), tr('A + B'), tr('A - B'), tr('A * B'), tr('A / B'), tr('Derivative'), tr('Integral')])
         self.math_combo.currentTextChanged.connect(self.on_math_changed)
         hbox_math.addWidget(self.math_combo)
         tools_layout.addLayout(hbox_math)
         
-        self.chk_cursors = QCheckBox("Enable Cursors")
+        self.chk_cursors = QCheckBox(tr("Enable Cursors"))
         self.chk_cursors.toggled.connect(self.on_cursors_toggled)
         tools_layout.addWidget(self.chk_cursors)
         
@@ -365,11 +366,11 @@ class OscilloscopeWidget(QWidget):
         right_layout.addWidget(tools_group)
         
         # 5. Filter Controls
-        filter_group = QGroupBox("Filter")
+        filter_group = QGroupBox(tr("Filter"))
         filter_layout = QVBoxLayout()
         
         hbox_ft = QHBoxLayout()
-        hbox_ft.addWidget(QLabel("Type:"))
+        hbox_ft.addWidget(QLabel(tr("Type:")))
         self.filter_combo = QComboBox()
         self.filter_combo.addItems(['None', 'LPF', 'HPF', 'BPF'])
         self.filter_combo.currentTextChanged.connect(self.on_filter_type_changed)
@@ -389,7 +390,7 @@ class OscilloscopeWidget(QWidget):
         self.cutoff_spin.setRange(10, 24000)
         self.cutoff_spin.setValue(self.module.filter_cutoff)
         self.cutoff_spin.valueChanged.connect(lambda v: setattr(self.module, 'filter_cutoff', v))
-        lpf_layout.addRow("Cutoff (Hz):", self.cutoff_spin)
+        lpf_layout.addRow(tr("Cutoff (Hz):"), self.cutoff_spin)
         lpf_widget.setLayout(lpf_layout)
         self.filter_stack.addWidget(lpf_widget)
         
@@ -401,13 +402,13 @@ class OscilloscopeWidget(QWidget):
         self.bpf_low_spin.setRange(10, 24000)
         self.bpf_low_spin.setValue(self.module.filter_low)
         self.bpf_low_spin.valueChanged.connect(lambda v: setattr(self.module, 'filter_low', v))
-        bpf_layout.addRow("Low (Hz):", self.bpf_low_spin)
+        bpf_layout.addRow(tr("Low (Hz):"), self.bpf_low_spin)
         
         self.bpf_high_spin = QDoubleSpinBox()
         self.bpf_high_spin.setRange(10, 24000)
         self.bpf_high_spin.setValue(self.module.filter_high)
         self.bpf_high_spin.valueChanged.connect(lambda v: setattr(self.module, 'filter_high', v))
-        bpf_layout.addRow("High (Hz):", self.bpf_high_spin)
+        bpf_layout.addRow(tr("High (Hz):"), self.bpf_high_spin)
         bpf_widget.setLayout(bpf_layout)
         self.filter_stack.addWidget(bpf_widget)
         
@@ -454,11 +455,11 @@ class OscilloscopeWidget(QWidget):
         if checked:
             self.module.start_analysis()
             self.timer.start()
-            self.toggle_btn.setText("Stop")
+            self.toggle_btn.setText(tr("Stop"))
         else:
             self.module.stop_analysis()
             self.timer.stop()
-            self.toggle_btn.setText("Start")
+            self.toggle_btn.setText(tr("Start"))
 
     def on_timebase_changed(self, text):
         val = self.timebase_options[text]

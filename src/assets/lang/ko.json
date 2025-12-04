@@ -183,5 +183,19 @@
     "Level": "레벨",
     "Harmonic Order": "고조파 차수",
     "Harmonics": "고조파",
-    "Sweep Results": "스위프 결과"
+    "Sweep Results": "스위프 결과",
+    "Time/Div:": "시간/Div:",
+    "Slope:": "기울기:",
+    "Rising": "상승",
+    "Falling": "하강",
+    "A + B": "A + B",
+    "A - B": "A - B",
+    "A * B": "A * B",
+    "A / B": "A / B",
+    "Derivative": "미분",
+    "Integral": "적분",
+    "Enable Cursors": "커서 활성화",
+    "Cutoff (Hz):": "차단 주파수(Hz):",
+    "Low (Hz):": "저역(Hz):",
+    "High (Hz):": "고역(Hz):"
 }

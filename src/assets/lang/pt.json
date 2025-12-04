@@ -183,5 +183,19 @@
     "Level": "Nível",
     "Harmonic Order": "Ordem harmônica",
     "Harmonics": "Harmônicos",
-    "Sweep Results": "Resultados da varredura"
+    "Sweep Results": "Resultados da varredura",
+    "Time/Div:": "Tempo/Div:",
+    "Slope:": "Inclinação:",
+    "Rising": "Subida",
+    "Falling": "Descida",
+    "A + B": "A + B",
+    "A - B": "A - B",
+    "A * B": "A * B",
+    "A / B": "A / B",
+    "Derivative": "Derivada",
+    "Integral": "Integral",
+    "Enable Cursors": "Ativar cursores",
+    "Cutoff (Hz):": "Corte (Hz):",
+    "Low (Hz):": "Baixo (Hz):",
+    "High (Hz):": "Alto (Hz):"
 }
