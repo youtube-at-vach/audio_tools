@@ -352,5 +352,13 @@
     "Failed to load calibration map.": "Error al cargar el mapa de calibración.",
     "Locked ({0:.1f} Hz, Coh: {1:.2f})": "Bloqueado ({0:.1f} Hz, Coh: {1:.2f})",
     "Unstable ({0:.1f} Hz, Coh: {1:.2f})": "Inestable ({0:.1f} Hz, Coh: {1:.2f})",
-    "Unlocked ({0:.1f} Hz, Coh: {1:.2f})": "Desbloqueado ({0:.1f} Hz, Coh: {1:.2f})"
+    "Unlocked ({0:.1f} Hz, Coh: {1:.2f})": "Desbloqueado ({0:.1f} Hz, Coh: {1:.2f})",
+    "Controls": "Controles",
+    "Internal Pulse": "Pulso interno",
+    "Internal Step": "Paso interno",
+    "External Reference": "Referencia externa",
+    "Ref:": "Ref:",
+    "Lvl:": "Nivel:",
+    "Averaged Signal": "Señal promediada",
+    "Averaged Signal (N={0})": "Señal promediada (N={0})"
 }

@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLay
 from PyQt6.QtCore import QTimer, Qt
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
+from src.core.localization import tr
 
 class BoxcarAverager(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -323,23 +324,23 @@ class BoxcarAveragerWidget(QWidget):
         layout = QVBoxLayout()
         
         # Controls
-        controls_group = QGroupBox("Controls")
+        controls_group = QGroupBox(tr("Controls"))
         controls_layout = QHBoxLayout()
         
-        self.toggle_btn = QPushButton("Start")
+        self.toggle_btn = QPushButton(tr("Start"))
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
         controls_layout.addWidget(self.toggle_btn)
         
-        self.reset_btn = QPushButton("Reset")
+        self.reset_btn = QPushButton(tr("Reset"))
         self.reset_btn.clicked.connect(self.on_reset)
         controls_layout.addWidget(self.reset_btn)
         
         # Mode
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(['Internal Pulse', 'Internal Step', 'External Reference'])
+        self.mode_combo.addItems([tr("Internal Pulse"), tr("Internal Step"), tr("External Reference")])
         self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
-        controls_layout.addWidget(QLabel("Mode:"))
+        controls_layout.addWidget(QLabel(tr("Mode:")))
         controls_layout.addWidget(self.mode_combo)
         
         # Period
@@ -348,14 +349,14 @@ class BoxcarAveragerWidget(QWidget):
         self.period_spin.setValue(100)
         self.period_spin.setSuffix(" ms")
         self.period_spin.valueChanged.connect(self.on_period_changed)
-        controls_layout.addWidget(QLabel("Period:"))
+        controls_layout.addWidget(QLabel(tr("Period:")))
         controls_layout.addWidget(self.period_spin)
         
         # Channel
         self.channel_combo = QComboBox()
-        self.channel_combo.addItems(['Stereo', 'Left', 'Right'])
+        self.channel_combo.addItems([tr("Stereo"), tr("Left"), tr("Right")])
         self.channel_combo.currentTextChanged.connect(self.on_channel_changed)
-        controls_layout.addWidget(QLabel("Channel:"))
+        controls_layout.addWidget(QLabel(tr("Channel:")))
         controls_layout.addWidget(self.channel_combo)
         
         # External Sync Controls (Hidden by default)
@@ -364,16 +365,16 @@ class BoxcarAveragerWidget(QWidget):
         ext_layout.setContentsMargins(0,0,0,0)
         
         self.ref_combo = QComboBox()
-        self.ref_combo.addItems(['Left', 'Right'])
+        self.ref_combo.addItems([tr("Left"), tr("Right")])
         self.ref_combo.setCurrentIndex(1) # Default Right
         self.ref_combo.currentIndexChanged.connect(self.on_ref_changed)
-        ext_layout.addWidget(QLabel("Ref:"))
+        ext_layout.addWidget(QLabel(tr("Ref:")))
         ext_layout.addWidget(self.ref_combo)
         
         self.edge_combo = QComboBox()
-        self.edge_combo.addItems(['Rising', 'Falling'])
+        self.edge_combo.addItems([tr("Rising"), tr("Falling")])
         self.edge_combo.currentTextChanged.connect(self.on_edge_changed)
-        ext_layout.addWidget(QLabel("Edge:"))
+        ext_layout.addWidget(QLabel(tr("Edge:")))
         ext_layout.addWidget(self.edge_combo)
         
         self.trig_spin = QDoubleSpinBox()
@@ -381,7 +382,7 @@ class BoxcarAveragerWidget(QWidget):
         self.trig_spin.setSingleStep(0.1)
         self.trig_spin.setValue(0.0)
         self.trig_spin.valueChanged.connect(self.on_trig_changed)
-        ext_layout.addWidget(QLabel("Lvl:"))
+        ext_layout.addWidget(QLabel(tr("Lvl:")))
         ext_layout.addWidget(self.trig_spin)
         
         controls_layout.addWidget(self.ext_group)
@@ -391,12 +392,12 @@ class BoxcarAveragerWidget(QWidget):
         layout.addWidget(controls_group)
         
         # Plot
-        self.plot = pg.PlotWidget(title="Averaged Signal")
-        self.plot.setLabel('left', "Amplitude")
-        self.plot.setLabel('bottom', "Time", units='s')
+        self.plot = pg.PlotWidget(title=tr("Averaged Signal"))
+        self.plot.setLabel('left', tr("Amplitude"))
+        self.plot.setLabel('bottom', tr("Time"), units='s')
         self.plot.showGrid(x=True, y=True)
-        self.curve_l = self.plot.plot(pen='g', name='Left')
-        self.curve_r = self.plot.plot(pen='r', name='Right')
+        self.curve_l = self.plot.plot(pen='g', name=tr("Left"))
+        self.curve_r = self.plot.plot(pen='r', name=tr("Right"))
         
         layout.addWidget(self.plot)
         self.setLayout(layout)
@@ -405,11 +406,11 @@ class BoxcarAveragerWidget(QWidget):
         if checked:
             self.module.start_analysis()
             self.timer.start()
-            self.toggle_btn.setText("Stop")
+            self.toggle_btn.setText(tr("Stop"))
         else:
             self.module.stop_analysis()
             self.timer.stop()
-            self.toggle_btn.setText("Start")
+            self.toggle_btn.setText(tr("Start"))
             
     def on_reset(self):
         self.module.reset_average()
@@ -468,4 +469,4 @@ class BoxcarAveragerWidget(QWidget):
                 self.curve_l.setVisible(True)
                 self.curve_r.setVisible(True)
                 
-            self.plot.setTitle(f"Averaged Signal (N={self.module.count})")
+            self.plot.setTitle(tr("Averaged Signal (N={0})").format(self.module.count))

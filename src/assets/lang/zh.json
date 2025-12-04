@@ -352,5 +352,13 @@
     "Failed to load calibration map.": "加载校准映射失败。",
     "Locked ({0:.1f} Hz, Coh: {1:.2f})": "锁定（{0:.1f} Hz，相干性：{1:.2f}）",
     "Unstable ({0:.1f} Hz, Coh: {1:.2f})": "不稳定（{0:.1f} Hz，相干性：{1:.2f}）",
-    "Unlocked ({0:.1f} Hz, Coh: {1:.2f})": "未锁定（{0:.1f} Hz，相干性：{1:.2f}）"
+    "Unlocked ({0:.1f} Hz, Coh: {1:.2f})": "未锁定（{0:.1f} Hz，相干性：{1:.2f}）",
+    "Controls": "控制",
+    "Internal Pulse": "内部脉冲",
+    "Internal Step": "内部步进",
+    "External Reference": "外部参考",
+    "Ref:": "参考：",
+    "Lvl:": "电平：",
+    "Averaged Signal": "平均信号",
+    "Averaged Signal (N={0})": "平均信号 (N={0})"
 }

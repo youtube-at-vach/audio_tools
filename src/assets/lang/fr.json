@@ -352,5 +352,13 @@
     "Failed to load calibration map.": "Échec du chargement de la carte de calibration.",
     "Locked ({0:.1f} Hz, Coh: {1:.2f})": "Verrouillé ({0:.1f} Hz, Coh: {1:.2f})",
     "Unstable ({0:.1f} Hz, Coh: {1:.2f})": "Instable ({0:.1f} Hz, Coh: {1:.2f})",
-    "Unlocked ({0:.1f} Hz, Coh: {1:.2f})": "Déverrouillé ({0:.1f} Hz, Coh: {1:.2f})"
+    "Unlocked ({0:.1f} Hz, Coh: {1:.2f})": "Déverrouillé ({0:.1f} Hz, Coh: {1:.2f})",
+    "Controls": "Contrôles",
+    "Internal Pulse": "Impulsion interne",
+    "Internal Step": "Pas interne",
+    "External Reference": "Référence externe",
+    "Ref:": "Réf:",
+    "Lvl:": "Niveau:",
+    "Averaged Signal": "Signal moyenné",
+    "Averaged Signal (N={0})": "Signal moyenné (N={0})"
 }

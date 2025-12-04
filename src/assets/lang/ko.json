@@ -352,5 +352,13 @@
     "Failed to load calibration map.": "보정 맵 로드에 실패했습니다.",
     "Locked ({0:.1f} Hz, Coh: {1:.2f})": "잠김 ({0:.1f} Hz, 일관성: {1:.2f})",
     "Unstable ({0:.1f} Hz, Coh: {1:.2f})": "불안정 ({0:.1f} Hz, 일관성: {1:.2f})",
-    "Unlocked ({0:.1f} Hz, Coh: {1:.2f})": "잠금 해제 ({0:.1f} Hz, 일관성: {1:.2f})"
+    "Unlocked ({0:.1f} Hz, Coh: {1:.2f})": "잠금 해제 ({0:.1f} Hz, 일관성: {1:.2f})",
+    "Controls": "제어",
+    "Internal Pulse": "내부 펄스",
+    "Internal Step": "내부 스텝",
+    "External Reference": "외부 참조",
+    "Ref:": "참조:",
+    "Lvl:": "레벨:",
+    "Averaged Signal": "평균 신호",
+    "Averaged Signal (N={0})": "평균 신호 (N={0})"
 }
