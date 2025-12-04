@@ -246,21 +246,21 @@ class RecorderPlayerWidget(QWidget):
         layout = QVBoxLayout()
         
         # --- Playback Section ---
-        pb_group = QGroupBox("Playback")
+        pb_group = QGroupBox(tr("Playback"))
         pb_layout = QVBoxLayout()
         
         # File Info
-        self.file_label = QLabel("No file loaded")
+        self.file_label = QLabel(tr("No file loaded"))
         self.file_label.setWordWrap(True)
         pb_layout.addWidget(self.file_label)
         
         # Controls
         ctrl_layout = QHBoxLayout()
-        self.load_btn = QPushButton("Load File")
+        self.load_btn = QPushButton(tr("Load File"))
         self.load_btn.clicked.connect(self.on_load)
-        self.play_btn = QPushButton("Play")
+        self.play_btn = QPushButton(tr("Play"))
         self.play_btn.clicked.connect(self.on_play_toggle)
-        self.loop_check = QCheckBox("Loop")
+        self.loop_check = QCheckBox(tr("Loop"))
         self.loop_check.toggled.connect(self.on_loop_toggle)
         
         ctrl_layout.addWidget(self.load_btn)
@@ -275,9 +275,12 @@ class RecorderPlayerWidget(QWidget):
         
         # Output Mode
         out_layout = QHBoxLayout()
-        out_layout.addWidget(QLabel("Output Mode:"))
+        out_layout.addWidget(QLabel(tr("Output Mode:")))
         self.out_mode_combo = QComboBox()
-        self.out_mode_combo.addItems(['Stereo', 'Left', 'Right', 'Mono'])
+        self.out_mode_combo.addItem(tr("Stereo"), "Stereo")
+        self.out_mode_combo.addItem(tr("Left"), "Left")
+        self.out_mode_combo.addItem(tr("Right"), "Right")
+        self.out_mode_combo.addItem(tr("Mono"), "Mono")
         self.out_mode_combo.currentTextChanged.connect(self.on_out_mode_changed)
         out_layout.addWidget(self.out_mode_combo)
         pb_layout.addLayout(out_layout)
@@ -286,15 +289,15 @@ class RecorderPlayerWidget(QWidget):
         layout.addWidget(pb_group)
         
         # --- Recording Section ---
-        rec_group = QGroupBox("Recording")
+        rec_group = QGroupBox(tr("Recording"))
         rec_layout = QVBoxLayout()
         
         # Controls
         rec_ctrl_layout = QHBoxLayout()
-        self.rec_btn = QPushButton("Record")
+        self.rec_btn = QPushButton(tr("Record"))
         self.rec_btn.setCheckable(True)
         self.rec_btn.clicked.connect(self.on_record_toggle)
-        self.save_btn = QPushButton("Save Recording")
+        self.save_btn = QPushButton(tr("Save Recording"))
         self.save_btn.clicked.connect(self.on_save)
         self.save_btn.setEnabled(False)
         
@@ -303,14 +306,16 @@ class RecorderPlayerWidget(QWidget):
         rec_layout.addLayout(rec_ctrl_layout)
         
         # Info
-        self.rec_info_label = QLabel("Recorded: 0.00s")
+        self.rec_info_label = QLabel(tr("Recorded: 0.00s"))
         rec_layout.addWidget(self.rec_info_label)
         
         # Input Mode
         in_layout = QHBoxLayout()
-        in_layout.addWidget(QLabel("Input Mode:"))
+        in_layout.addWidget(QLabel(tr("Input Mode:")))
         self.in_mode_combo = QComboBox()
-        self.in_mode_combo.addItems(['Stereo', 'Left', 'Right'])
+        self.in_mode_combo.addItem(tr("Stereo"), "Stereo")
+        self.in_mode_combo.addItem(tr("Left"), "Left")
+        self.in_mode_combo.addItem(tr("Right"), "Right")
         self.in_mode_combo.currentTextChanged.connect(self.on_in_mode_changed)
         in_layout.addWidget(self.in_mode_combo)
         rec_layout.addLayout(in_layout)
@@ -319,12 +324,12 @@ class RecorderPlayerWidget(QWidget):
         layout.addWidget(rec_group)
 
         # --- Audio Routing Section ---
-        route_group = QGroupBox("Audio Routing")
+        route_group = QGroupBox(tr("Audio Routing"))
         route_layout = QVBoxLayout()
         
         # Internal Loopback
-        self.loopback_check = QCheckBox("Internal Loopback (Software)")
-        self.loopback_check.setToolTip("Record internal audio output instead of microphone. Also allows Spectrum Analyzer to see playback.")
+        self.loopback_check = QCheckBox(tr("Internal Loopback (Software)"))
+        self.loopback_check.setToolTip(tr("Record internal audio output instead of microphone. Also allows Spectrum Analyzer to see playback."))
         self.loopback_check.toggled.connect(self.on_loopback_toggled)
         route_layout.addWidget(self.loopback_check)
         
@@ -335,7 +340,7 @@ class RecorderPlayerWidget(QWidget):
         self.setLayout(layout)
 
     def on_load(self):
-        fname, _ = QFileDialog.getOpenFileName(self, "Open Audio File", "", "Audio Files (*.wav *.mp3 *.flac *.m4a *.ogg);;All Files (*)")
+        fname, _ = QFileDialog.getOpenFileName(self, tr("Open Audio File"), "", tr("Audio Files (*.wav *.mp3 *.flac *.m4a *.ogg);;All Files (*)"))
         if not fname:
             return
 
@@ -348,10 +353,10 @@ class RecorderPlayerWidget(QWidget):
             if file_sr != engine_sr:
                 reply = QMessageBox.question(
                     self, 
-                    "Resample Required", 
-                    f"The file sample rate ({file_sr} Hz) differs from the engine rate ({engine_sr} Hz).\n"
+                    tr("Resample Required"), 
+                    tr("The file sample rate ({0} Hz) differs from the engine rate ({1} Hz).\n"
                     "Resampling is required to play correctly.\n\n"
-                    "Do you want to proceed? (This may take a moment for large files)",
+                    "Do you want to proceed? (This may take a moment for large files)").format(file_sr, engine_sr),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
                     QMessageBox.StandardButton.Yes
                 )
@@ -364,7 +369,7 @@ class RecorderPlayerWidget(QWidget):
             self.load_worker.finished.connect(self.on_load_finished)
             
             # Show progress dialog
-            self.progress_dialog = QProgressDialog("Loading and processing audio...", "Cancel", 0, 0, self)
+            self.progress_dialog = QProgressDialog(tr("Loading and processing audio..."), tr("Cancel"), 0, 0, self)
             self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
             self.progress_dialog.setMinimumDuration(0)
             self.progress_dialog.canceled.connect(self.on_load_cancel)
@@ -373,7 +378,7 @@ class RecorderPlayerWidget(QWidget):
             self.load_worker.start()
             
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to read file info:\n{e}")
+            QMessageBox.critical(self, tr("Error"), tr("Failed to read file info:\n{0}").format(e))
 
     def on_load_finished(self, success, data, msg):
         if self.progress_dialog:
@@ -386,7 +391,7 @@ class RecorderPlayerWidget(QWidget):
             self.pb_progress.setValue(0)
         else:
             if msg != "Cancelled": # Don't show error if user cancelled
-                QMessageBox.critical(self, "Error", f"Failed to load file:\n{msg}")
+                QMessageBox.critical(self, tr("Error"), tr("Failed to load file:\n{0}").format(msg))
         
         self.load_worker = None
 
@@ -406,32 +411,32 @@ class RecorderPlayerWidget(QWidget):
         self.module.loop_playback = checked
 
     def on_out_mode_changed(self, text):
-        self.module.output_mode = text
+        self.module.output_mode = self.out_mode_combo.currentData()
 
     def on_record_toggle(self):
         if self.rec_btn.isChecked():
             self.module.start_recording()
-            self.rec_btn.setText("Stop Recording")
+            self.rec_btn.setText(tr("Stop Recording"))
             self.rec_btn.setStyleSheet("background-color: #ffcccc; color: red; font-weight: bold;")
             self.save_btn.setEnabled(False)
         else:
             self.module.stop_recording()
-            self.rec_btn.setText("Record")
+            self.rec_btn.setText(tr("Record"))
             self.rec_btn.setStyleSheet("")
             self.save_btn.setEnabled(True)
 
     def on_save(self):
-        fname, selected_filter = QFileDialog.getSaveFileName(self, "Save Recording", "recording.wav", "WAV (*.wav);;FLAC (*.flac);;OGG (*.ogg)")
+        fname, selected_filter = QFileDialog.getSaveFileName(self, tr("Save Recording"), "recording.wav", tr("WAV (*.wav);;FLAC (*.flac);;OGG (*.ogg)"))
         if fname:
             # Determine format/subtype if needed, or let soundfile guess from extension
             success, msg = self.module.save_recording(fname)
             if success:
-                QMessageBox.information(self, "Success", msg)
+                QMessageBox.information(self, tr("Success"), msg)
             else:
-                QMessageBox.critical(self, "Error", f"Failed to save:\n{msg}")
+                QMessageBox.critical(self, tr("Error"), tr("Failed to save:\n{0}").format(msg))
 
     def on_in_mode_changed(self, text):
-        self.module.input_mode = text
+        self.module.input_mode = self.in_mode_combo.currentData()
 
     def on_loopback_toggled(self, checked):
         self.module.audio_engine.set_loopback(checked)
@@ -439,19 +444,19 @@ class RecorderPlayerWidget(QWidget):
     def update_ui(self):
         # Update Playback UI
         if self.module.is_playing:
-            self.play_btn.setText("Stop")
+            self.play_btn.setText(tr("Stop"))
             if self.module.playback_buffer is not None:
                 total = len(self.module.playback_buffer)
                 if total > 0:
                     progress = int(100 * self.module.playback_pos / total)
                     self.pb_progress.setValue(progress)
         else:
-            self.play_btn.setText("Play")
+            self.play_btn.setText(tr("Play"))
             
         # Update Recording UI
         if self.module.is_recording:
             duration = self.module.recorded_samples / self.module.audio_engine.sample_rate
-            self.rec_info_label.setText(f"Recorded: {duration:.2f}s")
+            self.rec_info_label.setText(tr("Recorded: {0:.2f}s").format(duration))
         elif self.module.recorded_samples > 0:
             duration = self.module.recorded_samples / self.module.audio_engine.sample_rate
-            self.rec_info_label.setText(f"Recorded: {duration:.2f}s (Stopped)")
+            self.rec_info_label.setText(tr("Recorded: {0:.2f}s (Stopped)").format(duration))
