@@ -12,6 +12,7 @@ from src.measurement_modules.base import MeasurementModule
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 from src.core.analysis import AudioCalc
+from src.core.localization import tr
 
 
 
@@ -344,11 +345,11 @@ class DistortionAnalyzerWidget(QWidget):
         left_panel.setSpacing(10)
         
         # 1. Mode Selection
-        mode_group = QGroupBox("Mode")
+        mode_group = QGroupBox(tr("Mode"))
         mode_layout = QVBoxLayout()
         self.mode_combo = QComboBox()
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["Real-time", "Frequency Sweep", "Amplitude Sweep"])
+        self.mode_combo.addItems([tr("Real-time"), tr("Frequency Sweep"), tr("Amplitude Sweep")])
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         mode_layout.addWidget(self.mode_combo)
@@ -364,9 +365,9 @@ class DistortionAnalyzerWidget(QWidget):
         
         # Output Mode
         self.out_mode_combo = QComboBox()
-        self.out_mode_combo.addItems(["Off (External Source)", "Sine Wave", "SMPTE IMD", "CCIF IMD", "Multi-tone"])
+        self.out_mode_combo.addItems([tr("Off (External Source)"), tr("Sine Wave"), tr("SMPTE IMD"), tr("CCIF IMD"), tr("Multi-tone")])
         self.out_mode_combo.currentIndexChanged.connect(self.on_out_mode_changed)
-        rt_layout.addRow("Signal Generator:", self.out_mode_combo)
+        rt_layout.addRow(tr("Signal Generator:"), self.out_mode_combo)
         
         # Generator Settings Stack
         self.gen_stack = QStackedWidget()
@@ -381,7 +382,7 @@ class DistortionAnalyzerWidget(QWidget):
         self.freq_spin.setValue(1000)
         self.freq_spin.setSuffix(" Hz")
         self.freq_spin.valueChanged.connect(self.on_freq_changed)
-        sine_layout.addRow("Frequency:", self.freq_spin)
+        sine_layout.addRow(tr("Frequency:"), self.freq_spin)
         
         sine_widget.setLayout(sine_layout)
         self.gen_stack.addWidget(sine_widget)
@@ -395,19 +396,19 @@ class DistortionAnalyzerWidget(QWidget):
         self.imd_f1_spin.setRange(10, 20000)
         self.imd_f1_spin.setValue(self.module.imd_f1)
         self.imd_f1_spin.valueChanged.connect(lambda v: setattr(self.module, 'imd_f1', v))
-        imd_gen_layout.addRow("Freq 1 (Hz):", self.imd_f1_spin)
+        imd_gen_layout.addRow(tr("Freq 1 (Hz):"), self.imd_f1_spin)
         
         self.imd_f2_spin = QDoubleSpinBox()
         self.imd_f2_spin.setRange(10, 24000)
         self.imd_f2_spin.setValue(self.module.imd_f2)
         self.imd_f2_spin.valueChanged.connect(lambda v: setattr(self.module, 'imd_f2', v))
-        imd_gen_layout.addRow("Freq 2 (Hz):", self.imd_f2_spin)
+        imd_gen_layout.addRow(tr("Freq 2 (Hz):"), self.imd_f2_spin)
         
         self.imd_ratio_spin = QDoubleSpinBox()
         self.imd_ratio_spin.setRange(1, 10)
         self.imd_ratio_spin.setValue(self.module.imd_ratio)
         self.imd_ratio_spin.valueChanged.connect(lambda v: setattr(self.module, 'imd_ratio', v))
-        imd_gen_layout.addRow("Ratio (F1:F2):", self.imd_ratio_spin)
+        imd_gen_layout.addRow(tr("Ratio (F1:F2):"), self.imd_ratio_spin)
         
         imd_gen_widget.setLayout(imd_gen_layout)
         imd_gen_widget.setLayout(imd_gen_layout)
@@ -422,19 +423,19 @@ class DistortionAnalyzerWidget(QWidget):
         self.mt_count_spin.setRange(3, 100)
         self.mt_count_spin.setValue(self.module.multitone_count)
         self.mt_count_spin.valueChanged.connect(lambda v: setattr(self.module, 'multitone_count', v))
-        mt_gen_layout.addRow("Tone Count:", self.mt_count_spin)
+        mt_gen_layout.addRow(tr("Tone Count:"), self.mt_count_spin)
         
         self.mt_min_spin = QDoubleSpinBox()
         self.mt_min_spin.setRange(10, 20000)
         self.mt_min_spin.setValue(self.module.multitone_min)
         self.mt_min_spin.valueChanged.connect(lambda v: setattr(self.module, 'multitone_min', v))
-        mt_gen_layout.addRow("Min Freq:", self.mt_min_spin)
+        mt_gen_layout.addRow(tr("Min Freq:"), self.mt_min_spin)
         
         self.mt_max_spin = QDoubleSpinBox()
         self.mt_max_spin.setRange(10, 24000)
         self.mt_max_spin.setValue(self.module.multitone_max)
         self.mt_max_spin.valueChanged.connect(lambda v: setattr(self.module, 'multitone_max', v))
-        mt_gen_layout.addRow("Max Freq:", self.mt_max_spin)
+        mt_gen_layout.addRow(tr("Max Freq:"), self.mt_max_spin)
         
         mt_gen_widget.setLayout(mt_gen_layout)
         self.gen_stack.addWidget(mt_gen_widget)
@@ -454,7 +455,7 @@ class DistortionAnalyzerWidget(QWidget):
         
         amp_layout.addWidget(self.amp_spin)
         amp_layout.addWidget(self.unit_combo)
-        rt_layout.addRow("Amplitude:", amp_layout)
+        rt_layout.addRow(tr("Amplitude:"), amp_layout)
         
         rt_widget.setLayout(rt_layout)
         self.controls_stack.addWidget(rt_widget)
@@ -466,17 +467,17 @@ class DistortionAnalyzerWidget(QWidget):
         self.sweep_start_spin = QDoubleSpinBox()
         self.sweep_start_spin.setRange(-120, 20000)
         self.sweep_start_spin.setValue(20)
-        sweep_layout.addRow("Start:", self.sweep_start_spin)
+        sweep_layout.addRow(tr("Start:"), self.sweep_start_spin)
         
         self.sweep_end_spin = QDoubleSpinBox()
         self.sweep_end_spin.setRange(-120, 20000)
         self.sweep_end_spin.setValue(20000)
-        sweep_layout.addRow("End:", self.sweep_end_spin)
+        sweep_layout.addRow(tr("End:"), self.sweep_end_spin)
         
         self.sweep_steps_spin = QSpinBox()
         self.sweep_steps_spin.setRange(2, 1000)
         self.sweep_steps_spin.setValue(30)
-        sweep_layout.addRow("Steps:", self.sweep_steps_spin)
+        sweep_layout.addRow(tr("Steps:"), self.sweep_steps_spin)
         
         sweep_widget.setLayout(sweep_layout)
         self.controls_stack.addWidget(sweep_widget)
@@ -485,25 +486,25 @@ class DistortionAnalyzerWidget(QWidget):
         left_panel.addWidget(self.controls_stack)
         
         # Common Controls
-        common_group = QGroupBox("Settings")
+        common_group = QGroupBox(tr("Settings"))
         common_layout = QFormLayout()
         
         self.in_channel_combo = QComboBox()
         self.in_channel_combo.addItems(["Left (Ch 1)", "Right (Ch 2)"])
         self.in_channel_combo.currentIndexChanged.connect(self.on_in_channel_changed)
-        common_layout.addRow("Input Ch:", self.in_channel_combo)
+        common_layout.addRow(tr("Input Ch:"), self.in_channel_combo)
         
         self.channel_combo = QComboBox()
         self.channel_combo.addItems(["Left (Ch 1)", "Right (Ch 2)"])
         self.channel_combo.currentIndexChanged.connect(self.on_channel_changed)
-        common_layout.addRow("Output Ch:", self.channel_combo)
+        common_layout.addRow(tr("Output Ch:"), self.channel_combo)
         
         common_group.setLayout(common_layout)
         left_panel.addWidget(common_group)
         
         # Action Buttons
         btn_layout = QVBoxLayout()
-        self.action_btn = QPushButton("Start Measurement")
+        self.action_btn = QPushButton(tr("Start Measurement"))
         self.action_btn.setCheckable(True)
         self.action_btn.clicked.connect(self.on_action)
         self.action_btn.setStyleSheet("QPushButton:checked { background-color: #ccffcc; }")
@@ -515,24 +516,24 @@ class DistortionAnalyzerWidget(QWidget):
         left_panel.addLayout(btn_layout)
         
         # 3. Meters (Real-time only)
-        self.meters_group = QGroupBox("Measurements")
+        self.meters_group = QGroupBox(tr("Measurements"))
         meters_layout = QVBoxLayout()
         
         self.thdn_label = QLabel("-- %")
         self.thdn_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #ff5555;")
         self.thdn_db_label = QLabel("-- dB")
-        meters_layout.addWidget(QLabel("THD+N:"))
+        meters_layout.addWidget(QLabel(tr("THD+N:")))
         meters_layout.addWidget(self.thdn_label)
         meters_layout.addWidget(self.thdn_db_label)
         
         self.thd_label = QLabel("-- %")
         self.thd_label.setStyleSheet("font-size: 18px; color: #ffaa55;")
-        meters_layout.addWidget(QLabel("THD:"))
+        meters_layout.addWidget(QLabel(tr("THD:")))
         meters_layout.addWidget(self.thd_label)
         
         self.sinad_label = QLabel("-- dB")
         self.sinad_label.setStyleSheet("font-size: 18px; color: #55ffff;")
-        meters_layout.addWidget(QLabel("SINAD:"))
+        meters_layout.addWidget(QLabel(tr("SINAD:")))
         meters_layout.addWidget(self.sinad_label)
         
         # IMD Meter (Hidden by default)
@@ -542,7 +543,7 @@ class DistortionAnalyzerWidget(QWidget):
         self.imd_meter_widget = QWidget()
         imd_meter_layout = QVBoxLayout(self.imd_meter_widget)
         imd_meter_layout.setContentsMargins(0,0,0,0)
-        imd_meter_layout.addWidget(QLabel("IMD:"))
+        imd_meter_layout.addWidget(QLabel(tr("IMD:")))
         imd_meter_layout.addWidget(self.imd_label)
         imd_meter_layout.addWidget(self.imd_label)
         imd_meter_layout.addWidget(self.imd_db_label)
@@ -556,7 +557,7 @@ class DistortionAnalyzerWidget(QWidget):
         self.tdn_meter_widget = QWidget()
         tdn_meter_layout = QVBoxLayout(self.tdn_meter_widget)
         tdn_meter_layout.setContentsMargins(0,0,0,0)
-        tdn_meter_layout.addWidget(QLabel("TD+N:"))
+        tdn_meter_layout.addWidget(QLabel(tr("TD+N:")))
         tdn_meter_layout.addWidget(self.tdn_label)
         tdn_meter_layout.addWidget(self.tdn_db_label)
         meters_layout.addWidget(self.tdn_meter_widget)
@@ -575,8 +576,8 @@ class DistortionAnalyzerWidget(QWidget):
         
         # Tab 1: Spectrum
         self.spectrum_plot = pg.PlotWidget()
-        self.spectrum_plot.setLabel('left', 'Amplitude', units='dBFS')
-        self.spectrum_plot.setLabel('bottom', 'Frequency', units='Hz')
+        self.spectrum_plot.setLabel('left', tr('Amplitude'), units='dBFS')
+        self.spectrum_plot.setLabel('bottom', tr('Frequency'), units='Hz')
         self.spectrum_plot.setLogMode(x=True, y=False)
         self.spectrum_plot.setYRange(-140, 0)
         self.spectrum_plot.setYRange(-140, 0)
@@ -592,7 +593,7 @@ class DistortionAnalyzerWidget(QWidget):
         self.spectrum_plot.setXRange(np.log10(20), np.log10(20000))
         
         self.spectrum_curve = self.spectrum_plot.plot(pen='y')
-        self.tabs.addTab(self.spectrum_plot, "Spectrum")
+        self.tabs.addTab(self.spectrum_plot, tr("Spectrum"))
         
         # Tab 2: Harmonics (Table + Bar Graph)
         harmonics_widget = QWidget()
@@ -600,14 +601,14 @@ class DistortionAnalyzerWidget(QWidget):
         
         self.harmonics_table = QTableWidget()
         self.harmonics_table.setColumnCount(4)
-        self.harmonics_table.setHorizontalHeaderLabels(["Order", "Freq (Hz)", "Level (dBr)", "Level (Linear)"])
+        self.harmonics_table.setHorizontalHeaderLabels([tr("Order"), tr("Freq (Hz)"), tr("Level (dBr)"), tr("Level (Linear)")])
         self.harmonics_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         harmonics_layout.addWidget(self.harmonics_table, 1) # Stretch factor 1
         
         # Harmonics Bar Graph
         self.harmonics_plot = pg.PlotWidget()
-        self.harmonics_plot.setLabel('left', 'Level', units='dBr')
-        self.harmonics_plot.setLabel('bottom', 'Harmonic Order')
+        self.harmonics_plot.setLabel('left', tr('Level'), units='dBr')
+        self.harmonics_plot.setLabel('bottom', tr('Harmonic Order'))
         self.harmonics_plot.showGrid(x=False, y=True)
         self.harmonics_plot.setYRange(-140, 0)
         
@@ -616,12 +617,12 @@ class DistortionAnalyzerWidget(QWidget):
         
         harmonics_layout.addWidget(self.harmonics_plot, 1) # Stretch factor 1
         
-        self.tabs.addTab(harmonics_widget, "Harmonics")
+        self.tabs.addTab(harmonics_widget, tr("Harmonics"))
         
         # Tab 3: Sweep Results
         self.sweep_plot = pg.PlotWidget()
         self.sweep_plot.setLabel('left', 'THD+N', units='dB')
-        self.sweep_plot.setLabel('bottom', 'Frequency', units='Hz') # Dynamic label
+        self.sweep_plot.setLabel('bottom', tr('Frequency'), units='Hz') # Dynamic label
         self.sweep_plot.setLogMode(x=True, y=False)
         self.sweep_plot.setLogMode(x=True, y=False)
         self.sweep_plot.showGrid(x=True, y=True)
@@ -637,7 +638,7 @@ class DistortionAnalyzerWidget(QWidget):
         self.sweep_plot.setXRange(np.log10(20), np.log10(20000))
         
         self.sweep_curve = self.sweep_plot.plot(pen='c', symbol='o')
-        self.tabs.addTab(self.sweep_plot, "Sweep Results")
+        self.tabs.addTab(self.sweep_plot, tr("Sweep Results"))
         
         right_panel.addWidget(self.tabs)
         layout.addLayout(right_panel, 3)
@@ -666,7 +667,7 @@ class DistortionAnalyzerWidget(QWidget):
                 self.sweep_end_spin.setSuffix(" Hz")
                 self.sweep_start_spin.setValue(20)
                 self.sweep_end_spin.setValue(20000)
-                self.sweep_plot.setLabel('bottom', 'Frequency', units='Hz')
+                self.sweep_plot.setLabel('bottom', tr('Frequency'), units='Hz')
                 self.sweep_plot.setLogMode(x=True, y=False)
                 # Restore custom ticks for frequency
                 ticks = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
@@ -678,7 +679,7 @@ class DistortionAnalyzerWidget(QWidget):
                 self.sweep_end_spin.setSuffix(" dBFS")
                 self.sweep_start_spin.setValue(-60)
                 self.sweep_end_spin.setValue(0)
-                self.sweep_plot.setLabel('bottom', 'Amplitude', units='dBFS')
+                self.sweep_plot.setLabel('bottom', tr('Amplitude'), units='dBFS')
                 self.sweep_plot.setLogMode(x=False, y=False)
                 # Reset ticks to auto for amplitude
                 self.sweep_axis.setTicks(None)
@@ -800,11 +801,11 @@ class DistortionAnalyzerWidget(QWidget):
         if checked:
             self.module.start_analysis()
             self.timer.start()
-            self.action_btn.setText("Stop Measurement")
+            self.action_btn.setText(tr("Stop Measurement"))
         else:
             self.module.stop_analysis()
             self.timer.stop()
-            self.action_btn.setText("Start Measurement")
+            self.action_btn.setText(tr("Start Measurement"))
 
     def set_meters_mode(self, mode):
         if mode == 'thd':
@@ -832,7 +833,7 @@ class DistortionAnalyzerWidget(QWidget):
 
     def start_sweep(self, mode):
         self.module.start_analysis() # Ensure audio is running
-        self.action_btn.setText("Stop Sweep")
+        self.action_btn.setText(tr("Stop Sweep"))
         self.module.sweep_results = []
         self.sweep_curve.setData([], [])
         
@@ -858,7 +859,7 @@ class DistortionAnalyzerWidget(QWidget):
             self.sweep_worker.stop()
             self.sweep_worker.wait()
         self.module.stop_analysis()
-        self.action_btn.setText("Start Measurement")
+        self.action_btn.setText(tr("Start Measurement"))
         self.action_btn.setChecked(False)
 
     def on_sweep_result(self, result):
