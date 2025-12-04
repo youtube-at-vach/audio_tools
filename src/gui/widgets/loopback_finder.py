@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLay
 from PyQt6.QtCore import QThread, pyqtSignal, Qt
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
+from src.core.localization import tr
 
 class LoopbackWorker(QThread):
     progress = pyqtSignal(int, str)
@@ -74,7 +75,7 @@ class LoopbackFinder(MeasurementModule):
                 break
             
             if progress_callback:
-                progress_callback(int((out_ch / max_out) * 100), f"Testing Output Channel {out_ch + 1}...")
+                progress_callback(int((out_ch / max_out) * 100), tr("Testing Output Channel {}").format(out_ch + 1))
             
             # Prepare output buffer for all channels
             output_signal = np.zeros((len(test_signal), max_out), dtype=np.float32)
@@ -139,16 +140,16 @@ class LoopbackFinderWidget(QWidget):
         layout = QVBoxLayout()
 
         # Instructions
-        layout.addWidget(QLabel("This tool plays a test tone on each output channel and checks all input channels for the signal."))
-        layout.addWidget(QLabel("<b>Note:</b> This will stop the main audio engine temporarily."))
+        layout.addWidget(QLabel(tr("This tool plays a test tone on each output channel and checks all input channels for the signal.")))
+        layout.addWidget(QLabel(f"<b>{tr('Note:')}</b> {tr('This will stop the main audio engine temporarily.')}"))
 
         # Controls
         controls_layout = QHBoxLayout()
-        self.start_btn = QPushButton("Start Scan")
+        self.start_btn = QPushButton(tr("Start Scan"))
         self.start_btn.clicked.connect(self.start_scan)
         controls_layout.addWidget(self.start_btn)
         
-        self.stop_btn = QPushButton("Stop")
+        self.stop_btn = QPushButton(tr("Stop"))
         self.stop_btn.clicked.connect(self.stop_scan)
         self.stop_btn.setEnabled(False)
         controls_layout.addWidget(self.stop_btn)
@@ -158,13 +159,13 @@ class LoopbackFinderWidget(QWidget):
         # Progress
         self.progress_bar = QProgressBar()
         layout.addWidget(self.progress_bar)
-        self.status_label = QLabel("Ready")
+        self.status_label = QLabel(tr("Ready"))
         layout.addWidget(self.status_label)
 
         # Results Table
         self.results_table = QTableWidget()
         self.results_table.setColumnCount(3)
-        self.results_table.setHorizontalHeaderLabels(["Output Channel", "Input Channel", "Signal Level"])
+        self.results_table.setHorizontalHeaderLabels([tr("Output Channel"), tr("Input Channel"), tr("Signal Level")])
         self.results_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.results_table)
 
@@ -219,12 +220,12 @@ class LoopbackFinderWidget(QWidget):
             self.results_table.setItem(i, 2, QTableWidgetItem(f"{20*np.log10(mag):.1f} dB"))
         
         if not paths:
-            self.status_label.setText("No loopback paths found.")
+            self.status_label.setText(tr("No loopback paths found."))
         else:
-            self.status_label.setText(f"Found {len(paths)} loopback paths.")
+            self.status_label.setText(tr("Found {} loopback paths.").format(len(paths)))
 
     def show_error(self, message):
-        QMessageBox.critical(self, "Error", message)
+        QMessageBox.critical(self, tr("Error"), message)
         self.scan_finished()
 
     def scan_finished(self):

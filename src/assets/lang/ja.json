@@ -98,5 +98,16 @@
     "Medium (1m)": "中速 (1分)",
     "Slow (5m)": "低速 (5分)",
     "Meteor (10m)": "流星 (10分)",
-    "Time": "時間"
+    "Time": "時間",
+    "Testing Output Channel {}": "出力チャンネル {} をテスト中...",
+    "This tool plays a test tone on each output channel and checks all input channels for the signal.": "このツールは各出力チャンネルでテストトーンを再生し、全ての入力チャンネルで信号をチェックします。",
+    "Note:": "注意:",
+    "This will stop the main audio engine temporarily.": "これによりメインオーディオエンジンが一時的に停止します。",
+    "Start Scan": "スキャン開始",
+    "Ready": "準備完了",
+    "Output Channel": "出力チャンネル",
+    "Input Channel": "入力チャンネル",
+    "Signal Level": "信号レベル",
+    "No loopback paths found.": "ループバックパスが見つかりませんでした。",
+    "Found {} loopback paths.": "{} 個のループバックパスが見つかりました。"
 }

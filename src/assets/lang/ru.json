@@ -98,5 +98,16 @@
     "Medium (1m)": "Средне (1м)",
     "Slow (5m)": "Медленно (5м)",
     "Meteor (10m)": "Метеор (10м)",
-    "Time": "Время"
+    "Time": "Время",
+    "Testing Output Channel {}": "Тестирование выходного канала {}...",
+    "This tool plays a test tone on each output channel and checks all input channels for the signal.": "Этот инструмент воспроизводит тестовый тон на каждом выходном канале и проверяет все входные каналы на наличие сигнала.",
+    "Note:": "Примечание:",
+    "This will stop the main audio engine temporarily.": "Это временно остановит основной аудиодвигатель.",
+    "Start Scan": "Начать сканирование",
+    "Ready": "Готов",
+    "Output Channel": "Выходной канал",
+    "Input Channel": "Входной канал",
+    "Signal Level": "Уровень сигнала",
+    "No loopback paths found.": "Пути обратной связи не найдены.",
+    "Found {} loopback paths.": "Найдено {} путей обратной связи."
 }

@@ -98,5 +98,16 @@
     "Medium (1m)": "Mittel (1m)",
     "Slow (5m)": "Langsam (5m)",
     "Meteor (10m)": "Meteor (10m)",
-    "Time": "Zeit"
+    "Time": "Zeit",
+    "Testing Output Channel {}": "Teste Ausgangskanal {}...",
+    "This tool plays a test tone on each output channel and checks all input channels for the signal.": "Dieses Tool spielt einen Testton auf jedem Ausgangskanal ab und überprüft alle Eingangskanäle auf das Signal.",
+    "Note:": "Hinweis:",
+    "This will stop the main audio engine temporarily.": "Dies stoppt die Haupt-Audio-Engine vorübergehend.",
+    "Start Scan": "Scan starten",
+    "Ready": "Bereit",
+    "Output Channel": "Ausgangskanal",
+    "Input Channel": "Eingangskanal",
+    "Signal Level": "Signalpegel",
+    "No loopback paths found.": "Keine Loopback-Pfade gefunden.",
+    "Found {} loopback paths.": "{} Loopback-Pfade gefunden."
 }

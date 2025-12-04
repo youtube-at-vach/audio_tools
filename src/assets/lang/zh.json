@@ -98,5 +98,16 @@
     "Medium (1m)": "中速 (1分钟)",
     "Slow (5m)": "慢速 (5分钟)",
     "Meteor (10m)": "流星 (10分钟)",
-    "Time": "时间"
+    "Time": "时间",
+    "Testing Output Channel {}": "正在测试输出通道 {}...",
+    "This tool plays a test tone on each output channel and checks all input channels for the signal.": "此工具在每个输出通道播放测试音调，并检查所有输入通道的信号。",
+    "Note:": "注意：",
+    "This will stop the main audio engine temporarily.": "这将临时停止主音频引擎。",
+    "Start Scan": "开始扫描",
+    "Ready": "就绪",
+    "Output Channel": "输出通道",
+    "Input Channel": "输入通道",
+    "Signal Level": "信号电平",
+    "No loopback paths found.": "未找到环回路径。",
+    "Found {} loopback paths.": "找到 {} 个环回路径。"
 }

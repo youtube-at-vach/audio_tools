@@ -98,5 +98,16 @@
     "Medium (1m)": "보통 (1분)",
     "Slow (5m)": "느림 (5분)",
     "Meteor (10m)": "유성 (10분)",
-    "Time": "시간"
+    "Time": "시간",
+    "Testing Output Channel {}": "출력 채널 {} 테스트 중...",
+    "This tool plays a test tone on each output channel and checks all input channels for the signal.": "이 도구는 각 출력 채널에서 테스트 톤을 재생하고 모든 입력 채널에서 신호를 확인합니다.",
+    "Note:": "참고:",
+    "This will stop the main audio engine temporarily.": "이로 인해 메인 오디오 엔진이 일시적으로 중지됩니다.",
+    "Start Scan": "스캔 시작",
+    "Ready": "준비 완료",
+    "Output Channel": "출력 채널",
+    "Input Channel": "입력 채널",
+    "Signal Level": "신호 레벨",
+    "No loopback paths found.": "루프백 경로를 찾을 수 없습니다.",
+    "Found {} loopback paths.": "{}개의 루프백 경로를 찾았습니다."
 }
