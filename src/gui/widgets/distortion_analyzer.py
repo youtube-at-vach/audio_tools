@@ -490,12 +490,12 @@ class DistortionAnalyzerWidget(QWidget):
         common_layout = QFormLayout()
         
         self.in_channel_combo = QComboBox()
-        self.in_channel_combo.addItems(["Left (Ch 1)", "Right (Ch 2)"])
+        self.in_channel_combo.addItems([tr("Left (Ch 1)"), tr("Right (Ch 2)")])
         self.in_channel_combo.currentIndexChanged.connect(self.on_in_channel_changed)
         common_layout.addRow(tr("Input Ch:"), self.in_channel_combo)
         
         self.channel_combo = QComboBox()
-        self.channel_combo.addItems(["Left (Ch 1)", "Right (Ch 2)"])
+        self.channel_combo.addItems([tr("Left (Ch 1)"), tr("Right (Ch 2)")])
         self.channel_combo.currentIndexChanged.connect(self.on_channel_changed)
         common_layout.addRow(tr("Output Ch:"), self.channel_combo)
         
@@ -519,27 +519,27 @@ class DistortionAnalyzerWidget(QWidget):
         self.meters_group = QGroupBox(tr("Measurements"))
         meters_layout = QVBoxLayout()
         
-        self.thdn_label = QLabel("-- %")
+        self.thdn_label = QLabel(tr("-- %"))
         self.thdn_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #ff5555;")
-        self.thdn_db_label = QLabel("-- dB")
+        self.thdn_db_label = QLabel(tr("-- dB"))
         meters_layout.addWidget(QLabel(tr("THD+N:")))
         meters_layout.addWidget(self.thdn_label)
         meters_layout.addWidget(self.thdn_db_label)
         
-        self.thd_label = QLabel("-- %")
+        self.thd_label = QLabel(tr("-- %"))
         self.thd_label.setStyleSheet("font-size: 18px; color: #ffaa55;")
         meters_layout.addWidget(QLabel(tr("THD:")))
         meters_layout.addWidget(self.thd_label)
         
-        self.sinad_label = QLabel("-- dB")
+        self.sinad_label = QLabel(tr("-- dB"))
         self.sinad_label.setStyleSheet("font-size: 18px; color: #55ffff;")
         meters_layout.addWidget(QLabel(tr("SINAD:")))
         meters_layout.addWidget(self.sinad_label)
         
         # IMD Meter (Hidden by default)
-        self.imd_label = QLabel("-- %")
+        self.imd_label = QLabel(tr("-- %"))
         self.imd_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #ff55ff;")
-        self.imd_db_label = QLabel("-- dB")
+        self.imd_db_label = QLabel(tr("-- dB"))
         self.imd_meter_widget = QWidget()
         imd_meter_layout = QVBoxLayout(self.imd_meter_widget)
         imd_meter_layout.setContentsMargins(0,0,0,0)
@@ -551,9 +551,9 @@ class DistortionAnalyzerWidget(QWidget):
         self.imd_meter_widget.setVisible(False)
         
         # TD+N Meter (Multi-tone)
-        self.tdn_label = QLabel("-- %")
+        self.tdn_label = QLabel(tr("-- %"))
         self.tdn_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #55ff55;")
-        self.tdn_db_label = QLabel("-- dB")
+        self.tdn_db_label = QLabel(tr("-- dB"))
         self.tdn_meter_widget = QWidget()
         tdn_meter_layout = QVBoxLayout(self.tdn_meter_widget)
         tdn_meter_layout.setContentsMargins(0,0,0,0)
@@ -621,7 +621,7 @@ class DistortionAnalyzerWidget(QWidget):
         
         # Tab 3: Sweep Results
         self.sweep_plot = pg.PlotWidget()
-        self.sweep_plot.setLabel('left', 'THD+N', units='dB')
+        self.sweep_plot.setLabel('left', tr('THD+N'), units='dB')
         self.sweep_plot.setLabel('bottom', tr('Frequency'), units='Hz') # Dynamic label
         self.sweep_plot.setLogMode(x=True, y=False)
         self.sweep_plot.setLogMode(x=True, y=False)
@@ -849,7 +849,7 @@ class DistortionAnalyzerWidget(QWidget):
             if start <= 0 or end <= 0:
                 print("Error: Frequency sweep range must be positive.")
                 self.action_btn.setChecked(False)
-                self.action_btn.setText("Start Measurement")
+                self.action_btn.setText(tr("Start Measurement"))
                 return
         
         self.sweep_worker = SweepWorker(self.module, sweep_type, start, end, steps)
@@ -908,8 +908,8 @@ class DistortionAnalyzerWidget(QWidget):
             else:
                 res = AudioCalc.calculate_imd_ccif(mag, freqs, self.module.imd_f1, self.module.imd_f2)
                 
-            self.imd_label.setText(f"{res['imd']:.4f} %")
-            self.imd_db_label.setText(f"{res['imd_db']:.2f} dB")
+            self.imd_label.setText(tr("{0:.4f} %").format(res['imd']))
+            self.imd_db_label.setText(tr("{0:.2f} dB").format(res['imd_db']))
             
             # For plotting, convert to dBFS
             mag_db = 20 * np.log10(mag + 1e-12)
@@ -924,8 +924,8 @@ class DistortionAnalyzerWidget(QWidget):
             # Ensure we have tone freqs
             if self.module._multitone_freqs is not None:
                 res = AudioCalc.calculate_multitone_tdn(mag, freqs, self.module._multitone_freqs)
-                self.tdn_label.setText(f"{res['tdn']:.4f} %")
-                self.tdn_db_label.setText(f"{res['tdn_db']:.2f} dB")
+                self.tdn_label.setText(tr("{0:.4f} %").format(res['tdn']))
+                self.tdn_db_label.setText(tr("{0:.2f} dB").format(res['tdn_db']))
             
             mag_db = 20 * np.log10(mag + 1e-12)
             self.spectrum_curve.setData(freqs[1:], mag_db[1:])
@@ -940,10 +940,10 @@ class DistortionAnalyzerWidget(QWidget):
             self.module.current_result = results
             
             # Update Meters
-            self.thdn_label.setText(f"{results['thdn_percent']:.4f} %")
-            self.thdn_db_label.setText(f"{results['thdn_db']:.2f} dB")
-            self.thd_label.setText(f"{results['thd_percent']:.4f} %")
-            self.sinad_label.setText(f"{results['sinad_db']:.2f} dB")
+            self.thdn_label.setText(tr("{0:.4f} %").format(results['thdn_percent']))
+            self.thdn_db_label.setText(tr("{0:.2f} dB").format(results['thdn_db']))
+            self.thd_label.setText(tr("{0:.4f} %").format(results['thd_percent']))
+            self.sinad_label.setText(tr("{0:.2f} dB").format(results['sinad_db']))
             
             # Update Harmonics Table & Bar Graph
             self.harmonics_table.setRowCount(len(results['harmonics']))

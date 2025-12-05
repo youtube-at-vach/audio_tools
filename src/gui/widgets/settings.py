@@ -160,7 +160,7 @@ class InputCalibrationDialog(QDialog):
         self.measure_btn.clicked.connect(self.on_measure_toggle)
         layout.addWidget(self.measure_btn)
         
-        self.level_label = QLabel("Current Level: -- dBFS")
+        self.level_label = QLabel(tr("Current Level: -- dBFS"))
         self.level_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         layout.addWidget(self.level_label)
         
@@ -214,7 +214,7 @@ class InputCalibrationDialog(QDialog):
             self.is_measuring = False
 
     def update_level(self):
-        self.level_label.setText(f"Current Level: {self.current_rms_dbfs:.1f} dBFS")
+        self.level_label.setText(tr("Current Level: {0:.1f} dBFS").format(self.current_rms_dbfs))
 
     def on_save(self):
         try:
@@ -335,8 +335,8 @@ class SettingsWidget(QWidget):
         dev_layout.addRow(self.refresh_btn)
         
         # Active Device Info
-        self.active_in_label = QLabel("None")
-        self.active_out_label = QLabel("None")
+        self.active_in_label = QLabel(tr("None"))
+        self.active_out_label = QLabel(tr("None"))
         dev_layout.addRow(tr("Active Input:"), self.active_in_label)
         dev_layout.addRow(tr("Active Output:"), self.active_out_label)
         
@@ -372,14 +372,14 @@ class SettingsWidget(QWidget):
         
         # Input Channels
         self.in_ch_combo = QComboBox()
-        self.in_ch_combo.addItems(['Stereo', 'Left', 'Right'])
+        self.in_ch_combo.addItems([tr('Stereo'), tr('Left'), tr('Right')])
         self.in_ch_combo.setCurrentText(self.audio_engine.input_channel_mode.capitalize())
         self.in_ch_combo.currentTextChanged.connect(self.on_ch_mode_changed)
         conf_layout.addRow(tr("Input Channels:"), self.in_ch_combo)
         
         # Output Channels
         self.out_ch_combo = QComboBox()
-        self.out_ch_combo.addItems(['Stereo', 'Left', 'Right'])
+        self.out_ch_combo.addItems([tr('Stereo'), tr('Left'), tr('Right')])
         self.out_ch_combo.setCurrentText(self.audio_engine.output_channel_mode.capitalize())
         self.out_ch_combo.currentTextChanged.connect(self.on_ch_mode_changed)
         conf_layout.addRow(tr("Output Channels:"), self.out_ch_combo)
@@ -576,7 +576,7 @@ class SettingsWidget(QWidget):
             sr = int(self.sr_combo.currentText())
             bs = int(self.bs_combo.currentText())
             duration_ms = (bs / sr) * 1000
-            self.bs_duration_label.setText(f"Latency: {duration_ms:.1f} ms")
+            self.bs_duration_label.setText(tr("Latency: {0:.1f} ms").format(duration_ms))
         except ValueError:
             self.bs_duration_label.setText("")
 

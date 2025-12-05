@@ -163,11 +163,11 @@ class OscilloscopeWidget(QWidget):
         meas_group = QGroupBox(tr("Measurements"))
         meas_layout = QHBoxLayout()
         
-        self.meas_l_label = QLabel("L: Vrms: 0.000 V  Vpp: 0.000 V")
+        self.meas_l_label = QLabel(tr("L: Vrms: 0.000 V  Vpp: 0.000 V"))
         self.meas_l_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #00ff00;")
         meas_layout.addWidget(self.meas_l_label)
         
-        self.meas_r_label = QLabel("R: Vrms: 0.000 V  Vpp: 0.000 V")
+        self.meas_r_label = QLabel(tr("R: Vrms: 0.000 V  Vpp: 0.000 V"))
         self.meas_r_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #ff0000;")
         meas_layout.addWidget(self.meas_r_label)
         
@@ -176,7 +176,7 @@ class OscilloscopeWidget(QWidget):
         left_layout.addWidget(meas_group)
         
         # Cursor Info
-        self.cursor_info_label = QLabel("Cursors: Off")
+        self.cursor_info_label = QLabel(tr("Cursors: Off"))
         self.cursor_info_label.setStyleSheet("font-family: monospace; font-weight: bold; color: yellow;")
         left_layout.addWidget(self.cursor_info_label)
         
@@ -187,8 +187,8 @@ class OscilloscopeWidget(QWidget):
         self.plot_widget.setYRange(-1.1, 1.1)
         self.plot_widget.showGrid(x=True, y=True)
         
-        self.curve_l = self.plot_widget.plot(pen=pg.mkPen('#00ff00', width=2), name="Left")
-        self.curve_r = self.plot_widget.plot(pen=pg.mkPen('#ff0000', width=2), name="Right")
+        self.curve_l = self.plot_widget.plot(pen=pg.mkPen('#00ff00', width=2), name=tr("Left"))
+        self.curve_r = self.plot_widget.plot(pen=pg.mkPen('#ff0000', width=2), name=tr("Right"))
         
         # Cursors
         self.cursor_1 = pg.InfiniteLine(angle=90, movable=True, pen=pg.mkPen('c', width=1), label='C1', labelOpts={'position':0.1})
@@ -203,7 +203,7 @@ class OscilloscopeWidget(QWidget):
         self.cursor_2.setVisible(False)
         
         # Math Curve
-        self.curve_math = self.plot_widget.plot(pen=pg.mkPen('w', width=2, style=Qt.PenStyle.DotLine), name="Math")
+        self.curve_math = self.plot_widget.plot(pen=pg.mkPen('w', width=2, style=Qt.PenStyle.DotLine), name=tr("Math"))
         
         left_layout.addWidget(self.plot_widget)
         main_layout.addLayout(left_layout, stretch=1) # Give priority to plot
@@ -326,7 +326,7 @@ class OscilloscopeWidget(QWidget):
         trig_layout.addLayout(hbox_slope)
         
         hbox_mode = QHBoxLayout()
-        hbox_mode.addWidget(QLabel("Mode:"))
+        hbox_mode.addWidget(QLabel(tr("Mode:")))
         self.trig_mode_combo = QComboBox()
         self.trig_mode_combo.addItems([tr("Auto"), tr("Normal")])
         self.trig_mode_combo.currentTextChanged.connect(self.on_trig_mode_changed)
@@ -372,7 +372,7 @@ class OscilloscopeWidget(QWidget):
         hbox_ft = QHBoxLayout()
         hbox_ft.addWidget(QLabel(tr("Type:")))
         self.filter_combo = QComboBox()
-        self.filter_combo.addItems(['None', 'LPF', 'HPF', 'BPF'])
+        self.filter_combo.addItems([tr('None'), tr('LPF'), tr('HPF'), tr('BPF')])
         self.filter_combo.currentTextChanged.connect(self.on_filter_type_changed)
         hbox_ft.addWidget(self.filter_combo)
         filter_layout.addLayout(hbox_ft)
@@ -429,14 +429,14 @@ class OscilloscopeWidget(QWidget):
             self.plot_widget.plotItem.layout.removeItem(self.plot_widget.plotItem.getAxis('right'))
         self.axis_math = pg.AxisItem('right')
         self.axis_math.linkToView(self.math_view)
-        self.axis_math.setLabel('Math', color='#ffffff')
+        self.axis_math.setLabel(tr('Math'), color='#ffffff')
         self.plot_widget.plotItem.layout.addItem(self.axis_math, 2, 2) # Row 2, Col 2 for right axis
         self.axis_math.hide() # Hide by default
         
         # Update View Geometry on resize
         self.plot_widget.plotItem.vb.sigResized.connect(self.update_math_view_geometry)
         
-        self.curve_math = pg.PlotCurveItem(pen=pg.mkPen('w', width=2, style=Qt.PenStyle.DotLine), name="Math")
+        self.curve_math = pg.PlotCurveItem(pen=pg.mkPen('w', width=2, style=Qt.PenStyle.DotLine), name=tr("Math"))
         self.math_view.addItem(self.curve_math)
         
         right_layout.addStretch()
@@ -530,7 +530,7 @@ class OscilloscopeWidget(QWidget):
             self.curve_math.setData([], []) # Clear math curve when off
         else:
             self.axis_math.show()
-            self.axis_math.setLabel(f"Math ({val})", color='#ffffff')
+            self.axis_math.setLabel(tr("Math ({0})").format(val), color='#ffffff')
         
     def on_cursors_toggled(self, checked):
         self.cursor_1.setVisible(checked)
@@ -547,7 +547,7 @@ class OscilloscopeWidget(QWidget):
 
     def update_cursor_info(self):
         if not self.chk_cursors.isChecked():
-            self.cursor_info_label.setText("Cursors: Off")
+            self.cursor_info_label.setText(tr("Cursors: Off"))
             return
             
         t1 = self.cursor_1.value()
@@ -583,11 +583,11 @@ class OscilloscopeWidget(QWidget):
                 v1 = np.interp(t1, t, target_data)
                 v2 = np.interp(t2, t, target_data)
                 dv = v2 - v1
-                v1_str = f"V1: {v1:.3f}V"
-                v2_str = f"V2: {v2:.3f}V"
-                dv_str = f"dV: {dv:.3f}V"
+                v1_str = tr("V1: {0:.3f}V").format(v1)
+                v2_str = tr("V2: {0:.3f}V").format(v2)
+                dv_str = tr("dV: {0:.3f}V").format(dv)
         
-        self.cursor_info_label.setText(f"T1: {t1*1000:.2f}ms {v1_str} | T2: {t2*1000:.2f}ms {v2_str} | dT: {dt*1000:.2f}ms ({freq:.1f}Hz) | {dv_str}")
+        self.cursor_info_label.setText(tr("T1: {0:.2f}ms {1} | T2: {2:.2f}ms {3} | dT: {4:.2f}ms ({5:.1f}Hz) | {6}").format(t1*1000, v1_str, t2*1000, v2_str, dt*1000, freq, dv_str))
 
     def on_filter_type_changed(self, text):
         self.module.filter_type = text
@@ -639,8 +639,8 @@ class OscilloscopeWidget(QWidget):
             r_rms = np.sqrt(np.mean(r_data**2))
             r_vpp = np.max(r_data) - np.min(r_data)
             
-            self.meas_l_label.setText(f"L: Vrms: {l_rms:.3f} V  Vpp: {l_vpp:.3f} V")
-            self.meas_r_label.setText(f"R: Vrms: {r_rms:.3f} V  Vpp: {r_vpp:.3f} V")
+            self.meas_l_label.setText(tr("L: Vrms: {0:.3f} V  Vpp: {1:.3f} V").format(l_rms, l_vpp))
+            self.meas_r_label.setText(tr("R: Vrms: {0:.3f} V  Vpp: {1:.3f} V").format(r_rms, r_vpp))
 
             # Create time axis
             t = np.linspace(0, window_duration, len(data))

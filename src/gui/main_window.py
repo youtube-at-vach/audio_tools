@@ -159,11 +159,11 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.status_bar)
         
         # Status Labels
-        self.status_label = QLabel("Idle")
-        self.io_label = QLabel("In: - | Out: -")
-        self.sr_label = QLabel("SR: -")
-        self.cpu_label = QLabel("CPU: 0%")
-        self.clients_label = QLabel("Clients: 0")
+        self.status_label = QLabel(tr("Idle"))
+        self.io_label = QLabel(tr("In: - | Out: -"))
+        self.sr_label = QLabel(tr("SR: -"))
+        self.cpu_label = QLabel(tr("CPU: 0%"))
+        self.clients_label = QLabel(tr("Clients: 0"))
         
         # Add labels to status bar
         self.status_bar.addPermanentWidget(self.status_label)
@@ -182,35 +182,35 @@ class MainWindow(QMainWindow):
         
         # Active State
         if status['active']:
-            self.status_label.setText("ACTIVE")
+            self.status_label.setText(tr("ACTIVE"))
             self.status_label.setStyleSheet("color: green; font-weight: bold;")
         else:
-            self.status_label.setText("IDLE")
+            self.status_label.setText(tr("IDLE"))
             self.status_label.setStyleSheet("color: gray;")
             
         # I/O Mode
         in_mode = status['input_channels'].capitalize()
         out_mode = status['output_channels'].capitalize()
-        self.io_label.setText(f"In: {in_mode} | Out: {out_mode}")
+        self.io_label.setText(tr("In: {0} | Out: {1}").format(in_mode, out_mode))
         
         # Sample Rate
-        self.sr_label.setText(f"SR: {status['sample_rate']}")
+        self.sr_label.setText(tr("SR: {0}").format(status['sample_rate']))
         
         # CPU Load
         cpu = status['cpu_load'] * 100
         flags = status.get('status_flags')
         
         if flags:
-            self.cpu_label.setText(f"CPU: {cpu:.1f}% [{flags}]")
+            self.cpu_label.setText(tr("CPU: {0:.1f}% [{1}]").format(cpu, flags))
             self.cpu_label.setStyleSheet("color: red; font-weight: bold;")
-            self.cpu_label.setToolTip(f"Audio Buffer Error: {flags}")
+            self.cpu_label.setToolTip(tr("Audio Buffer Error: {0}").format(flags))
         else:
-            self.cpu_label.setText(f"CPU: {cpu:.1f}%")
+            self.cpu_label.setText(tr("CPU: {0:.1f}%").format(cpu))
             self.cpu_label.setStyleSheet("")
-            self.cpu_label.setToolTip("CPU Load of Audio Thread")
+            self.cpu_label.setToolTip(tr("CPU Load of Audio Thread"))
         
         # Clients
-        self.clients_label.setText(f"Clients: {status['active_clients']}")
+        self.clients_label.setText(tr("Clients: {0}").format(status['active_clients']))
         
     def on_tool_selected(self, index):
         self.content_area.setCurrentIndex(index)

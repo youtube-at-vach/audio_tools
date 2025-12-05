@@ -451,12 +451,12 @@ class LockInAmplifierWidget(QWidget):
         self.unit_combo.currentIndexChanged.connect(self.update_ui) # Update immediately
         meters_layout.addWidget(self.unit_combo)
         
-        self.mag_label = QLabel("0.000 V")
+        self.mag_label = QLabel(tr("0.000 V"))
         self.mag_label.setStyleSheet("font-size: 36px; font-weight: bold; color: #00ff00;")
         self.mag_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         meters_layout.addWidget(self.mag_label)
         
-        self.mag_db_label = QLabel("-inf dBFS")
+        self.mag_db_label = QLabel(tr("-inf dBFS"))
         self.mag_db_label.setStyleSheet("font-size: 24px; color: #88ff88;")
         self.mag_db_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         meters_layout.addWidget(self.mag_db_label)
@@ -465,7 +465,7 @@ class LockInAmplifierWidget(QWidget):
         
         # Phase
         meters_layout.addWidget(QLabel(tr("Phase")))
-        self.phase_label = QLabel("0.00 deg")
+        self.phase_label = QLabel(tr("0.00 deg"))
         self.phase_label.setStyleSheet("font-size: 36px; font-weight: bold; color: #00ffff;")
         self.phase_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         meters_layout.addWidget(self.phase_label)
@@ -477,7 +477,7 @@ class LockInAmplifierWidget(QWidget):
         
         x_group = QVBoxLayout()
         x_group.addWidget(QLabel(tr("X (In-phase)")))
-        self.x_label = QLabel("0.000 V")
+        self.x_label = QLabel(tr("0.000 V"))
         self.x_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #ffff00;")
         self.x_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         x_group.addWidget(self.x_label)
@@ -485,7 +485,7 @@ class LockInAmplifierWidget(QWidget):
         
         y_group = QVBoxLayout()
         y_group.addWidget(QLabel(tr("Y (Quadrature)")))
-        self.y_label = QLabel("0.000 V")
+        self.y_label = QLabel(tr("0.000 V"))
         self.y_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #ff00ff;")
         self.y_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         y_group.addWidget(self.y_label)
@@ -847,46 +847,46 @@ class LockInAmplifierWidget(QWidget):
         if unit == "dBFS":
             if mag_fs > 0:
                 val = 20 * np.log10(mag_fs + 1e-12)
-                self.mag_label.setText(f"{val:.2f} dBFS")
+                self.mag_label.setText(tr("{0:.2f} dBFS").format(val))
             else:
-                self.mag_label.setText("-inf dBFS")
+                self.mag_label.setText(tr("-inf dBFS"))
             self.mag_db_label.setText("") # Clear secondary
             
         elif unit == "dBV":
             if v_rms > 0:
                 val = 20 * np.log10(v_rms + 1e-12)
-                self.mag_label.setText(f"{val:.2f} dBV")
+                self.mag_label.setText(tr("{0:.2f} dBV").format(val))
             else:
-                self.mag_label.setText("-inf dBV")
+                self.mag_label.setText(tr("-inf dBV"))
             self.mag_db_label.setText("")
             
         elif unit == "dBu":
             if v_rms > 0:
                 val = 20 * np.log10((v_rms + 1e-12) / 0.7746)
-                self.mag_label.setText(f"{val:.2f} dBu")
+                self.mag_label.setText(tr("{0:.2f} dBu").format(val))
             else:
-                self.mag_label.setText("-inf dBu")
+                self.mag_label.setText(tr("-inf dBu"))
             self.mag_db_label.setText("")
             
         elif unit == "V":
-            self.mag_label.setText(f"{v_rms:.6f} V")
+            self.mag_label.setText(tr("{0:.6f} V").format(v_rms))
             # Show dBFS as secondary
             if mag_fs > 0:
                 db = 20 * np.log10(mag_fs + 1e-12)
-                self.mag_db_label.setText(f"{db:.2f} dBFS")
+                self.mag_db_label.setText(tr("{0:.2f} dBFS").format(db))
             else:
-                self.mag_db_label.setText("-inf dBFS")
+                self.mag_db_label.setText(tr("-inf dBFS"))
                 
         elif unit == "mV":
-            self.mag_label.setText(f"{v_rms * 1000:.3f} mV")
+            self.mag_label.setText(tr("{0:.3f} mV").format(v_rms * 1000))
             # Show dBFS as secondary
             if mag_fs > 0:
                 db = 20 * np.log10(mag_fs + 1e-12)
-                self.mag_db_label.setText(f"{db:.2f} dBFS")
+                self.mag_db_label.setText(tr("{0:.2f} dBFS").format(db))
             else:
-                self.mag_db_label.setText("-inf dBFS")
+                self.mag_db_label.setText(tr("-inf dBFS"))
             
-        self.phase_label.setText(f"{phase:.2f} deg")
+        self.phase_label.setText(tr("{0:.2f} deg").format(phase))
         
         # Update X/Y (Always in Voltage for now, or follow unit?)
         # Let's follow unit logic for X/Y roughly, but X/Y are signed.
@@ -900,14 +900,14 @@ class LockInAmplifierWidget(QWidget):
         y_v = y_fs * sensitivity / np.sqrt(2) # RMS
         
         if unit == "dBFS":
-            self.x_label.setText(f"{x_fs:.6f} FS")
-            self.y_label.setText(f"{y_fs:.6f} FS")
+            self.x_label.setText(tr("{0:.6f} FS").format(x_fs))
+            self.y_label.setText(tr("{0:.6f} FS").format(y_fs))
         elif unit == "mV":
-            self.x_label.setText(f"{x_v * 1000:.3f} mV")
-            self.y_label.setText(f"{y_v * 1000:.3f} mV")
+            self.x_label.setText(tr("{0:.3f} mV").format(x_v * 1000))
+            self.y_label.setText(tr("{0:.3f} mV").format(y_v * 1000))
         else: # V, dBV, dBu -> Show V
-            self.x_label.setText(f"{x_v:.6f} V")
-            self.y_label.setText(f"{y_v:.6f} V")
+            self.x_label.setText(tr("{0:.6f} V").format(x_v))
+            self.y_label.setText(tr("{0:.6f} V").format(y_v))
         
         # Update Ref Status
         ref_level = self.module.ref_level
@@ -1027,11 +1027,11 @@ class LockInAmplifierWidget(QWidget):
             plot_mags.append(y_val)
             
         # Update Axis Label
-        if unit == 'dBFS': self.fra_plot.setLabel('left', "Magnitude", units='dBFS')
-        elif unit == 'dBV': self.fra_plot.setLabel('left', "Magnitude", units='dBV')
-        elif unit == 'dBu': self.fra_plot.setLabel('left', "Magnitude", units='dBu')
-        elif unit == 'Vrms': self.fra_plot.setLabel('left', "Magnitude", units='V')
-        elif unit == 'Vpeak': self.fra_plot.setLabel('left', "Magnitude", units='V')
+        if unit == 'dBFS': self.fra_plot.setLabel('left', tr("Magnitude"), units='dBFS')
+        elif unit == 'dBV': self.fra_plot.setLabel('left', tr("Magnitude"), units='dBV')
+        elif unit == 'dBu': self.fra_plot.setLabel('left', tr("Magnitude"), units='dBu')
+        elif unit == 'Vrms': self.fra_plot.setLabel('left', tr("Magnitude"), units='V')
+        elif unit == 'Vpeak': self.fra_plot.setLabel('left', tr("Magnitude"), units='V')
 
         self.fra_curve_mag.setData(self.fra_log_freqs, plot_mags)
         self.fra_curve_phase.setData(self.fra_log_freqs, self.fra_phases)

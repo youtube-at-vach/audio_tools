@@ -207,7 +207,7 @@ class LufsMeterWidget(QWidget):
         
         # 1. Stereo RMS / Peak Meters
         # Left
-        grid.addWidget(QLabel("L"), 0, 0)
+        grid.addWidget(QLabel(tr("L")), 0, 0)
         self.l_bar = QProgressBar()
         self.l_bar.setRange(-60, 0) # dBFS range
         self.l_bar.setTextVisible(False)
@@ -215,12 +215,10 @@ class LufsMeterWidget(QWidget):
         self.l_bar.setFixedSize(30, 200)
         grid.addWidget(self.l_bar, 0, 1, 2, 1)
         
-        self.l_val_label = QLabel("-INF")
+        self.l_val_label = QLabel(tr("-INF"))
         grid.addWidget(self.l_val_label, 2, 1, Qt.AlignmentFlag.AlignHCenter)
         
         self.l_peak_label = QLabel(tr("Pk: -INF"))
-        self.l_peak_label.setStyleSheet("color: red; font-size: 10px;")
-        self.l_peak_label = QLabel("Pk: -INF")
         self.l_peak_label.setStyleSheet("color: red; font-size: 10px;")
         grid.addWidget(self.l_peak_label, 3, 1, Qt.AlignmentFlag.AlignHCenter)
         
@@ -229,7 +227,7 @@ class LufsMeterWidget(QWidget):
         grid.addWidget(self.l_cf_label, 4, 1, Qt.AlignmentFlag.AlignHCenter)
 
         # Right
-        grid.addWidget(QLabel("R"), 0, 2)
+        grid.addWidget(QLabel(tr("R")), 0, 2)
         self.r_bar = QProgressBar()
         self.r_bar.setRange(-60, 0)
         self.r_bar.setTextVisible(False)
@@ -237,12 +235,10 @@ class LufsMeterWidget(QWidget):
         self.r_bar.setFixedSize(30, 200)
         grid.addWidget(self.r_bar, 0, 3, 2, 1)
         
-        self.r_val_label = QLabel("-INF")
+        self.r_val_label = QLabel(tr("-INF"))
         grid.addWidget(self.r_val_label, 2, 3, Qt.AlignmentFlag.AlignHCenter)
         
         self.r_peak_label = QLabel(tr("Pk: -INF"))
-        self.r_peak_label.setStyleSheet("color: red; font-size: 10px;")
-        self.r_peak_label = QLabel("Pk: -INF")
         self.r_peak_label.setStyleSheet("color: red; font-size: 10px;")
         grid.addWidget(self.r_peak_label, 3, 3, Qt.AlignmentFlag.AlignHCenter)
         
@@ -255,7 +251,7 @@ class LufsMeterWidget(QWidget):
         
         # 2. LUFS Meters
         # Momentary
-        grid.addWidget(QLabel("M"), 0, 5)
+        grid.addWidget(QLabel(tr("M")), 0, 5)
         self.m_bar = QProgressBar()
         self.m_bar.setRange(-60, 0)
         self.m_bar.setTextVisible(False)
@@ -263,12 +259,12 @@ class LufsMeterWidget(QWidget):
         self.m_bar.setFixedSize(30, 200)
         grid.addWidget(self.m_bar, 0, 6, 2, 1)
         
-        self.m_val_label = QLabel("-INF")
+        self.m_val_label = QLabel(tr("-INF"))
         grid.addWidget(self.m_val_label, 2, 6, Qt.AlignmentFlag.AlignHCenter)
         grid.addWidget(QLabel(tr("LUFS(M)")), 3, 6, Qt.AlignmentFlag.AlignHCenter)
 
         # Short-term
-        grid.addWidget(QLabel("S"), 0, 7)
+        grid.addWidget(QLabel(tr("S")), 0, 7)
         self.s_bar = QProgressBar()
         self.s_bar.setRange(-60, 0)
         self.s_bar.setTextVisible(False)
@@ -276,7 +272,7 @@ class LufsMeterWidget(QWidget):
         self.s_bar.setFixedSize(30, 200)
         grid.addWidget(self.s_bar, 0, 8, 2, 1)
         
-        self.s_val_label = QLabel("-INF")
+        self.s_val_label = QLabel(tr("-INF"))
         grid.addWidget(self.s_val_label, 2, 8, Qt.AlignmentFlag.AlignHCenter)
         grid.addWidget(QLabel(tr("LUFS(S)")), 3, 8, Qt.AlignmentFlag.AlignHCenter)
 
@@ -328,15 +324,14 @@ class LufsMeterWidget(QWidget):
         self.l_bar.setValue(int(max(-60, min(0, rms_l))))
         self.r_bar.setValue(int(max(-60, min(0, rms_r))))
         
-        self.l_val_label.setText(f"{rms_l:.1f}")
-        self.r_val_label.setText(f"{rms_r:.1f}")
+        self.l_val_label.setText(tr("{0:.1f}").format(rms_l))
+        self.r_val_label.setText(tr("{0:.1f}").format(rms_r))
         
-        self.l_peak_label.setText(f"Pk: {peak_hold_l:.1f}")
-        self.l_peak_label.setText(f"Pk: {peak_hold_l:.1f}")
-        self.r_peak_label.setText(f"Pk: {peak_hold_r:.1f}")
+        self.l_peak_label.setText(tr("Pk: {0:.1f}").format(peak_hold_l))
+        self.r_peak_label.setText(tr("Pk: {0:.1f}").format(peak_hold_r))
         
-        self.l_cf_label.setText(f"CF: {self.module.crest_l:.1f}")
-        self.r_cf_label.setText(f"CF: {self.module.crest_r:.1f}")
+        self.l_cf_label.setText(tr("CF: {0:.1f}").format(self.module.crest_l))
+        self.r_cf_label.setText(tr("CF: {0:.1f}").format(self.module.crest_r))
         
         # Update LUFS
         m_lufs = self.module.momentary_lufs
@@ -345,8 +340,8 @@ class LufsMeterWidget(QWidget):
         self.m_bar.setValue(int(max(-60, min(0, m_lufs))))
         self.s_bar.setValue(int(max(-60, min(0, s_lufs))))
         
-        self.m_val_label.setText(f"{m_lufs:.1f}")
-        self.s_val_label.setText(f"{s_lufs:.1f}")
+        self.m_val_label.setText(tr("{0:.1f}").format(m_lufs))
+        self.s_val_label.setText(tr("{0:.1f}").format(s_lufs))
         
         # Color coding
         self._set_bar_color(self.l_bar, rms_l)

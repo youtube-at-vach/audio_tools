@@ -247,7 +247,7 @@ class FrequencyCalibrationDialog(QDialog):
     def __init__(self, module: FrequencyCounter, parent=None):
         super().__init__(parent)
         self.module = module
-        self.setWindowTitle("Frequency Calibration")
+        self.setWindowTitle(tr("Frequency Calibration"))
         self.resize(400, 250)
         self.init_ui()
         
@@ -365,7 +365,7 @@ class FrequencyCounterWidget(QWidget):
         display_frame.setStyleSheet("background-color: #000; border: 2px solid #444; border-radius: 10px;")
         display_layout = QVBoxLayout(display_frame)
         
-        self.freq_label = QLabel("0.00000 Hz")
+        self.freq_label = QLabel(tr("0.00000 Hz"))
         self.freq_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         # Use a monospaced font if available, or just a clean sans-serif
         font = QFont("Courier New", 72, QFont.Weight.Bold)
@@ -374,7 +374,7 @@ class FrequencyCounterWidget(QWidget):
         self.freq_label.setStyleSheet("color: #00ff00;") # Green LED style
         display_layout.addWidget(self.freq_label)
         
-        self.amp_label = QLabel("-- dBFS")
+        self.amp_label = QLabel(tr("-- dBFS"))
         self.amp_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.amp_label.setFont(QFont("Arial", 16))
         self.amp_label.setStyleSheet("color: #888;")
@@ -385,11 +385,11 @@ class FrequencyCounterWidget(QWidget):
         # --- Stats Display ---
         stats_layout = QHBoxLayout()
         
-        self.std_label = QLabel("Std Dev: -- Hz")
+        self.std_label = QLabel(tr("Std Dev: -- Hz"))
         self.std_label.setStyleSheet("color: #aaa; font-size: 14px;")
         stats_layout.addWidget(self.std_label)
         
-        self.allan_label = QLabel("Allan Dev: -- Hz")
+        self.allan_label = QLabel(tr("Allan Dev: -- Hz"))
         self.allan_label.setStyleSheet("color: #aaa; font-size: 14px;")
         stats_layout.addWidget(self.allan_label)
         
@@ -499,11 +499,11 @@ class FrequencyCounterWidget(QWidget):
         freq = self.module.process()
         
         # Update Amp
-        self.amp_label.setText(f"{self.module.current_amp_db:.1f} dBFS")
+        self.amp_label.setText(tr("{0:.1f} dBFS").format(self.module.current_amp_db))
         
         if freq is not None:
             # Update Label
-            self.freq_label.setText(f"{freq:.5f} Hz")
+            self.freq_label.setText(tr("{0:.5f} Hz").format(freq))
             
             # Update History
             t = time.time() - self.module.start_time
@@ -532,6 +532,6 @@ class FrequencyCounterWidget(QWidget):
                     if len(taus) > 0:
                         self.allan_curve.setData(taus, devs)
         else:
-            self.freq_label.setText("---.----- Hz")
+            self.freq_label.setText(tr("---.----- Hz"))
             self.std_label.setText(tr("Std Dev: -- Hz"))
             self.allan_label.setText(tr("Allan Dev: -- Hz"))
