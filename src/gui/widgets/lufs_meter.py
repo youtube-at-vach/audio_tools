@@ -37,6 +37,8 @@ class LufsMeter(MeasurementModule):
         self.peak_r = -100.0
         self.peak_hold_l = -100.0
         self.peak_hold_r = -100.0
+        self.crest_l = 0.0
+        self.crest_r = 0.0
         
         self.callback_id = None
 
@@ -118,8 +120,6 @@ class LufsMeter(MeasurementModule):
             self.peak_hold_r = max(self.peak_hold_r, self.peak_r)
             
             # Crest Factor (Peak dB - RMS dB)
-            self.crest_l = self.peak_l - self.rms_l
-            self.crest_r = self.peak_r - self.rms_r
             
             # Crest Factor (Peak dB - RMS dB)
             # Ensure we don't subtract -100 from -100 resulting in 0 if both are silence, which is fine.
