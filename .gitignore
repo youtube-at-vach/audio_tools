@@ -59,3 +59,4 @@ venv_build/
 config.json
 calibration.json
 lockin.json
+Impedance.json
