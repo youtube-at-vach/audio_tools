@@ -35,6 +35,7 @@ class ImpedanceAnalyzer(MeasurementModule):
         self.cal_load = {}
         self.load_standard_real = 100.0 # Ohm
         self.use_calibration = False
+        self.use_cal_interpolation = False
         
         # Results
         self.meas_v_complex = 0j
@@ -200,20 +201,40 @@ class ImpedanceAnalyzer(MeasurementModule):
         Fallback to Open/Short (OS) if Load not available:
         Z_dut = (Z_meas - Z_short) / (1 - (Z_meas - Z_short) * Y_open)
         """
+    def apply_calibration(self, z_meas, freq):
+        """
+        Apply Open/Short/Load (OSL) calibration.
+        Formula:
+        Z_dut = Z_std * ((Z_open - Z_load) * (Z_meas - Z_short)) / ((Z_open - Z_meas) * (Z_load - Z_short))
+        
+        Fallback to Open/Short (OS) if Load not available:
+        Z_dut = (Z_meas - Z_short) / (1 - (Z_meas - Z_short) * Y_open)
+        """
         if not self.cal_short or not self.cal_open:
             return z_meas
             
-        # Find nearest freq
-        freqs = list(self.cal_short.keys())
-        nearest_f = min(freqs, key=lambda x: abs(x - freq))
-        
-        # Check if nearest is reasonably close (e.g. within 5%)
-        if abs(nearest_f - freq) / freq > 0.05:
-            return z_meas # No valid cal data
+        # Get Calibration Data
+        if self.use_cal_interpolation:
+            z_short = self._get_interpolated_cal_value(self.cal_short, freq)
+            z_open = self._get_interpolated_cal_value(self.cal_open, freq)
+            if self.cal_load:
+                z_load = self._get_interpolated_cal_value(self.cal_load, freq)
+            else:
+                z_load = None
+        else:
+            # Find nearest freq
+            freqs = list(self.cal_short.keys())
+            if not freqs: return z_meas
+            nearest_f = min(freqs, key=lambda x: abs(x - freq))
             
-        z_short = self.cal_short[nearest_f]
-        z_open = self.cal_open[nearest_f]
-        z_load = self.cal_load.get(nearest_f, None)
+            # Check if nearest is reasonably close (e.g. within 5%)
+            if abs(nearest_f - freq) / freq > 0.05:
+                # No valid cal data nearby, return raw
+                return z_meas 
+                
+            z_short = self.cal_short[nearest_f]
+            z_open = self.cal_open[nearest_f]
+            z_load = self.cal_load.get(nearest_f, None)
         
         # OSL Calibration
         if z_load is not None:
@@ -239,6 +260,40 @@ class ImpedanceAnalyzer(MeasurementModule):
         
         if abs(denominator) < 1e-12:
             return z_meas
+            
+        return numerator / denominator
+            
+    def _get_interpolated_cal_value(self, cal_dict, freq):
+        """
+        Get interpolated calibration value for a specific frequency.
+        Uses linear interpolation on complex real/imag parts.
+        If freq is outside range, uses nearest neighbor.
+        """
+        sorted_freqs = sorted(cal_dict.keys())
+        if not sorted_freqs:
+            return 0j
+            
+        if freq <= sorted_freqs[0]:
+            return cal_dict[sorted_freqs[0]]
+        if freq >= sorted_freqs[-1]:
+            return cal_dict[sorted_freqs[-1]]
+            
+        # Find interval
+        # Use binary search or simple iteration (small lists usually)
+        for i in range(len(sorted_freqs) - 1):
+            f_low = sorted_freqs[i]
+            f_high = sorted_freqs[i+1]
+            if f_low <= freq <= f_high:
+                t = (freq - f_low) / (f_high - f_low)
+                z_low = cal_dict[f_low]
+                z_high = cal_dict[f_high]
+                
+                # Interpolate Real and Imag separately
+                r = z_low.real + t * (z_high.real - z_low.real)
+                im = z_low.imag + t * (z_high.imag - z_low.imag)
+                return complex(r, im)
+                
+        return cal_dict[sorted_freqs[0]] # Should not reach here
             
     def save_calibration(self, filename):
         data = {
@@ -632,9 +687,6 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.load_std_spin.valueChanged.connect(lambda v: setattr(self.module, 'load_standard_real', v))
         lay_conf.addRow(tr("Load Std R:"), self.load_std_spin)
         
-        self.cal_check = QCheckBox(tr("Apply Calibration"))
-        self.cal_check.toggled.connect(lambda c: setattr(self.module, 'use_calibration', c))
-        lay_conf.addRow(self.cal_check)
         
         grp_conf.setLayout(lay_conf)
         left_layout.addWidget(grp_conf)
@@ -642,6 +694,15 @@ class ImpedanceAnalyzerWidget(QWidget):
         # 3. Sweep & Cal Actions
         grp_sweep = QGroupBox(tr("Sweep / Calibration"))
         lay_sweep = QFormLayout()
+
+        self.cal_check = QCheckBox(tr("Apply Calibration"))
+        self.cal_check.toggled.connect(lambda c: setattr(self.module, 'use_calibration', c))
+        lay_sweep.addRow(self.cal_check)
+        
+        self.interp_check = QCheckBox(tr("Interpolate Calibration"))
+        self.interp_check.setChecked(self.module.use_cal_interpolation)
+        self.interp_check.toggled.connect(lambda c: setattr(self.module, 'use_cal_interpolation', c))
+        lay_sweep.addRow(self.interp_check)
         
         self.sw_start = QDoubleSpinBox(); self.sw_start.setRange(20, 20000); self.sw_start.setValue(20)
         lay_sweep.addRow(tr("Start:"), self.sw_start)
