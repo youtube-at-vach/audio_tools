@@ -1,11 +1,12 @@
 import argparse
+import json
 import numpy as np
 import pyqtgraph as pg
 from scipy.signal import hilbert
 from collections import deque
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
                              QComboBox, QCheckBox, QGroupBox, QFormLayout, 
-                             QDoubleSpinBox, QProgressBar, QSpinBox, QTabWidget, QMessageBox, QApplication, QGridLayout)
+                             QDoubleSpinBox, QProgressBar, QSpinBox, QTabWidget, QMessageBox, QApplication, QGridLayout, QFileDialog)
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 import time
 from src.measurement_modules.base import MeasurementModule
@@ -239,7 +240,44 @@ class ImpedanceAnalyzer(MeasurementModule):
         if abs(denominator) < 1e-12:
             return z_meas
             
-        return numerator / denominator
+    def save_calibration(self, filename):
+        data = {
+            "cal_open": self._serialize_cal(self.cal_open),
+            "cal_short": self._serialize_cal(self.cal_short),
+            "cal_load": self._serialize_cal(self.cal_load),
+            "load_std_real": self.load_standard_real
+        }
+        with open(filename, 'w') as f:
+            json.dump(data, f, indent=4)
+
+    def load_calibration(self, filename):
+        try:
+            with open(filename, 'r') as f:
+                data = json.load(f)
+            
+            self.cal_open = self._deserialize_cal(data.get("cal_open", {}))
+            self.cal_short = self._deserialize_cal(data.get("cal_short", {}))
+            self.cal_load = self._deserialize_cal(data.get("cal_load", {}))
+            self.load_standard_real = data.get("load_std_real", 100.0)
+            return True, ""
+        except Exception as e:
+            return False, str(e)
+
+    def _serialize_cal(self, cal_dict):
+        # Dict[float, complex] -> Dict[str, [real, imag]]
+        return {str(f): [z.real, z.imag] for f, z in cal_dict.items()}
+
+    def _deserialize_cal(self, data_dict):
+        # Dict[str, [real, imag]] -> Dict[float, complex]
+        new_cal = {}
+        for f_str, z_list in data_dict.items():
+            try:
+                f = float(f_str)
+                z = complex(z_list[0], z_list[1])
+                new_cal[f] = z
+            except:
+                pass
+        return new_cal
 
 
 class ImpedanceSweepWorker(QThread):
@@ -633,6 +671,15 @@ class ImpedanceAnalyzerWidget(QWidget):
         btn_grid.addWidget(self.btn_short, 0, 1)
         btn_grid.addWidget(self.btn_load, 1, 0)
         btn_grid.addWidget(self.btn_dut, 1, 1)
+        
+        self.btn_save_cal_file = QPushButton(tr("Save Cal File"))
+        self.btn_save_cal_file.clicked.connect(self.on_save_cal)
+        self.btn_load_cal_file = QPushButton(tr("Load Cal File"))
+        self.btn_load_cal_file.clicked.connect(self.on_load_cal)
+        
+        btn_grid.addWidget(self.btn_save_cal_file, 2, 0)
+        btn_grid.addWidget(self.btn_load_cal_file, 2, 1)
+        
         lay_sweep.addRow(btn_grid)
         
         grp_sweep.setLayout(lay_sweep)
@@ -755,6 +802,23 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.sweep_worker.finished_sweep.connect(self.on_sweep_finished)
         self.sweep_worker.start()
         
+    def on_save_cal(self):
+        filename, _ = QFileDialog.getSaveFileName(self, tr("Save Calibration"), "", tr("JSON Files (*.json)"))
+        if filename:
+            self.module.save_calibration(filename)
+            QMessageBox.information(self, tr("Success"), tr("Calibration saved successfully."))
+            
+    def on_load_cal(self):
+        filename, _ = QFileDialog.getOpenFileName(self, tr("Load Calibration"), "", tr("JSON Files (*.json)"))
+        if filename:
+            success, msg = self.module.load_calibration(filename)
+            if success:
+                # Update UI elements that might depend on loaded flags (optional)
+                self.load_std_spin.setValue(self.module.load_standard_real)
+                QMessageBox.information(self, tr("Success"), tr("Calibration loaded successfully."))
+            else:
+                QMessageBox.critical(self, tr("Error"), tr("Failed to load calibration: ") + msg)
+
     def update_plot_mode(self):
         mode = self.plot_mode_combo.currentText()
         pi = self.plot_widget.getPlotItem()
