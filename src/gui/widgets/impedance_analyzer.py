@@ -779,7 +779,7 @@ class ImpedanceAnalyzerWidget(QWidget):
         pm_layout = QHBoxLayout()
         pm_layout.addWidget(QLabel(tr("Plot Mode:")))
         self.plot_mode_combo = QComboBox()
-        self.plot_mode_combo.addItems([tr("|Z| & Phase"), tr("R & X (ESR/ESL)"), tr("Q Factor"), tr("C / L")])
+        self.plot_mode_combo.addItems([tr("|Z| & Phase"), tr("R & X (ESR/ESL)"), tr("D (Tan δ)"), tr("C / L")])
         self.plot_mode_combo.currentIndexChanged.connect(self.update_plot_mode)
         pm_layout.addWidget(self.plot_mode_combo)
         pm_layout.addStretch()
@@ -929,12 +929,12 @@ class ImpedanceAnalyzerWidget(QWidget):
             ax_right.setStyle(showValues=False)
             ax_right.setLabel('')
             
-        elif mode == tr("Q Factor"):
-            pi.setLabel('left', tr("Q Factor"))
+        elif mode == tr("D (Tan δ)"):
+            pi.setLabel('left', tr("D (Tan δ)"))
             pi.setLogMode(y=False) 
             
-            self.curve_primary.setData(name=tr('Q'), pen='r')
-            self.legend.addItem(self.curve_primary, tr('Q'))
+            self.curve_primary.setData(name=tr('D'), pen='r')
+            self.legend.addItem(self.curve_primary, tr('D'))
             
             self.curve_right.setVisible(False)
             ax_right.setStyle(showValues=False)
@@ -994,15 +994,15 @@ class ImpedanceAnalyzerWidget(QWidget):
             self.curve_primary.setData(x_data, r_data)
             self.curve_secondary.setData(x_data, x_data_val)
             
-        elif mode == tr("Q Factor"):
-            # Q = |X| / R
+        elif mode == tr("D (Tan δ)"):
+            # D = 1/Q = |R| / |X|
             rs = zs.real
             xs = zs.imag
-            qs = np.zeros_like(rs)
-            mask = (np.abs(rs) > 1e-12)
-            qs[mask] = np.abs(xs[mask]) / np.abs(rs[mask])
+            ds = np.zeros_like(rs)
+            mask = (np.abs(xs) > 1e-12)
+            ds[mask] = np.abs(rs[mask]) / np.abs(xs[mask])
             
-            self.curve_primary.setData(x_data, qs)
+            self.curve_primary.setData(x_data, ds)
             
         elif mode == tr("C / L"):
             # C = -1 / (w * X) for X < 0
