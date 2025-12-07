@@ -35,7 +35,7 @@ class ImpedanceAnalyzer(MeasurementModule):
         self.cal_load = {}
         self.load_standard_real = 100.0 # Ohm
         self.use_calibration = False
-        self.use_cal_interpolation = False
+        self.use_cal_interpolation = True
         
         # Results
         self.meas_v_complex = 0j
@@ -213,28 +213,13 @@ class ImpedanceAnalyzer(MeasurementModule):
         if not self.cal_short or not self.cal_open:
             return z_meas
             
-        # Get Calibration Data
-        if self.use_cal_interpolation:
-            z_short = self._get_interpolated_cal_value(self.cal_short, freq)
-            z_open = self._get_interpolated_cal_value(self.cal_open, freq)
-            if self.cal_load:
-                z_load = self._get_interpolated_cal_value(self.cal_load, freq)
-            else:
-                z_load = None
+        # Get Calibration Data (Always Interpolate)
+        z_short = self._get_interpolated_cal_value(self.cal_short, freq)
+        z_open = self._get_interpolated_cal_value(self.cal_open, freq)
+        if self.cal_load:
+            z_load = self._get_interpolated_cal_value(self.cal_load, freq)
         else:
-            # Find nearest freq
-            freqs = list(self.cal_short.keys())
-            if not freqs: return z_meas
-            nearest_f = min(freqs, key=lambda x: abs(x - freq))
-            
-            # Check if nearest is reasonably close (e.g. within 5%)
-            if abs(nearest_f - freq) / freq > 0.05:
-                # No valid cal data nearby, return raw
-                return z_meas 
-                
-            z_short = self.cal_short[nearest_f]
-            z_open = self.cal_open[nearest_f]
-            z_load = self.cal_load.get(nearest_f, None)
+            z_load = None
         
         # OSL Calibration
         if z_load is not None:
@@ -698,10 +683,7 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.cal_check.toggled.connect(lambda c: setattr(self.module, 'use_calibration', c))
         lay_sweep.addRow(self.cal_check)
         
-        self.interp_check = QCheckBox(tr("Interpolate Calibration"))
-        self.interp_check.setChecked(self.module.use_cal_interpolation)
-        self.interp_check.toggled.connect(lambda c: setattr(self.module, 'use_cal_interpolation', c))
-        lay_sweep.addRow(self.interp_check)
+
         
         self.sw_start = QDoubleSpinBox(); self.sw_start.setRange(20, 20000); self.sw_start.setValue(20)
         lay_sweep.addRow(tr("Start:"), self.sw_start)
@@ -730,15 +712,22 @@ class ImpedanceAnalyzerWidget(QWidget):
         btn_grid.addWidget(self.btn_open, 0, 0)
         btn_grid.addWidget(self.btn_short, 0, 1)
         btn_grid.addWidget(self.btn_load, 1, 0)
+        btn_grid.addWidget(self.btn_load, 1, 0)
         btn_grid.addWidget(self.btn_dut, 1, 1)
+
+        self.btn_stop = QPushButton(tr("Stop Sweep"))
+        self.btn_stop.clicked.connect(self.stop_sweep)
+        self.btn_stop.setStyleSheet("font-weight: bold; background-color: #ffcccc; color: black;")
+        self.btn_stop.setEnabled(False) # Default disabled
+        btn_grid.addWidget(self.btn_stop, 2, 0, 1, 2) # Span 2 columns
         
         self.btn_save_cal_file = QPushButton(tr("Save Cal File"))
         self.btn_save_cal_file.clicked.connect(self.on_save_cal)
         self.btn_load_cal_file = QPushButton(tr("Load Cal File"))
         self.btn_load_cal_file.clicked.connect(self.on_load_cal)
         
-        btn_grid.addWidget(self.btn_save_cal_file, 2, 0)
-        btn_grid.addWidget(self.btn_load_cal_file, 2, 1)
+        btn_grid.addWidget(self.btn_save_cal_file, 3, 0)
+        btn_grid.addWidget(self.btn_load_cal_file, 3, 1)
         
         lay_sweep.addRow(btn_grid)
         
@@ -861,6 +850,18 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.sweep_worker.result.connect(self.on_sweep_result)
         self.sweep_worker.finished_sweep.connect(self.on_sweep_finished)
         self.sweep_worker.start()
+        
+        # Update UI state
+        self.btn_open.setEnabled(False)
+        self.btn_short.setEnabled(False)
+        self.btn_load.setEnabled(False)
+        self.btn_dut.setEnabled(False)
+        self.btn_stop.setEnabled(True)
+
+    def stop_sweep(self):
+        if self.sweep_worker and self.sweep_worker.isRunning():
+            self.sweep_worker.cancel()
+            # UI update will happen in on_sweep_finished
         
     def on_save_cal(self):
         filename, _ = QFileDialog.getSaveFileName(self, tr("Save Calibration"), "", tr("JSON Files (*.json)"))
@@ -1063,6 +1064,13 @@ class ImpedanceAnalyzerWidget(QWidget):
             QMessageBox.information(self, tr("Calibration"), tr("Short Calibration Completed"))
         elif self.cal_mode == 'load':
             QMessageBox.information(self, tr("Calibration"), tr("Load Calibration Completed"))
+
+        # Restore UI state
+        self.btn_open.setEnabled(True)
+        self.btn_short.setEnabled(True)
+        self.btn_load.setEnabled(True)
+        self.btn_dut.setEnabled(True)
+        self.btn_stop.setEnabled(False)
 
     def apply_theme(self, theme_name):
         if theme_name == 'system' and hasattr(self.app, 'theme_manager'):
