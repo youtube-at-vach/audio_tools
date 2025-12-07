@@ -687,7 +687,6 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.load_std_spin.valueChanged.connect(lambda v: setattr(self.module, 'load_standard_real', v))
         lay_conf.addRow(tr("Load Std R:"), self.load_std_spin)
         
-        
         grp_conf.setLayout(lay_conf)
         left_layout.addWidget(grp_conf)
         
