@@ -567,6 +567,11 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.amp_spin.valueChanged.connect(lambda v: setattr(self.module, 'gen_amplitude', v))
         lay_meas.addRow(tr("Amplitude:"), self.amp_spin)
         
+        self.avg_spin = QSpinBox()
+        self.avg_spin.setRange(1, 100); self.avg_spin.setValue(self.module.averaging_count)
+        self.avg_spin.valueChanged.connect(lambda v: setattr(self.module, 'averaging_count', v))
+        lay_meas.addRow(tr("Averages:"), self.avg_spin)
+        
         self.circuit_combo = QComboBox()
         self.circuit_combo.addItems([tr("Series"), tr("Parallel")])
         self.circuit_combo.currentTextChanged.connect(self.on_circuit_mode_changed)
