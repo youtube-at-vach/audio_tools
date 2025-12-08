@@ -618,6 +618,7 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.cal_mode = None # 'open', 'short', or None (DUT)
 
     def init_ui(self):
+        nyquist_freq = self.module.audio_engine.sample_rate / 2.0
         main_layout = QHBoxLayout(self)
         
         # --- Left Panel: Controls ---
@@ -644,7 +645,7 @@ class ImpedanceAnalyzerWidget(QWidget):
         lay_meas.addRow(self.toggle_btn)
         
         self.freq_spin = QDoubleSpinBox()
-        self.freq_spin.setRange(20, 20000); self.freq_spin.setValue(1000); self.freq_spin.setSuffix(" Hz")
+        self.freq_spin.setRange(20, nyquist_freq); self.freq_spin.setValue(1000); self.freq_spin.setSuffix(" Hz")
         self.freq_spin.valueChanged.connect(lambda v: setattr(self.module, 'gen_frequency', v))
         lay_meas.addRow(tr("Frequency:"), self.freq_spin)
         
@@ -698,9 +699,9 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.cal_check.toggled.connect(lambda c: setattr(self.module, 'use_calibration', c))
         lay_sweep.addRow(self.cal_check)
         
-        self.sw_start = QDoubleSpinBox(); self.sw_start.setRange(20, 20000); self.sw_start.setValue(20)
+        self.sw_start = QDoubleSpinBox(); self.sw_start.setRange(20, nyquist_freq); self.sw_start.setValue(20)
         lay_sweep.addRow(tr("Start:"), self.sw_start)
-        self.sw_end = QDoubleSpinBox(); self.sw_end.setRange(20, 20000); self.sw_end.setValue(20000)
+        self.sw_end = QDoubleSpinBox(); self.sw_end.setRange(20, nyquist_freq); self.sw_end.setValue(min(20000, nyquist_freq))
         lay_sweep.addRow(tr("End:"), self.sw_end)
         self.sw_steps = QSpinBox(); self.sw_steps.setRange(10, 1000); self.sw_steps.setValue(50)
         lay_sweep.addRow(tr("Steps:"), self.sw_steps)
