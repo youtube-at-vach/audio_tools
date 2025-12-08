@@ -779,7 +779,7 @@ class ImpedanceAnalyzerWidget(QWidget):
         pm_layout = QHBoxLayout()
         pm_layout.addWidget(QLabel(tr("Plot Mode:")))
         self.plot_mode_combo = QComboBox()
-        self.plot_mode_combo.addItems([tr("|Z| & Phase"), tr("R & X (ESR/ESL)"), tr("D (Tan δ)"), tr("C / L")])
+        self.plot_mode_combo.addItems([tr("|Z| & Phase"), tr("R & X (ESR/ESL)"), tr("D (Tan δ)"), tr("C / L"), tr("Nyquist Plot")])
         self.plot_mode_combo.currentIndexChanged.connect(self.update_plot_mode)
         pm_layout.addWidget(self.plot_mode_combo)
         pm_layout.addStretch()
@@ -904,6 +904,7 @@ class ImpedanceAnalyzerWidget(QWidget):
         
         if mode == tr("|Z| & Phase"):
             pi.setLabel('left', tr("|Z|"), units='Ohm')
+            pi.setLabel('bottom', tr("Frequency"), units='Hz')
             pi.setLogMode(y=True) # Z is Log Y
             
             self.curve_primary.setData(name=tr('|Z|'), pen='g')
@@ -916,6 +917,7 @@ class ImpedanceAnalyzerWidget(QWidget):
             
         elif mode == tr("R & X (ESR/ESL)"):
             pi.setLabel('left', tr("Resistance (R) / Reactance (X)"), units='Ohm')
+            pi.setLabel('bottom', tr("Frequency"), units='Hz')
             pi.setLogMode(y=True) # R/X often span large ranges
             
             self.curve_primary.setData(name=tr('Resistance (R)'), pen='y')
@@ -931,6 +933,7 @@ class ImpedanceAnalyzerWidget(QWidget):
             
         elif mode == tr("D (Tan δ)"):
             pi.setLabel('left', tr("D (Tan δ)"))
+            pi.setLabel('bottom', tr("Frequency"), units='Hz')
             pi.setLogMode(y=False) 
             
             self.curve_primary.setData(name=tr('D'), pen='r')
@@ -942,6 +945,7 @@ class ImpedanceAnalyzerWidget(QWidget):
             
         elif mode == tr("C / L"):
             pi.setLabel('left', tr("Capacitance"), units='F')
+            pi.setLabel('bottom', tr("Frequency"), units='Hz')
             pi.setLogMode(y=True)
             
             self.curve_primary.setData(name=tr('Capacitance'), pen='b')
@@ -952,6 +956,18 @@ class ImpedanceAnalyzerWidget(QWidget):
             
             self.curve_right.setData(name=tr('Inductance'), pen='r')
             self.legend.addItem(self.curve_right, tr('Inductance'))
+            
+        elif mode == tr("Nyquist Plot"):
+            pi.setLabel('left', tr("-Imag (Z)"), units='Ohm')
+            pi.setLabel('bottom', tr("Real (Z)"), units='Ohm')
+            pi.setLogMode(x=False, y=False) # Linear for Nyquist
+            
+            self.curve_primary.setData(name=tr('Nyquist'), pen='w', symbol='o', symbolSize=5)
+            self.legend.addItem(self.curve_primary, tr('Nyquist'))
+            
+            self.curve_right.setVisible(False)
+            ax_right.setLabel('')
+            ax_right.setStyle(showValues=False)
             
         # Re-plot data if available
         if self.sweep_freqs:
@@ -966,7 +982,7 @@ class ImpedanceAnalyzerWidget(QWidget):
         
         # X-Axis Data (Manual Log)
         is_log_x = self.plot_widget.getPlotItem().getAxis('bottom').logMode
-        if is_log_x:
+        if is_log_x and mode != tr("Nyquist Plot"):
             x_data = np.log10(freqs)
         else:
             x_data = freqs
@@ -1039,6 +1055,14 @@ class ImpedanceAnalyzerWidget(QWidget):
                  self.curve_right.setData(x_data, ls_plot)
             else:
                  self.curve_right.setData(x_data, ls)
+
+        elif mode == tr("Nyquist Plot"):
+            # Nyquist: X = Real(Z), Y = -Imag(Z)
+            # Standard EIS Convention
+            x_nyquist = zs.real
+            y_nyquist = -zs.imag
+            
+            self.curve_primary.setData(x_nyquist, y_nyquist)
 
     def on_sweep_result(self, f, z):
         if self.cal_mode == 'open':
