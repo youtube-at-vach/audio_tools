@@ -6,24 +6,25 @@ PythonとPyQt6で構築されており、高精度な信号生成、解析、測
 ## ✨ 主な機能 (Features)
 
 ### 🛠️ 測定モジュール
-以下の16種類のモジュールが統合されています:
+以下の17種類のモジュールが統合されています:
 
-1.  **Signal Generator**: 正弦波、矩形波、ノイズ、スイープ信号などを生成。位相制御にも対応。
-2.  **Spectrum Analyzer**: 高速FFTによるリアルタイムスペクトル解析。PSD表示、SI単位表示に対応。
-3.  **LUFS Meter**: ラウドネス (LUFS) のリアルタイム測定。
-4.  **Loopback Finder**: オーディオデバイスの遅延測定。
-5.  **Distortion Analyzer**: THD, THD+N, SINAD, IMD (SMPTE/CCIF) の測定。
-6.  **Advanced Distortion Meter**: MIM、SPDR、PIM測定を含む高度な歪み解析。
-7.  **Network Analyzer**: 周波数特性(ゲイン・位相)の測定。
-8.  **Oscilloscope**: 波形の時間軸表示とトリガー機能。リアルタイムフィルタリング対応。
-9. **Lock-in Amplifier**: 微小信号の位相敏感検波 (LIA)。周波数応答解析 (FRA) モード、ハーモニクス測定搭載。
-10. **Impedance Analyzer**: インピーダンス測定とOSL (Open/Short/Load) キャリブレーション。R/X、Q、C/Lプロット対応。
-11. **Frequency Counter**: 高精度な周波数測定とアラン分散プロット。
-12. **Spectrogram**: 時間-周波数表示のスペクトログラム。
-13. **Boxcar Averager**: ボックスカー平均によるノイズ低減。外部リファレンス同期対応。
-14. **Goniometer**: ステレオ信号の位相相関と空間分布の可視化。
-15. **Noise Profiler**: ノイズ特性の詳細解析。1/fノイズ、ハムノイズ、ホワイトノイズの自動検出と定量化。
-16. **Settings**: デバイス設定、キャリブレーション、テーマ選択など。
+1.  **Signal Generator**: 正弦波、矩形波、三角波、ノコギリ波(立ち上がり/立ち下がり)、ホワイト/ピンクノイズ、周波数スイープ信号を生成。位相制御、振幅制御、ステレオ出力に対応。
+2.  **Spectrum Analyzer**: 高速FFTによるリアルタイムスペクトル解析。PSD/RMS表示、SI単位表示、周波数範囲制限、メモリ機能、カーソル測定に対応。
+3.  **LUFS Meter**: ラウドネス (LUFS/LKFS) のリアルタイム測定。クレストファクター、ダイナミックレンジ表示。
+4.  **Loopback Finder**: オーディオインターフェースのレイテンシー(遅延)測定ツール。
+5.  **Distortion Analyzer**: THD、THD+N、SINAD、IMD (SMPTE/CCIF) の測定。内蔵信号発生器、周波数スイープ、ハーモニクスバーグラフ、平均化機能搭載。
+6.  **Advanced Distortion Meter**: MIM (Multi-tone Intermodulation)、SPDR (Spurious-free Dynamic Range)、PIM (Passive Intermodulation) 測定を含む高度な歪み解析。
+7.  **Network Analyzer**: 周波数特性(ゲイン・位相・群遅延)の測定。スイープ測定、複数トレース表示、周波数範囲制限対応。
+8.  **Oscilloscope**: 2チャンネル波形表示、トリガー機能、カーソル測定、演算波形(A+B, A-B)、リアルタイムローパス/ハイパスフィルタリング対応。
+9. **Lock-in Amplifier**: 位相敏感検波 (PSD) による微小信号測定。周波数応答解析 (FRA) モード、ハーモニクス復調(2次〜10次)、キャリブレーション機能搭載。
+10. **Impedance Analyzer**: インピーダンス測定とOSL (Open/Short/Load) キャリブレーション。複数プロットモード(Z/θ、R/X、Q、C/L、Nyquist、Smith Chart)、スイープ測定、キャリブレーション補間対応。
+11. **Frequency Counter**: 高精度な周波数・周期測定。アラン分散プロット、キャリブレーション機能搭載。
+12. **Spectrogram**: 時間-周波数表示のスペクトログラム。周波数範囲制限、カラーマップ選択対応。
+13. **Boxcar Averager**: ボックスカー平均によるノイズ低減と過渡応答解析。内部パルス/ステップ生成、外部リファレンス同期(立ち上がり/立ち下がりエッジ)対応。
+14. **Goniometer**: ステレオ信号の位相相関と空間分布の可視化。Lissajous表示、フォスファー表示モード(残光効果)、カスタムカラーパレット対応。
+15. **Noise Profiler**: ノイズ特性の詳細解析ツール。1/fノイズ、ハムノイズ、ホワイトノイズの自動検出と定量化。平均化モード、LNAゲイン補正、熱雑音限界表示、等価抵抗表示対応。
+16. **Recorder & Player**: オーディオファイル(WAV/MP3/FLAC/OGG等)の録音・再生。リサンプリング、ループ再生、ソフトウェアループバック機能搭載。
+17. **Settings**: デバイス設定、キャリブレーション、テーマ選択、多言語切り替えなど。
 
 ### 🌍 多言語対応 (Localization)
 世界中の主要な言語をサポートしています。設定画面から切り替え可能です。
