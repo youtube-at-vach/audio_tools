@@ -623,7 +623,15 @@ class ImpedanceAnalyzerWidget(QWidget):
         # --- Left Panel: Controls ---
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
-        left_panel.setFixedWidth(300) # Fixed width for controls
+        left_panel.setFixedWidth(320)
+        
+        # Tabs
+        self.tabs = QTabWidget()
+        left_layout.addWidget(self.tabs)
+        
+        # --- Tab 1: Manual (Measurement & Config) ---
+        tab_manual = QWidget()
+        manual_layout = QVBoxLayout(tab_manual)
         
         # 1. Measurement Control
         grp_meas = QGroupBox(tr("Measurement"))
@@ -656,7 +664,7 @@ class ImpedanceAnalyzerWidget(QWidget):
         lay_meas.addRow(tr("Circuit Model:"), self.circuit_combo)
         
         grp_meas.setLayout(lay_meas)
-        left_layout.addWidget(grp_meas)
+        manual_layout.addWidget(grp_meas)
         
         # 2. Configuration
         grp_conf = QGroupBox(tr("Configuration"))
@@ -673,7 +681,14 @@ class ImpedanceAnalyzerWidget(QWidget):
         lay_conf.addRow(tr("Load Std R:"), self.load_std_spin)
         
         grp_conf.setLayout(lay_conf)
-        left_layout.addWidget(grp_conf)
+        manual_layout.addWidget(grp_conf)
+        
+        manual_layout.addStretch()
+        self.tabs.addTab(tab_manual, tr("Manual"))
+        
+        # --- Tab 2: Sweep / Cal ---
+        tab_sweep = QWidget()
+        sweep_layout = QVBoxLayout(tab_sweep)
         
         # 3. Sweep & Cal Actions
         grp_sweep = QGroupBox(tr("Sweep / Calibration"))
@@ -682,8 +697,6 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.cal_check = QCheckBox(tr("Apply Calibration"))
         self.cal_check.toggled.connect(lambda c: setattr(self.module, 'use_calibration', c))
         lay_sweep.addRow(self.cal_check)
-        
-
         
         self.sw_start = QDoubleSpinBox(); self.sw_start.setRange(20, 20000); self.sw_start.setValue(20)
         lay_sweep.addRow(tr("Start:"), self.sw_start)
@@ -712,7 +725,6 @@ class ImpedanceAnalyzerWidget(QWidget):
         btn_grid.addWidget(self.btn_open, 0, 0)
         btn_grid.addWidget(self.btn_short, 0, 1)
         btn_grid.addWidget(self.btn_load, 1, 0)
-        btn_grid.addWidget(self.btn_load, 1, 0)
         btn_grid.addWidget(self.btn_dut, 1, 1)
 
         self.btn_stop = QPushButton(tr("Stop Sweep"))
@@ -732,7 +744,10 @@ class ImpedanceAnalyzerWidget(QWidget):
         lay_sweep.addRow(btn_grid)
         
         grp_sweep.setLayout(lay_sweep)
-        left_layout.addWidget(grp_sweep)
+        sweep_layout.addWidget(grp_sweep)
+        
+        sweep_layout.addStretch()
+        self.tabs.addTab(tab_sweep, tr("Sweep / Cal"))
         
         left_layout.addStretch()
         main_layout.addWidget(left_panel)
