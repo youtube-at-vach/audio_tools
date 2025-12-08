@@ -41,7 +41,7 @@ jobs:
         # タグ名を取得（refs/tags/... から取り除く）
         $tag = $env:GITHUB_REF -replace 'refs/tags/',''
         if (-not $tag) { $tag = 'untagged' }
-        $zip = "dist/Audio_Measurement_Tools.zip"
+        $zip = "dist/Audio_Measurement_Tools-Windows.zip"
         Compress-Archive -Path "dist/Audio_Measurement_Tools.exe" -DestinationPath $zip -Force
         Write-Output "Zipped to: $zip"
 
