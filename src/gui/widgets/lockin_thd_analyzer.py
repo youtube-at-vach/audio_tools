@@ -48,6 +48,8 @@ class LockInTHDAnalyzer(MeasurementModule):
         # DSP State
         self._phase_gen = 0.0
         self.callback_id = None
+        self.history_len = self.buffer_size * 10
+        self.residual_history = deque(maxlen=self.history_len)
         
     @property
     def name(self) -> str:
@@ -205,6 +207,9 @@ class LockInTHDAnalyzer(MeasurementModule):
             residual = sosfiltfilt(sos_lp, residual)
         
         self.residual_data = residual
+        if self.residual_history.maxlen != self.history_len:
+            self.residual_history = deque(maxlen=self.history_len)
+        self.residual_history.extend(residual.tolist())
         
         # Calculate RMS
         # Remove edges to avoid filter artifacts ?
@@ -350,11 +355,11 @@ class LockInTHDWidget(QWidget):
         # RIGHT: Plots
         right_panel = QVBoxLayout()
         self.tabs = QTabWidget()
-        
+
         # Plot 1: Time Domain (Input vs Residual)
         self.plot_time = pg.PlotWidget(title="Time Domain")
         self.plot_time.addLegend()
-        
+
         # Plot Controls
         plot_ctrl_layout = QHBoxLayout()
         self.chk_show_input = QCheckBox(tr("Show Input Trace"))
@@ -362,20 +367,25 @@ class LockInTHDWidget(QWidget):
         self.chk_show_input.toggled.connect(self.update_plot_visibility)
         plot_ctrl_layout.addWidget(self.chk_show_input)
         plot_ctrl_layout.addStretch()
-        
-        # Add controls above plot? Or inside tab? 
-        # Let's put it in a layout with the plot
+
         plot_widget_container = QWidget()
         pwc_layout = QVBoxLayout()
         pwc_layout.addLayout(plot_ctrl_layout)
         pwc_layout.addWidget(self.plot_time)
         plot_widget_container.setLayout(pwc_layout)
-        
+
         self.curve_input = self.plot_time.plot(pen='c', name="Input")
         self.curve_resid = self.plot_time.plot(pen='r', name="Residual (x10)")
         self.tabs.addTab(plot_widget_container, "Waveform")
-        
-        # Plot 2: Spectrum (Residual)
+
+        # Plot 2: Residual-only Time Domain
+        self.plot_res_time = pg.PlotWidget(title="Residual Only")
+        self.plot_res_time.addLegend()
+        self.curve_res_time = self.plot_res_time.plot(pen='m', name="Residual")
+        self.curve_res_time_avg = self.plot_res_time.plot(pen='y', name="Moving Avg")
+        self.tabs.addTab(self.plot_res_time, "Residual")
+
+        # Plot 3: Spectrum (Residual)
         self.plot_spec = pg.PlotWidget(title="Residual Spectrum")
         self.plot_spec.setLogMode(x=True, y=False)
         self.plot_spec.setLabel('bottom', 'Frequency', units='Hz')
@@ -464,6 +474,7 @@ class LockInTHDWidget(QWidget):
         # Decimate for performance
         data = self.module.input_data
         res = self.module.residual_data
+        res_hist = np.array(self.module.residual_history)
         
         step = max(1, len(data) // 1000)
         
@@ -472,6 +483,23 @@ class LockInTHDWidget(QWidget):
         
         # Scale residual for visibility
         self.curve_resid.setData(res[::step] * 10) 
+        # Long residual history with optional smoothing
+        if len(res_hist) > 0:
+            fs = self.module.audio_engine.sample_rate
+            x_hist = np.arange(len(res_hist)) / fs
+            self.curve_res_time.setData(x_hist, res_hist)
+            # Moving average to show slow drift / integration
+            win = max(10, min(len(res_hist)//20, 2000))
+            if win < len(res_hist):
+                kernel = np.ones(win) / win
+                ma = np.convolve(res_hist, kernel, mode='valid')
+                x_ma = x_hist[win-1:]
+                self.curve_res_time_avg.setData(x_ma, ma)
+            else:
+                self.curve_res_time_avg.setData([], [])
+        else:
+            self.curve_res_time.setData([])
+            self.curve_res_time_avg.setData([])
         
         # Spectrum
         # Calculate FFT of residual
