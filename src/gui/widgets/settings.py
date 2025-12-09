@@ -356,7 +356,8 @@ class SettingsWidget(QWidget):
         
         # Buffer Size
         self.bs_combo = QComboBox()
-        self.bs_combo.addItems(['256', '512', '1024', '2048', '4096'])
+        # Include larger buffers for stability testing; host/driver will reject unsupported sizes.
+        self.bs_combo.addItems(['256', '512', '1024', '2048', '4096', '8192', '16384'])
         self.bs_combo.setCurrentText(str(self.audio_engine.block_size))
         self.bs_combo.currentTextChanged.connect(self.on_bs_changed)
         
