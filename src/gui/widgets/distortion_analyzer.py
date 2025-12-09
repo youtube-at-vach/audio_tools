@@ -60,6 +60,8 @@ class DistortionAnalyzer(MeasurementModule):
         # State
         self.current_result = None
         self._avg_thdn = None
+        self._avg_state = None
+        self._avg_spectrum = None
         
         # Capture State
         self.capture_requested = False
@@ -72,6 +74,110 @@ class DistortionAnalyzer(MeasurementModule):
         self.sweep_results = []
         
         self.callback_id = None
+
+    def reset_averaging_state(self):
+        """Clear cached averaging state when settings change."""
+        self._avg_thdn = None
+        self._avg_state = None
+        self._avg_spectrum = None
+
+    def _apply_result_averaging(self, results: dict) -> dict:
+        """Apply exponential averaging to harmonic metrics using raw components."""
+        alpha = self.averaging
+        if alpha <= 0:
+            self.reset_averaging_state()
+            return results
+
+        raw_fund_rms = float(results.get('raw_fund_rms', 0.0))
+        raw_res_rms = float(results.get('raw_res_rms', 0.0))
+        raw_fund_amp = float(results.get('raw_fund_amp', 0.0))
+        raw_freq = float(results.get('basic_wave', {}).get('frequency', self.gen_frequency))
+        raw_amp_dbfs = float(results.get('basic_wave', {}).get('amplitude_dbfs', -140.0))
+        raw_harmonics = np.array(results.get('raw_harmonics', []), dtype=float)
+
+        # Initialize or update state
+        if self._avg_state is None or self._avg_state['harmonics'].shape != raw_harmonics.shape:
+            self._avg_state = {
+                'fund_rms': raw_fund_rms,
+                'res_rms': raw_res_rms,
+                'fund_amp': raw_fund_amp,
+                'frequency': raw_freq,
+                'amplitude_dbfs': raw_amp_dbfs,
+                'harmonics': raw_harmonics,
+            }
+        else:
+            self._avg_state['fund_rms'] = alpha * self._avg_state['fund_rms'] + (1 - alpha) * raw_fund_rms
+            self._avg_state['res_rms'] = alpha * self._avg_state['res_rms'] + (1 - alpha) * raw_res_rms
+            self._avg_state['fund_amp'] = alpha * self._avg_state['fund_amp'] + (1 - alpha) * raw_fund_amp
+            self._avg_state['frequency'] = alpha * self._avg_state['frequency'] + (1 - alpha) * raw_freq
+            self._avg_state['amplitude_dbfs'] = alpha * self._avg_state['amplitude_dbfs'] + (1 - alpha) * raw_amp_dbfs
+            self._avg_state['harmonics'] = alpha * self._avg_state['harmonics'] + (1 - alpha) * raw_harmonics
+
+        state = self._avg_state
+
+        fund_amp = max(state['fund_amp'], 1e-12)
+        fund_rms = max(state['fund_rms'], 1e-12)
+        res_rms = max(state['res_rms'], 0.0)
+
+        thd_linear = 0.0
+        if fund_amp > 0 and state['harmonics'].size:
+            thd_linear = np.sqrt(np.sum(state['harmonics']**2)) / fund_amp
+
+        thd_percent = thd_linear * 100
+        thd_db = 20 * np.log10(thd_linear + 1e-12)
+
+        thdn_linear = res_rms / fund_rms if fund_rms > 0 else 0.0
+        thdn_percent = thdn_linear * 100
+        thdn_db = 20 * np.log10(thdn_linear + 1e-12)
+        sinad_db = -thdn_db
+
+        # Rebuild harmonics list using averaged fundamentals for relative levels
+        harmonics = []
+        base_freq = state['frequency']
+        for idx, amp in enumerate(state['harmonics']):
+            order = idx + 2
+            rel_amp = amp / fund_amp if fund_amp > 0 else 0.0
+            harmonics.append({
+                'order': order,
+                'frequency': base_freq * order,
+                'amplitude_dbr': 20 * np.log10(rel_amp + 1e-12),
+                'amplitude_linear': float(amp)
+            })
+
+        averaged = {
+            'basic_wave': {
+                'frequency': state['frequency'],
+                'amplitude_dbfs': state['amplitude_dbfs'],
+                'max_amplitude': state['fund_amp']
+            },
+            'harmonics': harmonics,
+            'thd_percent': thd_percent,
+            'thd_db': thd_db,
+            'thdn_percent': thdn_percent,
+            'thdn_db': thdn_db,
+            'sinad_db': sinad_db,
+            # Preserve averaged raw components for downstream use/inspection
+            'raw_fund_rms': state['fund_rms'],
+            'raw_res_rms': state['res_rms'],
+            'raw_harmonics': state['harmonics'],
+            'raw_fund_amp': state['fund_amp']
+        }
+
+        return averaged
+
+    def apply_spectrum_averaging(self, mag_linear: np.ndarray) -> np.ndarray:
+        """Smooth spectrum magnitude with exponential averaging (linear domain)."""
+        alpha = self.averaging
+        if alpha <= 0:
+            self._avg_spectrum = None
+            return mag_linear
+
+        if self._avg_spectrum is None or self._avg_spectrum.shape != mag_linear.shape:
+            self._avg_spectrum = mag_linear
+        else:
+            self._avg_spectrum = alpha * self._avg_spectrum + (1 - alpha) * mag_linear
+
+        return self._avg_spectrum
 
     @property
     def gen_amplitude(self):
@@ -106,6 +212,7 @@ class DistortionAnalyzer(MeasurementModule):
             return
             
         self.is_running = True
+        self.reset_averaging_state()
         self.input_data = np.zeros(self.buffer_size)
         self.current_result = None
         
@@ -498,6 +605,19 @@ class DistortionAnalyzerWidget(QWidget):
         self.channel_combo.addItems([tr("Left (Ch 1)"), tr("Right (Ch 2)")])
         self.channel_combo.currentIndexChanged.connect(self.on_channel_changed)
         common_layout.addRow(tr("Output Ch:"), self.channel_combo)
+
+        # Averaging (Exponential)
+        self.avg_label = QLabel(tr("Avg: 0%"))
+        self.avg_slider = QSlider(Qt.Orientation.Horizontal)
+        self.avg_slider.setRange(0, 95)
+        self.avg_slider.setValue(0)
+        self.avg_slider.setFixedWidth(120)
+        self.avg_slider.valueChanged.connect(self.on_avg_changed)
+
+        avg_row = QHBoxLayout()
+        avg_row.addWidget(self.avg_label)
+        avg_row.addWidget(self.avg_slider)
+        common_layout.addRow(tr("Averaging:"), avg_row)
         
         common_group.setLayout(common_layout)
         left_panel.addWidget(common_group)
@@ -705,6 +825,7 @@ class DistortionAnalyzerWidget(QWidget):
                 self.module.signal_type = 'sine'
                 self.gen_stack.setCurrentIndex(0)
                 self.set_meters_mode('thd')
+                self.module.reset_averaging_state()
             elif idx == 2: # SMPTE
                 self.module.signal_type = 'smpte'
                 self.module.imd_standard = 'smpte'
@@ -716,6 +837,7 @@ class DistortionAnalyzerWidget(QWidget):
                 self.imd_f1_spin.setValue(60.0)
                 self.imd_f2_spin.setValue(7000.0)
                 self.imd_ratio_spin.setEnabled(True)
+                self.module.reset_averaging_state()
             elif idx == 3: # CCIF
                 self.module.signal_type = 'ccif'
                 self.module.imd_standard = 'ccif'
@@ -728,12 +850,14 @@ class DistortionAnalyzerWidget(QWidget):
                 self.imd_f2_spin.setValue(20000.0)
                 self.imd_f2_spin.setValue(20000.0)
                 self.imd_ratio_spin.setEnabled(False)
+                self.module.reset_averaging_state()
             elif idx == 4: # Multi-tone
                 self.module.signal_type = 'multitone'
                 self.gen_stack.setCurrentIndex(2)
                 self.set_meters_mode('multitone')
                 # Reset freqs to trigger regen
                 self.module._multitone_freqs = None
+                self.module.reset_averaging_state()
 
     def on_unit_changed(self, unit):
         # Update spin box range/value based on current amplitude
@@ -881,12 +1005,20 @@ class DistortionAnalyzerWidget(QWidget):
 
     def on_freq_changed(self, val):
         self.module.gen_frequency = val
+        self.module.reset_averaging_state()
 
     def on_channel_changed(self, idx):
         self.module.output_channel = idx
+        self.module.reset_averaging_state()
 
     def on_in_channel_changed(self, idx):
         self.module.input_channel = idx
+        self.module.reset_averaging_state()
+
+    def on_avg_changed(self, val):
+        self.avg_label.setText(tr("Avg: {0}%").format(val))
+        self.module.averaging = val / 100.0
+        self.module.reset_averaging_state()
 
     def update_realtime_analysis(self):
         if not self.module.is_running:
@@ -937,6 +1069,7 @@ class DistortionAnalyzerWidget(QWidget):
                 self.module.window_type, 
                 sample_rate
             )
+            results = self.module._apply_result_averaging(results)
             self.module.current_result = results
             
             # Update Meters
@@ -972,7 +1105,9 @@ class DistortionAnalyzerWidget(QWidget):
             # Update Spectrum Plot
             window = get_window(self.module.window_type, len(data))
             fft_data = np.fft.rfft(data * window)
-            mag = 20 * np.log10(np.abs(fft_data) / len(data) * 2 + 1e-12)
+            mag_linear = np.abs(fft_data) / len(data) * 2
+            mag_linear = self.module.apply_spectrum_averaging(mag_linear)
+            mag = 20 * np.log10(mag_linear + 1e-12)
             freqs = np.fft.rfftfreq(len(data), 1/sample_rate)
             
             self.spectrum_curve.setData(freqs[1:], mag[1:])
