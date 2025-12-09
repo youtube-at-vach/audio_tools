@@ -273,6 +273,14 @@ class LockInTHDWidget(QWidget):
         self.combo_input_ch.setCurrentIndex(initial_idx)
         self.combo_input_ch.currentIndexChanged.connect(lambda v: setattr(self.module, 'input_channel', v))
         form.addRow(tr("Input Channel:"), self.combo_input_ch)
+
+        # Output Channel
+        self.combo_output_ch = QComboBox()
+        self.combo_output_ch.addItems([tr("Left (Ch 1)"), tr("Right (Ch 2)"), tr("Stereo (Both)")])
+        out_idx = 2 if self.module.output_channel == 2 else (1 if self.module.output_channel == 1 else 0)
+        self.combo_output_ch.setCurrentIndex(out_idx)
+        self.combo_output_ch.currentIndexChanged.connect(self.on_output_ch_changed)
+        form.addRow(tr("Output Ch:"), self.combo_output_ch)
         
         self.freq_spin = QDoubleSpinBox()
         self.freq_spin.setRange(20, 20000)
@@ -282,11 +290,19 @@ class LockInTHDWidget(QWidget):
         form.addRow(tr("Frequency:"), self.freq_spin)
         
         self.amp_spin = QDoubleSpinBox()
-        self.amp_spin.setRange(0, 1.0)
-        self.amp_spin.setSingleStep(0.1)
-        self.amp_spin.setValue(0.5)
-        self.amp_spin.valueChanged.connect(lambda v: setattr(self.module, 'gen_amplitude', v))
-        form.addRow(tr("Amplitude (0-1):"), self.amp_spin)
+        self.amp_spin.setRange(-120, 20)
+        self.amp_spin.setSingleStep(1.0)
+        self.amp_spin.setValue(-6)
+        self.amp_spin.valueChanged.connect(self.on_amp_changed)
+
+        self.amp_unit_combo = QComboBox()
+        self.amp_unit_combo.addItems(['dBFS', 'dBV', 'dBu', 'Vrms'])
+        self.amp_unit_combo.currentTextChanged.connect(self.on_amp_unit_changed)
+
+        amp_layout = QHBoxLayout()
+        amp_layout.addWidget(self.amp_spin)
+        amp_layout.addWidget(self.amp_unit_combo)
+        form.addRow(tr("Amplitude:"), amp_layout)
         
         self.bw_low_spin = QDoubleSpinBox()
         self.bw_low_spin.setRange(0, 1000)
@@ -394,6 +410,9 @@ class LockInTHDWidget(QWidget):
         
         self.setLayout(layout)
 
+        # Initialize amplitude display to current module state
+        self.on_amp_unit_changed(self.amp_unit_combo.currentText())
+
     def _format_si(self, value, unit):
         if value == 0:
             return f"0 {unit}"
@@ -422,10 +441,65 @@ class LockInTHDWidget(QWidget):
             self.module.stop_analysis()
             self.timer.stop()
             self.btn_toggle.setText(tr("Start Measurement"))
+
+    def on_amp_unit_changed(self, unit):
+        # Convert current linear amplitude (0-1 FS) into selected unit using calibration gain
+        amp_linear = self.module.gen_amplitude
+        gain = self.module.audio_engine.calibration.output_gain
+
+        self.amp_spin.blockSignals(True)
+        if unit == 'dBFS':
+            val = 20 * np.log10(amp_linear + 1e-12)
+            self.amp_spin.setRange(-120, 6)
+            self.amp_spin.setSingleStep(1.0)
+        elif unit == 'dBV':
+            v_peak = amp_linear * gain
+            v_rms = v_peak / np.sqrt(2)
+            val = 20 * np.log10(v_rms + 1e-12)
+            self.amp_spin.setRange(-120, 20)
+            self.amp_spin.setSingleStep(0.5)
+        elif unit == 'dBu':
+            v_peak = amp_linear * gain
+            v_rms = v_peak / np.sqrt(2)
+            val = 20 * np.log10((v_rms + 1e-12) / 0.7746)
+            self.amp_spin.setRange(-120, 20)
+            self.amp_spin.setSingleStep(0.5)
+        else: # Vrms
+            v_peak = amp_linear * gain
+            val = v_peak / np.sqrt(2)
+            self.amp_spin.setRange(0, 100)
+            self.amp_spin.setSingleStep(0.01)
+
+        self.amp_spin.setValue(val)
+        self.amp_spin.blockSignals(False)
+
+    def on_amp_changed(self, val):
+        unit = self.amp_unit_combo.currentText()
+        gain = self.module.audio_engine.calibration.output_gain
+
+        if unit == 'dBFS':
+            amp_linear = 10**(val/20)
+        elif unit == 'dBV':
+            v_rms = 10**(val/20)
+            v_peak = v_rms * np.sqrt(2)
+            amp_linear = v_peak / gain
+        elif unit == 'dBu':
+            v_rms = 0.7746 * 10**(val/20)
+            v_peak = v_rms * np.sqrt(2)
+            amp_linear = v_peak / gain
+        else: # Vrms
+            v_peak = val * np.sqrt(2)
+            amp_linear = v_peak / gain
+
+        amp_linear = max(0.0, min(1.0, amp_linear))
+        self.module.gen_amplitude = amp_linear
             
     def on_freq_changed(self, val):
         self.module.gen_frequency = val
         self.module.target_freq = val
+
+    def on_output_ch_changed(self, idx):
+        self.module.output_channel = idx
         
     def update_plot_visibility(self, checked):
         if checked:
