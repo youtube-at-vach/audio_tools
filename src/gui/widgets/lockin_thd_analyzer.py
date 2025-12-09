@@ -122,15 +122,33 @@ class LockInTHDAnalyzer(MeasurementModule):
         if not self.is_running: return
         
         # Snapshot of buffer
-        data = self.input_data.copy()
+        data_full = self.input_data.copy()
         fs = self.audio_engine.sample_rate
+        
+        # 1. Determine Analysis Window (Integer Cycles)
+        # This is crucial for Lock-in detection to avoid spectral leakage
+        # when the buffer size is not an integer multiple of the signal period.
+        f0 = self.gen_frequency
+        if f0 <= 0: return
+
+        samples_per_cycle = fs / f0
+        n_cycles = int(len(data_full) / samples_per_cycle)
+        
+        if n_cycles < 1:
+            # Frequency too low for buffer, use full buffer but expect leakage
+            n_samples = len(data_full)
+        else:
+            # Use integer number of cycles to minimize leakage
+            n_samples = int(n_cycles * samples_per_cycle)
+            
+        # Slice data
+        data = data_full[:n_samples]
         N = len(data)
         t = np.arange(N) / fs
         
         # Lock-in Detection (Post-processing on block)
         # We assume frequency is known (Internal mode)
         # If we need potential tuning, we could do a coarse FFT peak find first.
-        f0 = self.gen_frequency
         
         # Create IQ Reference
         # Note: Phase here is relative to the start of *this block*. 
