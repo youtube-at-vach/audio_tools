@@ -60,13 +60,13 @@ class LockInTHDAnalyzer(MeasurementModule):
         return "High-precision THD+N measurement using lock-in fundamental removal."
 
     def run(self, args):
-        print("Lock-in THD+N Analyzer running from CLI (not implemented)")
+        # CLI entry not implemented
+        pass
 
     def get_widget(self):
         return LockInTHDWidget(self)
 
     def start_analysis(self):
-        print("DEBUG: start_analysis called. is_running:", self.is_running)
         if self.is_running: return
         self.is_running = True
         
@@ -112,18 +112,13 @@ class LockInTHDAnalyzer(MeasurementModule):
                 self.input_data[-len(in_sig):] = in_sig
 
         self.callback_id = self.audio_engine.register_callback(callback)
-        print("DEBUG: Measured started. callback_id:", self.callback_id)
         
     def stop_analysis(self):
-        print("DEBUG: stop_analysis called. is_running:", self.is_running, "callback_id:", self.callback_id)
         if self.is_running:
             self.is_running = False # Flag first
             if self.callback_id is not None:
-                print("DEBUG: Unregistering callback:", self.callback_id)
                 self.audio_engine.unregister_callback(self.callback_id)
                 self.callback_id = None
-            else:
-                print("DEBUG: callback_id is None, skipping unregister")
 
     def process(self):
         if not self.is_running: return
@@ -323,8 +318,8 @@ class LockInTHDWidget(QWidget):
         unit_layout = QHBoxLayout()
         unit_layout.addWidget(QLabel(tr("Unit:")))
         self.combo_unit = QComboBox()
-        self.combo_unit.addItems(["V", "dBV", "dBFS"])
-        self.combo_unit.setCurrentText("V")
+        self.combo_unit.addItems(["dBV", "dBFS"])
+        self.combo_unit.setCurrentText("dBV")
         unit_layout.addWidget(self.combo_unit)
         meters_layout.addLayout(unit_layout)
         
@@ -398,6 +393,25 @@ class LockInTHDWidget(QWidget):
         layout.addLayout(right_panel, 3)
         
         self.setLayout(layout)
+
+    def _format_si(self, value, unit):
+        if value == 0:
+            return f"0 {unit}"
+        exponent = int(np.floor(np.log10(abs(value)) / 3) * 3)
+        exponent = max(min(exponent, 9), -12)
+        prefixes = {
+            -12: 'p',
+            -9: 'n',
+            -6: 'u',
+            -3: 'm',
+            0: '',
+            3: 'k',
+            6: 'M',
+            9: 'G'
+        }
+        scaled = value / (10 ** exponent)
+        prefix = prefixes.get(exponent, '')
+        return f"{scaled:.3g} {prefix}{unit}"
         
     def on_toggle(self, checked):
         if checked:
@@ -439,33 +453,22 @@ class LockInTHDWidget(QWidget):
         sensitivity = calibration.input_sensitivity
         
         if unit == "dBV":
-            # Convert Fundamental Peak FS to RMS dBV
-            # Fund RMS FS = Fund Peak FS / sqrt(2)
+            # RMS conversions
             fund_rms_fs = fund_peak_fs / np.sqrt(2)
             fund_dbv = 20 * np.log10(fund_rms_fs + 1e-12) + offset_db
-            
             res_dbv = 20 * np.log10(res_rms_fs + 1e-12) + offset_db
+
+            fund_rms_v = fund_rms_fs * sensitivity
+            res_rms_v = res_rms_fs * sensitivity
+
+            fund_str = f"{fund_dbv:.2f} dBV ( {self._format_si(fund_rms_v, 'V')} rms )"
+            res_str = f"{res_dbv:.2f} dBV ( {self._format_si(res_rms_v, 'V')} rms )"
             
-            fund_str = f"{fund_dbv:.2f} dBV"
-            res_str = f"{res_dbv:.2f} dBV"
-            
-        elif unit == "dBFS":
-            # Fundamental is usually Peak dBFS
+        else: # dBFS
             fund_dbfs = 20 * np.log10(fund_peak_fs + 1e-12)
-            
-            # Residual is usually RMS dBFS (so -3dB for FS sine)
             res_dbfs = 20 * np.log10(res_rms_fs + 1e-12)
-            
             fund_str = f"{fund_dbfs:.2f} dBFS"
             res_str = f"{res_dbfs:.2f} dBFS"
-            
-        else: # V
-            # Volts (RMS)
-            fund_rms_v = (fund_peak_fs / np.sqrt(2)) * sensitivity
-            res_rms_v = res_rms_fs * sensitivity
-            
-            fund_str = f"{fund_rms_v:.5f} V"
-            res_str = f"{res_rms_v:.2e} V"
             
         self.lbl_fund.setText(fund_str)
         self.lbl_res.setText(res_str)
