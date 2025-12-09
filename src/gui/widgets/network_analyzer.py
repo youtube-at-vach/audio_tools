@@ -723,7 +723,7 @@ class NetworkAnalyzerWidget(QWidget):
         
         # Group Delay Axis (Right)
         self.gd_axis = pg.AxisItem('right')
-        self.gd_axis.setLabel(tr('Group Delay'), units='ms')
+        self.gd_axis.setLabel(tr('Group Delay'), units='s')
         self.phase_plot.plotItem.layout.addItem(self.gd_axis, 2, 3)
         
         self.gd_view = pg.ViewBox()
@@ -1063,7 +1063,6 @@ class NetworkAnalyzerWidget(QWidget):
             d_freq[d_freq == 0] = 1e-12
             
             group_delay_sec = - d_phi / (2 * np.pi * d_freq)
-            group_delay_ms = group_delay_sec * 1000.0
             
             # Plot against mid-points of freqs
             freq_mids = (freqs_to_plot[:-1] + freqs_to_plot[1:]) / 2
@@ -1071,7 +1070,7 @@ class NetworkAnalyzerWidget(QWidget):
             # Manually log X for the overlay view
             log_freq_mids = np.log10(freq_mids)
             
-            self.gd_curve.setData(log_freq_mids, group_delay_ms)
+            self.gd_curve.setData(log_freq_mids, group_delay_sec)
             self.gd_view.enableAutoRange(axis=pg.ViewBox.YAxis, enable=True)
             self.update_gd_views()
             
