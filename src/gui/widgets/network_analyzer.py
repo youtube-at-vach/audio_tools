@@ -3,7 +3,7 @@ import numpy as np
 import scipy.signal
 import time
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, 
-                             QPushButton, QComboBox, QGroupBox, QFormLayout, QProgressBar, QCheckBox)
+                             QPushButton, QComboBox, QGroupBox, QFormLayout, QProgressBar, QCheckBox, QTabWidget)
 from PyQt6.QtCore import Qt, pyqtSignal, QObject, QThread
 import pyqtgraph as pg
 import threading
@@ -512,12 +512,18 @@ class NetworkAnalyzerWidget(QWidget):
     def init_ui(self):
         layout = QHBoxLayout()
         
-        # Controls
-        controls_group = QGroupBox(tr("Settings"))
-        controls_group.setFixedWidth(300)
+        # Create Tab Widget
+        tabs = QTabWidget()
+        tabs.setFixedWidth(340)
+        
+        # --- Tab 1: Settings ---
+        settings_tab = QWidget()
+        settings_layout = QVBoxLayout()
+        
+        # Controls Group
+        controls_group = QGroupBox(tr("Sweep Settings"))
         form = QFormLayout()
         
-        # Mode
         # Mode
         self.mode_combo = QComboBox()
         self.mode_combo.addItem(tr("Stepped Sine"), "Stepped Sine")
@@ -525,7 +531,6 @@ class NetworkAnalyzerWidget(QWidget):
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         form.addRow(tr("Sweep Mode:"), self.mode_combo)
         
-        # Routing
         # Routing
         self.out_combo = QComboBox()
         self.out_combo.addItem(tr("Left"), "L")
@@ -553,17 +558,6 @@ class NetworkAnalyzerWidget(QWidget):
         self.end_spin.setRange(10, 24000); self.end_spin.setValue(20000)
         self.end_spin.valueChanged.connect(lambda v: setattr(self.module, 'end_freq', v))
         form.addRow(tr("End Freq:"), self.end_spin)
-
-        # Limit Plot Freq
-        self.limit_check = QCheckBox(tr("Limit Plot Freq"))
-        self.limit_check.toggled.connect(self.refresh_plots)
-        self.limit_spin = QDoubleSpinBox()
-        self.limit_spin.setRange(10, 24000); self.limit_spin.setValue(20000)
-        self.limit_spin.valueChanged.connect(self.refresh_plots)
-        limit_layout = QHBoxLayout()
-        limit_layout.addWidget(self.limit_check)
-        limit_layout.addWidget(self.limit_spin)
-        form.addRow(limit_layout)
         
         self.steps_spin = QDoubleSpinBox() 
         self.steps_spin.setDecimals(0)
@@ -598,26 +592,80 @@ class NetworkAnalyzerWidget(QWidget):
         self.avg_spin.valueChanged.connect(lambda v: setattr(self.module, 'num_averages', int(v)))
         form.addRow(tr("Averages:"), self.avg_spin)
         
+        controls_group.setLayout(form)
+        settings_layout.addWidget(controls_group)
+        settings_layout.addStretch()
+        settings_tab.setLayout(settings_layout)
+        tabs.addTab(settings_tab, tr("Settings"))
+        
+        # --- Tab 2: Display ---
+        display_tab = QWidget()
+        display_layout = QVBoxLayout()
+        
+        display_group = QGroupBox(tr("Display Settings"))
+        display_form = QFormLayout()
+        
+        # Limit Plot Freq (Max)
+        self.limit_check = QCheckBox(tr("Limit Max Freq"))
+        self.limit_check.toggled.connect(self.refresh_plots)
+        self.limit_spin = QDoubleSpinBox()
+        self.limit_spin.setRange(10, 24000); self.limit_spin.setValue(20000)
+        self.limit_spin.valueChanged.connect(self.refresh_plots)
+        
+        limit_layout = QHBoxLayout()
+        limit_layout.addWidget(self.limit_check)
+        limit_layout.addWidget(self.limit_spin)
+        display_form.addRow(tr("Max Freq:"), limit_layout)
+
+        # Limit Plot Freq (Min)
+        self.min_limit_check = QCheckBox(tr("Limit Min Freq"))
+        self.min_limit_check.toggled.connect(self.refresh_plots)
+        self.min_limit_spin = QDoubleSpinBox()
+        self.min_limit_spin.setRange(10, 24000); self.min_limit_spin.setValue(20)
+        self.min_limit_spin.valueChanged.connect(self.refresh_plots)
+        
+        min_limit_layout = QHBoxLayout()
+        min_limit_layout.addWidget(self.min_limit_check)
+        min_limit_layout.addWidget(self.min_limit_spin)
+        display_form.addRow(tr("Min Freq:"), min_limit_layout)
+        
         self.smooth_combo = QComboBox()
         self.smooth_combo.addItems([tr("Off"), tr("Light"), tr("Medium"), tr("Heavy")])
         self.smooth_combo.currentTextChanged.connect(self.refresh_plots)
-        form.addRow(tr("Smoothing:"), self.smooth_combo)
+        display_form.addRow(tr("Smoothing:"), self.smooth_combo)
         
         self.unit_combo = QComboBox()
         self.unit_combo.addItems(["dBFS", "dBV", "dBu", "Vrms", "Vpeak"])
         self.unit_combo.currentTextChanged.connect(self.refresh_plots)
-        form.addRow(tr("Unit:"), self.unit_combo)
+        display_form.addRow(tr("Unit:"), self.unit_combo)
         
+        self.gd_check = QCheckBox(tr("Show Group Delay"))
+        self.gd_check.toggled.connect(self.refresh_plots)
+        display_form.addRow(self.gd_check)
+        
+        display_group.setLayout(display_form)
+        display_layout.addWidget(display_group)
+        display_layout.addStretch()
+        display_tab.setLayout(display_layout)
+        tabs.addTab(display_tab, tr("Display"))
+        
+        # --- Tab 3: Calibration ---
+        cal_tab = QWidget()
+        cal_tab_layout = QVBoxLayout()
+        
+        # Latency
+        lat_group = QGroupBox(tr("Latency"))
+        lat_form = QFormLayout()
         self.lat_btn = QPushButton(tr("Calibrate Latency"))
         self.lat_btn.clicked.connect(self.calibrate)
-        form.addRow(self.lat_btn)
+        lat_form.addRow(self.lat_btn)
         self.lat_label = QLabel(tr("Latency: 0.00 ms"))
-        form.addRow(self.lat_label)
+        lat_form.addRow(self.lat_label)
+        lat_group.setLayout(lat_form)
+        cal_tab_layout.addWidget(lat_group)
         
-        controls_group.setLayout(form)
-        
-        # Calibration
-        cal_group = QGroupBox(tr("Calibration"))
+        # Reference
+        cal_group = QGroupBox(tr("Reference Trace"))
         cal_layout = QFormLayout()
         self.store_ref_btn = QPushButton(tr("Store Reference"))
         self.store_ref_btn.clicked.connect(self.on_store_reference)
@@ -628,11 +676,16 @@ class NetworkAnalyzerWidget(QWidget):
         self.apply_ref_check = QCheckBox(tr("Apply Reference"))
         self.apply_ref_check.toggled.connect(self.on_apply_reference_changed)
         cal_layout.addRow(self.apply_ref_check)
-        
-        self.gd_check = QCheckBox(tr("Show Group Delay"))
-        self.gd_check.toggled.connect(self.refresh_plots)
-        cal_layout.addRow(self.gd_check)
         cal_group.setLayout(cal_layout)
+        cal_tab_layout.addWidget(cal_group)
+        
+        cal_tab_layout.addStretch()
+        cal_tab.setLayout(cal_tab_layout)
+        tabs.addTab(cal_tab, tr("Calibration"))
+        
+        # Left Layout
+        left_layout = QVBoxLayout()
+        left_layout.addWidget(tabs)
         
         # Buttons
         btn_layout = QVBoxLayout()
@@ -642,11 +695,7 @@ class NetworkAnalyzerWidget(QWidget):
         btn_layout.addWidget(self.start_btn)
         self.progress_bar = QProgressBar()
         btn_layout.addWidget(self.progress_bar)
-        btn_layout.addStretch()
         
-        left_layout = QVBoxLayout()
-        left_layout.addWidget(controls_group)
-        left_layout.addWidget(cal_group)
         left_layout.addLayout(btn_layout)
         layout.addLayout(left_layout)
         
@@ -871,16 +920,20 @@ class NetworkAnalyzerWidget(QWidget):
         mags_arr = np.array(self.mags)
         phases_arr = np.array(self.phases)
         
+        # Create mask for filtering
+        mask = np.ones(len(freqs_arr), dtype=bool)
+        
         if self.limit_check.isChecked():
             limit = self.limit_spin.value()
-            mask = freqs_arr <= limit
-            freqs_to_plot = freqs_arr[mask]
-            mags_to_plot = mags_arr[mask]
-            phases_to_plot = phases_arr[mask]
-        else:
-            freqs_to_plot = freqs_arr
-            mags_to_plot = mags_arr
-            phases_to_plot = phases_arr
+            mask &= (freqs_arr <= limit)
+            
+        if self.min_limit_check.isChecked():
+            min_limit = self.min_limit_spin.value()
+            mask &= (freqs_arr >= min_limit)
+            
+        freqs_to_plot = freqs_arr[mask]
+        mags_to_plot = mags_arr[mask]
+        phases_to_plot = phases_arr[mask]
             
         if len(freqs_to_plot) == 0: return
         
@@ -984,11 +1037,6 @@ class NetworkAnalyzerWidget(QWidget):
             # We already have phases_to_plot which is filtered self.phases (before ref subtraction).
             # Wait, phases_to_plot is modified by ref subtraction in lines 925.
             # So we need a clean filtered raw phase.
-            
-            if self.limit_check.isChecked():
-                raw_phases_deg = phases_arr[mask]
-            else:
-                raw_phases_deg = phases_arr
             
             # If reference is applied, we should probably calculate GD of the *corrected* phase?
             # Yes, Group Delay of the system as displayed.
