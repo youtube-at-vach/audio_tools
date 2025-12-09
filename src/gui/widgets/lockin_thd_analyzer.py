@@ -32,6 +32,11 @@ class LockInTHDAnalyzer(MeasurementModule):
         self.bw_low = 20.0
         self.bw_high = 20000.0
         
+        # Averaging
+        self.average_count = 1
+        self.amp_history = deque(maxlen=1)
+        self.res_history = deque(maxlen=1)
+        
         # Results
         self.measured_freq = 0.0
         self.fund_amp = 0.0
@@ -211,9 +216,25 @@ class LockInTHDAnalyzer(MeasurementModule):
             
         self.residual_rms = np.sqrt(np.mean(res_valid**2))
         
+        # Averaging
+        if self.amp_history.maxlen != self.average_count:
+            self.amp_history = deque(maxlen=self.average_count)
+            self.res_history = deque(maxlen=self.average_count)
+            
+        self.amp_history.append(amp)
+        self.res_history.append(self.residual_rms)
+        
+        avg_amp = np.mean(self.amp_history)
+        avg_res = np.mean(self.res_history)
+        
+        self.fund_amp = avg_amp
+        self.residual_rms = avg_res
+        
         # THD+N
         if self.fund_amp > 1e-9:
-            ratio = self.residual_rms / self.fund_amp
+            # Calculate using RMS of fundamental
+            fund_rms = self.fund_amp / np.sqrt(2)
+            ratio = self.residual_rms / fund_rms
             self.thdn_db = 20 * np.log10(ratio)
             self.thdn_value = ratio * 100
         else:
@@ -244,6 +265,15 @@ class LockInTHDWidget(QWidget):
         self.btn_toggle.setStyleSheet("QPushButton:checked { background-color: #ccffcc; }")
         form.addRow(self.btn_toggle)
         
+        # Input Channel
+        self.combo_input_ch = QComboBox()
+        self.combo_input_ch.addItems([tr("Left"), tr("Right")])
+        # Set initial index based on module state (0=Left, 1=Right)
+        initial_idx = 0 if self.module.input_channel == 0 else 1
+        self.combo_input_ch.setCurrentIndex(initial_idx)
+        self.combo_input_ch.currentIndexChanged.connect(lambda v: setattr(self.module, 'input_channel', v))
+        form.addRow(tr("Input Channel:"), self.combo_input_ch)
+        
         self.freq_spin = QDoubleSpinBox()
         self.freq_spin.setRange(20, 20000)
         self.freq_spin.setValue(1000)
@@ -270,12 +300,28 @@ class LockInTHDWidget(QWidget):
         self.bw_high_spin.valueChanged.connect(lambda v: setattr(self.module, 'bw_high', v))
         form.addRow(tr("LPF (Hz):"), self.bw_high_spin)
         
+        # Averaging
+        self.spin_avg = QSpinBox()
+        self.spin_avg.setRange(1, 100)
+        self.spin_avg.setValue(1)
+        self.spin_avg.valueChanged.connect(lambda v: setattr(self.module, 'average_count', v))
+        form.addRow(tr("Averages:"), self.spin_avg)
+        
         settings_group.setLayout(form)
         left_panel.addWidget(settings_group)
         
         # Meters
         meters_group = QGroupBox(tr("Results"))
         meters_layout = QVBoxLayout()
+        
+        # Unit Selection
+        unit_layout = QHBoxLayout()
+        unit_layout.addWidget(QLabel(tr("Unit:")))
+        self.combo_unit = QComboBox()
+        self.combo_unit.addItems(["V", "dBV", "dBFS"])
+        self.combo_unit.setCurrentText("V")
+        unit_layout.addWidget(self.combo_unit)
+        meters_layout.addLayout(unit_layout)
         
         self.lbl_thdn = QLabel("--")
         self.lbl_thdn.setStyleSheet("font-size: 24px; font-weight: bold; color: #ff5555;")
@@ -308,9 +354,26 @@ class LockInTHDWidget(QWidget):
         # Plot 1: Time Domain (Input vs Residual)
         self.plot_time = pg.PlotWidget(title="Time Domain")
         self.plot_time.addLegend()
+        
+        # Plot Controls
+        plot_ctrl_layout = QHBoxLayout()
+        self.chk_show_input = QCheckBox(tr("Show Input Trace"))
+        self.chk_show_input.setChecked(True)
+        self.chk_show_input.toggled.connect(self.update_plot_visibility)
+        plot_ctrl_layout.addWidget(self.chk_show_input)
+        plot_ctrl_layout.addStretch()
+        
+        # Add controls above plot? Or inside tab? 
+        # Let's put it in a layout with the plot
+        plot_widget_container = QWidget()
+        pwc_layout = QVBoxLayout()
+        pwc_layout.addLayout(plot_ctrl_layout)
+        pwc_layout.addWidget(self.plot_time)
+        plot_widget_container.setLayout(pwc_layout)
+        
         self.curve_input = self.plot_time.plot(pen='c', name="Input")
         self.curve_resid = self.plot_time.plot(pen='r', name="Residual (x10)")
-        self.tabs.addTab(self.plot_time, "Waveform")
+        self.tabs.addTab(plot_widget_container, "Waveform")
         
         # Plot 2: Spectrum (Residual)
         self.plot_spec = pg.PlotWidget(title="Residual Spectrum")
@@ -340,20 +403,62 @@ class LockInTHDWidget(QWidget):
         self.module.gen_frequency = val
         self.module.target_freq = val
         
+    def update_plot_visibility(self, checked):
+        if checked:
+            self.curve_input.setVisible(True)
+        else:
+            self.curve_input.setVisible(False)
+
     def update_ui(self):
         if not self.module.is_running: return
         
-        # Trigger processing in main thread to avoid threading issues with large data copies?
-        # Ideally processing happens in separate thread, but for simplicity we call it here 
-        # or have a worker. For now, calling process() here is okay if buffer isn't huge.
-        # Better: process() buffers light data, filtering might be heavy.
+        # Trigger processing
         self.module.process()
         
         # Update Labels
         self.lbl_thdn.setText(f"{self.module.thdn_value:.4f} %")
         self.lbl_thdn_db.setText(f"{self.module.thdn_db:.2f} dB")
-        self.lbl_fund.setText(f"{self.module.fund_amp:.5f} V")
-        self.lbl_res.setText(f"{self.module.residual_rms:.2e} V")
+        
+        # Unit Conversion
+        unit = self.combo_unit.currentText()
+        fund_peak_fs = self.module.fund_amp
+        res_rms_fs = self.module.residual_rms
+        
+        calibration = self.module.audio_engine.calibration
+        offset_db = calibration.get_input_offset_db()
+        sensitivity = calibration.input_sensitivity
+        
+        if unit == "dBV":
+            # Convert Fundamental Peak FS to RMS dBV
+            # Fund RMS FS = Fund Peak FS / sqrt(2)
+            fund_rms_fs = fund_peak_fs / np.sqrt(2)
+            fund_dbv = 20 * np.log10(fund_rms_fs + 1e-12) + offset_db
+            
+            res_dbv = 20 * np.log10(res_rms_fs + 1e-12) + offset_db
+            
+            fund_str = f"{fund_dbv:.2f} dBV"
+            res_str = f"{res_dbv:.2f} dBV"
+            
+        elif unit == "dBFS":
+            # Fundamental is usually Peak dBFS
+            fund_dbfs = 20 * np.log10(fund_peak_fs + 1e-12)
+            
+            # Residual is usually RMS dBFS (so -3dB for FS sine)
+            res_dbfs = 20 * np.log10(res_rms_fs + 1e-12)
+            
+            fund_str = f"{fund_dbfs:.2f} dBFS"
+            res_str = f"{res_dbfs:.2f} dBFS"
+            
+        else: # V
+            # Volts (RMS)
+            fund_rms_v = (fund_peak_fs / np.sqrt(2)) * sensitivity
+            res_rms_v = res_rms_fs * sensitivity
+            
+            fund_str = f"{fund_rms_v:.5f} V"
+            res_str = f"{res_rms_v:.2e} V"
+            
+        self.lbl_fund.setText(fund_str)
+        self.lbl_res.setText(res_str)
         
         # Update Plots
         # Decimate for performance
@@ -361,7 +466,10 @@ class LockInTHDWidget(QWidget):
         res = self.module.residual_data
         
         step = max(1, len(data) // 1000)
-        self.curve_input.setData(data[::step])
+        
+        if self.chk_show_input.isChecked():
+            self.curve_input.setData(data[::step])
+        
         # Scale residual for visibility
         self.curve_resid.setData(res[::step] * 10) 
         
