@@ -512,9 +512,15 @@ class NetworkAnalyzerWidget(QWidget):
     def init_ui(self):
         layout = QHBoxLayout()
         
+        # Left Panel Container
+        left_panel = QWidget()
+        left_panel.setFixedWidth(360)
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(5, 5, 5, 5)
+        
         # Create Tab Widget
         tabs = QTabWidget()
-        tabs.setFixedWidth(340)
+        # tabs.setFixedWidth(340) # Removed fixed width from tabs
         
         # --- Tab 1: Settings ---
         settings_tab = QWidget()
@@ -683,21 +689,20 @@ class NetworkAnalyzerWidget(QWidget):
         cal_tab.setLayout(cal_tab_layout)
         tabs.addTab(cal_tab, tr("Calibration"))
         
-        # Left Layout
-        left_layout = QVBoxLayout()
+        # Add tabs to left layout
         left_layout.addWidget(tabs)
         
         # Buttons
-        btn_layout = QVBoxLayout()
         self.start_btn = QPushButton(tr("Start Sweep"))
         self.start_btn.setCheckable(True)
         self.start_btn.clicked.connect(self.on_start_stop)
-        btn_layout.addWidget(self.start_btn)
-        self.progress_bar = QProgressBar()
-        btn_layout.addWidget(self.progress_bar)
+        self.start_btn.setFixedHeight(40)
+        left_layout.addWidget(self.start_btn)
         
-        left_layout.addLayout(btn_layout)
-        layout.addLayout(left_layout)
+        self.progress_bar = QProgressBar()
+        left_layout.addWidget(self.progress_bar)
+        
+        layout.addWidget(left_panel)
         
         # Plots
         plot_layout = QVBoxLayout()
