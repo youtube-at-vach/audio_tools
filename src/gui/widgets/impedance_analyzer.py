@@ -608,6 +608,9 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.sweep_z_mags = []
         self.sweep_z_phases = []
         
+        # Resonance Marker
+        self.resonance_line = None
+        
         self.init_ui()
         
         self.timer = QTimer()
@@ -707,6 +710,14 @@ class ImpedanceAnalyzerWidget(QWidget):
         lay_sweep.addRow(tr("Steps:"), self.sw_steps)
         self.sw_log = QCheckBox(tr("Log Sweep")); self.sw_log.setChecked(True)
         lay_sweep.addRow(self.sw_log)
+        
+        self.chk_resonance = QCheckBox(tr("Find Resonance"))
+        self.chk_resonance.setToolTip(tr("Find the resonance frequency (Points where X=0 / Phase=0)"))
+        lay_sweep.addRow(self.chk_resonance)
+        
+        self.lbl_resonance_result = QLabel("")
+        self.lbl_resonance_result.setStyleSheet("color: blue; font-weight: bold;")
+        lay_sweep.addRow(self.lbl_resonance_result)
         
         self.sw_progress = QProgressBar()
         lay_sweep.addRow(self.sw_progress)
@@ -848,6 +859,12 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.curve_primary.setData([], [])
         self.curve_secondary.setData([], [])
         self.curve_right.setData([], [])
+        
+        # Clear Resonance Marker
+        if self.resonance_line:
+            self.plot_widget.removeItem(self.resonance_line)
+            self.resonance_line = None
+        self.lbl_resonance_result.setText("")
         
         start = self.sw_start.value()
         end = self.sw_end.value()
@@ -1111,6 +1128,82 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.btn_load.setEnabled(True)
         self.btn_dut.setEnabled(True)
         self.btn_stop.setEnabled(False)
+        
+        if self.cal_mode is None and self.chk_resonance.isChecked():
+            self.calculate_resonance()
+
+    def calculate_resonance(self):
+        if not self.sweep_freqs or not self.sweep_z_complex:
+            return
+
+        freqs = np.array(self.sweep_freqs)
+        zs = np.array(self.sweep_z_complex)
+        xs = zs.imag
+        
+        # 1. Find Zero Crossings (Sign changes in Reactance)
+        # indices where sign changes between i and i+1
+        zero_crossings = []
+        
+        for i in range(len(xs) - 1):
+            x1 = xs[i]
+            x2 = xs[i+1]
+            
+            if (x1 <= 0 and x2 >= 0) or (x1 >= 0 and x2 <= 0):
+                # Found crossing
+                f1 = freqs[i]
+                f2 = freqs[i+1]
+                
+                # Linear Interpolation for X=0
+                # 0 = x1 + slope * (t) -> t = -x1 / (x2 - x1)
+                # f_res = f1 + t * (f2 - f1)
+                
+                if x2 != x1:
+                    t = -x1 / (x2 - x1)
+                    res_freq = f1 + t * (f2 - f1)
+                    
+                    # Interpolate Z magnitude at this frequency as well
+                    z1 = zs[i]
+                    z2 = zs[i+1]
+                    res_z_complex = z1 + t * (z2 - z1) # Linear interp of complex
+                    res_z_mag = abs(res_z_complex)
+                    
+                    zero_crossings.append((res_freq, res_z_mag))
+                else:
+                    # Rare case x1=x2=0
+                    zero_crossings.append((f1, abs(zs[i])))
+
+        # 2. Select Best Candidate
+        if not zero_crossings:
+            # Fallback: Just return min(|Z|) if no crossing found (e.g. over-damped or out of range)
+            mags = np.abs(zs)
+            min_idx = np.argmin(mags)
+            res_freq = freqs[min_idx]
+            self.lbl_resonance_result.setText(f"{tr('Resonance:')} {res_freq:.4f} Hz (Min |Z|)")
+        else:
+            # Pick the crossing with the minimum Impedance Magnitude (Series Resonance)
+            # (Parallel resonance would be Max |Z| at X=0)
+            # Assumption: User looks for Series Resonance mostly or general resonance points.
+            # Let's pick min |Z| for now.
+            best_res = min(zero_crossings, key=lambda p: p[1])
+            res_freq = best_res[0]
+            self.lbl_resonance_result.setText(f"{tr('Resonance:')} {res_freq:.4f} Hz")
+
+        # 3. Visualize
+        if self.resonance_line:
+            self.plot_widget.removeItem(self.resonance_line)
+        
+        # Draw explicit vertical line
+        # Check if Log X is on
+        is_log_x = self.sw_log.isChecked()
+        x_val = np.log10(res_freq) if is_log_x else res_freq
+        
+        self.resonance_line = pg.InfiniteLine(pos=x_val, angle=90, pen=pg.mkPen('r', width=2, style=Qt.PenStyle.DashLine))
+        self.plot_widget.addItem(self.resonance_line)
+        
+        # Optional: Add label to the line
+        # self.resonance_line.label = pg.InfLineLabel(f"{res_freq:.1f}Hz", position=0.8, rotateAxis=(1,0), anchor=(1, 1))
+
+
 
     def apply_theme(self, theme_name):
         if theme_name == 'system' and hasattr(self.app, 'theme_manager'):
