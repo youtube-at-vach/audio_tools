@@ -12,6 +12,7 @@ from src.gui.widgets.distortion_analyzer import DistortionAnalyzer
 from src.gui.widgets.advanced_distortion_meter import AdvancedDistortionMeter
 from src.gui.widgets.oscilloscope import Oscilloscope
 from src.gui.widgets.lock_in_amplifier import LockInAmplifier
+from src.gui.widgets.lockin_thd_analyzer import LockInTHDAnalyzer
 from src.gui.widgets.welcome import WelcomeWidget
 from src.gui.widgets.frequency_counter import FrequencyCounter
 from src.gui.widgets.spectrogram import Spectrogram
@@ -108,6 +109,7 @@ class MainWindow(QMainWindow):
             NetworkAnalyzer(self.audio_engine),
             Oscilloscope(self.audio_engine),
             LockInAmplifier(self.audio_engine),
+            LockInTHDAnalyzer(self.audio_engine),
             FrequencyCounter(self.audio_engine),
             Spectrogram(self.audio_engine),
             BoxcarAverager(self.audio_engine),
