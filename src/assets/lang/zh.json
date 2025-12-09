@@ -8,6 +8,7 @@
     "Network Analyzer": "网络分析仪",
     "IMD Analyzer": "互调失真分析仪",
     "Lock-in Amplifier": "锁相放大器",
+    "Lock-in THD+N": "锁相THD+N",
     "Frequency Counter": "频率计数器",
     "Lufs Meter": "响度计",
     "Loopback Finder": "环回查找器",

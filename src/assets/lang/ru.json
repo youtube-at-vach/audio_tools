@@ -8,6 +8,7 @@
     "Network Analyzer": "Анализатор цепей",
     "IMD Analyzer": "Анализатор IMD",
     "Lock-in Amplifier": "Синхронный усилитель",
+    "Lock-in THD+N": "Lock-in THD+N",
     "Frequency Counter": "Частотомер",
     "Lufs Meter": "Измеритель LUFS",
     "Loopback Finder": "Поиск петли",
