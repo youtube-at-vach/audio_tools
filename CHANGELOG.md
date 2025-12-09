@@ -1,5 +1,32 @@
 # Changelog
 
+## [v0.2.0] - 2025-12-09
+
+### Added
+
+* Lock-in THD+N アナライザーとウィジェットを追加し、整数周期ウィンドウ・平均化・残差履歴・残差プロットを強化
+* Lock-in/Advanced Distortion 計測に出力チャネル選択と振幅単位変換を追加、調和成分の指数移動平均を実装
+* Impedance Analyzer にキャリブレーションデータと補間オプション、平均化回数設定、共振検出および Nyquist プロットモードを追加
+* Network Analyzer ウィジェットに設定/表示/キャリブレーションのタブ構成を導入し、チェックボックス表記を簡素化
+* 設定ウィジェットに大きめのバッファ選択肢を追加
+* 多数の新規翻訳キーを追加（Lock-in THD+N、Time Domain / Waveform / Residual、キャリブレーション関連 など）
+
+### Changed
+
+* Lock-in THD アナライザー／ウィジェットのロジックを整理し、残差の履歴保持とプロットを拡張
+* Impedance Analyzer の UI をタブ分割し、Q Factor 表示を D (Tan δ) に置き換え、Nyquist 周波数に基づき入力範囲を動的制限
+* Network Analyzer のレイアウトを再構成し、固定幅タブを廃止して構造を簡素化
+* GUI 全体で tr 化と翻訳を拡充し、各種ラベルやタイトルを多言語化
+
+### Removed
+
+* Distortion Analyzer からマルチトーン生成機能と関連 UI を削除
+
+### Documentation
+
+* README や walkthrough を更新し、Windows 向けリリースアーカイブ名の整理と不要スクリプトの削除
+
+
 ## [v0.1.7] - 2025-12-04
 
 ### Added
