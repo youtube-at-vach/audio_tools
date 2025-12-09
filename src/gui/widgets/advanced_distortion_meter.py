@@ -45,6 +45,18 @@ class AdvancedDistortionMeter(MeasurementModule):
         self.current_result = None
 
     @property
+    def gen_amplitude(self):
+        return self._gen_amplitude
+
+    @gen_amplitude.setter
+    def gen_amplitude(self, value):
+        if value < 0.0:
+            value = 0.0
+        elif value > 10.0:
+            value = 10.0
+        self._gen_amplitude = value
+
+    @property
     def name(self) -> str:
         return "Advanced Distortion Meter"
 
@@ -93,6 +105,11 @@ class AdvancedDistortionMeter(MeasurementModule):
                 if self.output_channel == 0:
                     outdata[:, 0] = sig
                 elif self.output_channel == 1:
+                    if outdata.shape[1] > 1:
+                        outdata[:, 1] = sig
+                elif self.output_channel == 2:
+                    # Stereo: mirror signal to both channels when available
+                    outdata[:, 0] = sig
                     if outdata.shape[1] > 1:
                         outdata[:, 1] = sig
             
@@ -265,19 +282,37 @@ class AdvancedDistortionMeterWidget(QWidget):
         amp_group = QGroupBox(tr("Generator"))
         amp_layout = QFormLayout()
         self.amp_spin = QDoubleSpinBox()
-        self.amp_spin.setRange(0, 1.0)
-        self.amp_spin.setSingleStep(0.01)
-        self.amp_spin.setValue(self.module.gen_amplitude)
-        self.amp_spin.valueChanged.connect(lambda v: setattr(self.module, 'gen_amplitude', v))
-        amp_layout.addRow(tr("Amplitude (Lin):"), self.amp_spin)
-        
-        self.out_ch_combo = QComboBox()
-        self.out_ch_combo.addItems([tr("Left"), tr("Right")])
-        self.out_ch_combo.currentIndexChanged.connect(lambda i: setattr(self.module, 'output_channel', i))
-        amp_layout.addRow(tr("Output Ch:"), self.out_ch_combo)
+        self.amp_spin.setRange(-120, 20)
+        self.amp_spin.setSingleStep(0.5)
+        self.amp_spin.valueChanged.connect(self.on_amp_changed)
+
+        self.unit_combo = QComboBox()
+        self.unit_combo.addItems(['dBFS', 'dBV', 'dBu', 'Vrms'])
+        self.unit_combo.currentTextChanged.connect(self.on_unit_changed)
+        amp_row = QHBoxLayout()
+        amp_row.addWidget(self.amp_spin)
+        amp_row.addWidget(self.unit_combo)
+        amp_layout.addRow(tr("Amplitude:"), amp_row)
         
         amp_group.setLayout(amp_layout)
         left_panel.addWidget(amp_group)
+
+        # I/O selection
+        io_group = QGroupBox(tr("I/O"))
+        io_layout = QFormLayout()
+
+        self.in_ch_combo = QComboBox()
+        self.in_ch_combo.addItems([tr("Left (Ch 1)"), tr("Right (Ch 2)")])
+        self.in_ch_combo.currentIndexChanged.connect(lambda i: setattr(self.module, 'input_channel', i))
+        io_layout.addRow(tr("Input Ch:"), self.in_ch_combo)
+
+        self.out_ch_combo = QComboBox()
+        self.out_ch_combo.addItems([tr("Left (Ch 1)"), tr("Right (Ch 2)"), tr("Stereo")])
+        self.out_ch_combo.currentIndexChanged.connect(self.on_output_channel_changed)
+        io_layout.addRow(tr("Output Ch:"), self.out_ch_combo)
+
+        io_group.setLayout(io_layout)
+        left_panel.addWidget(io_group)
         
         # Control Buttons
         self.start_btn = QPushButton(tr("Start Measurement"))
@@ -321,6 +356,12 @@ class AdvancedDistortionMeterWidget(QWidget):
         
         self.setLayout(layout)
 
+        # Initialize amplitude display with current unit
+        self.on_unit_changed(self.unit_combo.currentText())
+        # Initialize channel selectors
+        self.in_ch_combo.setCurrentIndex(self.module.input_channel)
+        self.out_ch_combo.setCurrentIndex(self.module.output_channel)
+
     def on_mode_changed(self, index):
         if index == 0: # MIM
             self.module.mode = 'MIM'
@@ -335,6 +376,56 @@ class AdvancedDistortionMeterWidget(QWidget):
         # Reset results
         self.main_metric_label.setText("--")
         self.sub_metric_label.setText("--")
+
+    def on_output_channel_changed(self, index):
+        self.module.output_channel = index
+
+    def on_unit_changed(self, unit):
+        amp_linear = self.module.gen_amplitude
+        gain = self.module.audio_engine.calibration.output_gain or 1.0
+
+        self.amp_spin.blockSignals(True)
+        if unit == 'dBFS':
+            val = 20 * np.log10(amp_linear + 1e-12)
+        elif unit == 'dBV':
+            v_peak = amp_linear * gain
+            v_rms = v_peak / np.sqrt(2)
+            val = 20 * np.log10(v_rms + 1e-12)
+        elif unit == 'dBu':
+            v_peak = amp_linear * gain
+            v_rms = v_peak / np.sqrt(2)
+            val = 20 * np.log10((v_rms + 1e-12) / 0.7746)
+        else: # Vrms
+            v_peak = amp_linear * gain
+            val = v_peak / np.sqrt(2)
+
+        self.amp_spin.setValue(val)
+        self.amp_spin.blockSignals(False)
+
+    def on_amp_changed(self, val):
+        unit = self.unit_combo.currentText()
+        gain = self.module.audio_engine.calibration.output_gain or 1.0
+
+        if unit == 'dBFS':
+            amp_linear = 10**(val/20)
+        elif unit == 'dBV':
+            v_rms = 10**(val/20)
+            v_peak = v_rms * np.sqrt(2)
+            amp_linear = v_peak / gain
+        elif unit == 'dBu':
+            v_rms = 0.7746 * 10**(val/20)
+            v_peak = v_rms * np.sqrt(2)
+            amp_linear = v_peak / gain
+        else: # Vrms
+            v_peak = val * np.sqrt(2)
+            amp_linear = v_peak / gain
+
+        if amp_linear > 1.0:
+            amp_linear = 1.0
+        elif amp_linear < 0.0:
+            amp_linear = 0.0
+
+        self.module.gen_amplitude = amp_linear
 
     def on_start_clicked(self, checked):
         if checked:
