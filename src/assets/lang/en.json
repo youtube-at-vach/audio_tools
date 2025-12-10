@@ -304,8 +304,7 @@
 "Loopback + Physical": "Loopback + Physical",
 "Select where the signal is sent.
 Loopback routes output to input internally.": "Select where the signal is sent.
-Loopback routes output to input internally."
-},
+Loopback routes output to input internally.",
     "Failed to read file info:\n{0}": "Failed to read file info:\n{0}",
     "Failed to load file:\n{0}": "Failed to load file:\n{0}",
     "Stop Recording": "Stop Recording",
