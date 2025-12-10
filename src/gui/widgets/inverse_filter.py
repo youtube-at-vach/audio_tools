@@ -62,6 +62,8 @@ class ProcessingWorker(QThread):
                 self.finished.emit(False, tr("No calibration map content."))
                 return
 
+            self.progress.emit(5)
+
             # Read File Info
             try:
                 info = sf.info(self.input_path)
@@ -125,6 +127,8 @@ class ProcessingWorker(QThread):
             # Apply Window
             window = signal.windows.hamming(self.taps)
             kernel = kernel * window
+
+            self.progress.emit(15)
             
             # Normalize Kernel Gain?
             # If we want 0dB DC gain to be preserved?
@@ -149,18 +153,24 @@ class ProcessingWorker(QThread):
                     if info.frames < 10 * 60 * sr: # < 10 mins
                          # Load all
                         data = infile.read(dtype='float32')
+                        self.progress.emit(25)
                         
                         processed_channels = []
+                        channel_count = 1 if data.ndim == 1 else data.shape[1]
+
                         if data.ndim == 1:
                             # Mono
                             out_data = signal.oaconvolve(data, kernel, mode='same')
                             processed_channels.append(out_data)
+                            self.progress.emit(25 + int(60 * 1 / channel_count))
                         else:
                             # Multichannel
-                            for ch in range(data.shape[1]):
+                            for ch in range(channel_count):
                                 ch_data = data[:, ch]
                                 out_data = signal.oaconvolve(ch_data, kernel, mode='same')
                                 processed_channels.append(out_data)
+                                # Emit incremental progress per channel
+                                self.progress.emit(25 + int(60 * (ch + 1) / channel_count))
                                 
                         if len(processed_channels) == 1:
                             data = processed_channels[0]
@@ -172,7 +182,8 @@ class ProcessingWorker(QThread):
                             peak = np.max(np.abs(data))
                             if peak > 0:
                                 data = data / peak * 0.95 # -0.5 dB roughly
-                                
+                        
+                        self.progress.emit(90)
                         outfile.write(data)
                         self.progress.emit(100)
                         
@@ -390,8 +401,11 @@ class InverseFilterWidget(QWidget):
         target_freqs[0] = target_freqs[1] / 10 
         log_target_freqs = np.log10(target_freqs)
         
-        self.curve_inv_raw.setData(log_target_freqs, inv_mags_raw_clipped)
-        self.curve_inv.setData(log_target_freqs, inv_mags_smooth_clipped)
+        # Show only the span of the loaded map so smoothing does not stretch x-axis
+        freq_mask = (target_freqs >= freqs[0]) & (target_freqs <= freqs[-1])
+        self.curve_inv_raw.setData(log_target_freqs[freq_mask], inv_mags_raw_clipped[freq_mask])
+        self.curve_inv.setData(log_target_freqs[freq_mask], inv_mags_smooth_clipped[freq_mask])
+        self.plot.setXRange(np.log10(freqs[0]), np.log10(freqs[-1]), padding=0.02)
         
     def select_input_file(self):
         path, _ = QFileDialog.getOpenFileName(self, tr("Open Wav File"), "", tr("Wav Files (*.wav)"))
