@@ -33,6 +33,7 @@ class AudioEngine:
         # Status Monitoring
         # Loopback State
         self.loopback = False
+        self.mute_output = False
         self.last_output_buffer = None
 
         # Sorry, your quota is full, so I had no choice but to fix it in my naivety.
@@ -42,6 +43,10 @@ class AudioEngine:
     def set_loopback(self, enabled):
         self.loopback = enabled
         self.logger.info(f"Set software loopback: {enabled}")
+
+    def set_mute_output(self, enabled):
+        self.mute_output = enabled
+        self.logger.info(f"Set mute output: {enabled}")
 
     def list_devices(self):
         """Returns a list of available audio devices."""
@@ -200,16 +205,18 @@ class AudioEngine:
                 self.last_output_buffer = mix_buffer.copy()
             
             # Map Logical Output -> Hardware Output
-            if out_mode == 'stereo':
-                outdata[:, 0:2] = mix_buffer
-            elif out_mode == 'left':
-                outdata[:, 0:1] = mix_buffer
-                if outdata.shape[1] > 1:
-                    outdata[:, 1:] = 0
-            elif out_mode == 'right':
-                if outdata.shape[1] >= 2:
-                    outdata[:, 1:2] = mix_buffer
-                    outdata[:, 0] = 0
+            if not self.mute_output:
+                if out_mode == 'stereo':
+                    outdata[:, 0:2] = mix_buffer
+                elif out_mode == 'left':
+                    outdata[:, 0:1] = mix_buffer
+                    if outdata.shape[1] > 1:
+                        outdata[:, 1:] = 0
+                elif out_mode == 'right':
+                    if outdata.shape[1] >= 2:
+                        outdata[:, 1:2] = mix_buffer
+                        outdata[:, 0] = 0
+            # If muted, outdata is already 0 filled at start of callback
         
         try:
             self.stream = sd.Stream(

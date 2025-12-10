@@ -298,6 +298,14 @@
     "The file sample rate ({0} Hz) differs from the engine rate ({1} Hz).\nResampling is required to play correctly.\n\nDo you want to proceed? (This may take a moment for large files)": "The file sample rate ({0} Hz) differs from the engine rate ({1} Hz).\nResampling is required to play correctly.\n\nDo you want to proceed? (This may take a moment for large files)",
     "Loading and processing audio...": "Loading and processing audio...",
     "Cancel": "Cancel",
+"Destination:": "Destination:",
+"Physical Output": "Physical Output",
+"Internal Loopback (Silent)": "Internal Loopback (Silent)",
+"Loopback + Physical": "Loopback + Physical",
+"Select where the signal is sent.
+Loopback routes output to input internally.": "Select where the signal is sent.
+Loopback routes output to input internally."
+},
     "Failed to read file info:\n{0}": "Failed to read file info:\n{0}",
     "Failed to load file:\n{0}": "Failed to load file:\n{0}",
     "Stop Recording": "Stop Recording",

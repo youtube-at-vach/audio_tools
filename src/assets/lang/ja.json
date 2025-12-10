@@ -497,5 +497,10 @@
     "-Imag (Z)": "-虚部 (Z)",
     "D (Tan δ)": "D (Tan δ)",
     "D": "D",
-    "|Z|": "|Z|"
+    "|Z|": "|Z|",
+    "Destination:": "出力先:",
+    "Physical Output": "物理出力",
+    "Internal Loopback (Silent)": "内部ループバック (無音)",
+    "Loopback + Physical": "ループバック + 物理出力",
+    "Select where the signal is sent.\nLoopback routes output to input internally.": "信号の送信先を選択します。\nループバックは出力を内部的に入力へルーティングします。"
 }

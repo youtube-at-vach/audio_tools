@@ -393,6 +393,30 @@ class SignalGeneratorWidget(QWidget):
         routing_layout.addWidget(self.route_l)
         routing_layout.addWidget(self.route_r)
         routing_layout.addWidget(self.route_stereo)
+        
+        # Output Destination
+        dest_layout = QHBoxLayout()
+        dest_layout.addWidget(QLabel(tr("Destination:")))
+        self.dest_combo = QComboBox()
+        self.dest_combo.addItem(tr("Physical Output"), "physical")
+        self.dest_combo.addItem(tr("Internal Loopback (Silent)"), "loopback_silent")
+        self.dest_combo.addItem(tr("Loopback + Physical"), "loopback_mix")
+        self.dest_combo.setToolTip(tr("Select where the signal is sent.\nLoopback routes output to input internally."))
+        self.dest_combo.currentTextChanged.connect(self.on_dest_changed)
+        
+        # Init state
+        if self.module.audio_engine.loopback:
+            if self.module.audio_engine.mute_output:
+                self.dest_combo.setCurrentIndex(1)
+            else:
+                self.dest_combo.setCurrentIndex(2)
+        else:
+            self.dest_combo.setCurrentIndex(0)
+
+        dest_layout.addWidget(self.dest_combo)
+        routing_layout.addSpacing(10)
+        routing_layout.addLayout(dest_layout)
+        
         routing_group.setLayout(routing_layout)
         top_bar.addWidget(routing_group, 3)
         
@@ -719,6 +743,18 @@ class SignalGeneratorWidget(QWidget):
             self.module.output_mode = 'R'
         elif self.route_stereo.isChecked():
             self.module.output_mode = 'STEREO'
+
+    def on_dest_changed(self, text):
+        data = self.dest_combo.currentData()
+        if data == "physical":
+            self.module.audio_engine.set_loopback(False)
+            self.module.audio_engine.set_mute_output(False)
+        elif data == "loopback_silent":
+            self.module.audio_engine.set_loopback(True)
+            self.module.audio_engine.set_mute_output(True)
+        elif data == "loopback_mix":
+            self.module.audio_engine.set_loopback(True)
+            self.module.audio_engine.set_mute_output(False)
 
     def on_wave_changed(self, val):
         self.update_param('waveform', val)
