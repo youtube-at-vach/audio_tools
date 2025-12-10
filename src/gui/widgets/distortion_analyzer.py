@@ -55,6 +55,7 @@ class DistortionAnalyzer(MeasurementModule):
         self._avg_thdn = None
         self._avg_state = None
         self._avg_spectrum = None
+        self._avg_imd_ratio = None
         
         # Capture State
         self.capture_requested = False
@@ -73,6 +74,7 @@ class DistortionAnalyzer(MeasurementModule):
         self._avg_thdn = None
         self._avg_state = None
         self._avg_spectrum = None
+        self._avg_imd_ratio = None
 
     def _apply_result_averaging(self, results: dict) -> dict:
         """Apply exponential averaging to harmonic metrics using raw components."""
@@ -157,6 +159,29 @@ class DistortionAnalyzer(MeasurementModule):
         }
 
         return averaged
+
+    def _apply_imd_averaging(self, imd_result: dict) -> dict:
+        """Apply exponential averaging to IMD results in the linear domain."""
+        alpha = self.averaging
+        if alpha <= 0:
+            self._avg_imd_ratio = None
+            return imd_result
+
+        raw_ratio = max(float(imd_result.get('imd', 0.0)) / 100.0, 0.0)
+        if self._avg_imd_ratio is None:
+            self._avg_imd_ratio = raw_ratio
+        else:
+            self._avg_imd_ratio = alpha * self._avg_imd_ratio + (1 - alpha) * raw_ratio
+
+        ratio = self._avg_imd_ratio
+        imd_percent = ratio * 100.0
+        imd_db = 20 * np.log10(ratio) if ratio > 1e-12 else -100.0
+
+        return {
+            'imd': imd_percent,
+            'imd_db': imd_db,
+            'raw_imd_ratio': ratio
+        }
 
     def apply_spectrum_averaging(self, mag_linear: np.ndarray) -> np.ndarray:
         """Smooth spectrum magnitude with exponential averaging (linear domain)."""
@@ -923,19 +948,21 @@ class DistortionAnalyzerWidget(QWidget):
         if self.module.signal_type in ['smpte', 'ccif']:
             window = get_window(self.module.window_type, len(data))
             fft_data = np.fft.rfft(data * window)
-            mag = np.abs(fft_data) * (2 / np.sum(window)) # Linear magnitude for IMD calc
+            mag_linear = np.abs(fft_data) * (2 / np.sum(window))
             freqs = np.fft.rfftfreq(len(data), 1/sample_rate)
             
             if self.module.signal_type == 'smpte':
-                res = AudioCalc.calculate_imd_smpte(mag, freqs, self.module.imd_f1, self.module.imd_f2)
+                res = AudioCalc.calculate_imd_smpte(mag_linear, freqs, self.module.imd_f1, self.module.imd_f2)
             else:
-                res = AudioCalc.calculate_imd_ccif(mag, freqs, self.module.imd_f1, self.module.imd_f2)
+                res = AudioCalc.calculate_imd_ccif(mag_linear, freqs, self.module.imd_f1, self.module.imd_f2)
+
+            res = self.module._apply_imd_averaging(res)
                 
             self.imd_label.setText(tr("{0:.4f} %").format(res['imd']))
             self.imd_db_label.setText(tr("{0:.2f} dB").format(res['imd_db']))
             
-            # For plotting, convert to dBFS
-            mag_db = 20 * np.log10(mag + 1e-12)
+            mag_linear = self.module.apply_spectrum_averaging(mag_linear)
+            mag_db = 20 * np.log10(mag_linear + 1e-12)
             self.spectrum_curve.setData(freqs[1:], mag_db[1:])
             
         else:
