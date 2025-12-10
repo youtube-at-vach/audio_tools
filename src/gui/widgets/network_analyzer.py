@@ -636,8 +636,11 @@ class NetworkAnalyzerWidget(QWidget):
         display_form.addRow(tr("Min Freq:"), min_limit_layout)
         
         self.smooth_combo = QComboBox()
-        self.smooth_combo.addItems([tr("Off"), tr("Light"), tr("Medium"), tr("Heavy")])
-        self.smooth_combo.currentTextChanged.connect(self.refresh_plots)
+        self.smooth_combo.addItem(tr("Off"), "off")
+        self.smooth_combo.addItem(tr("Light"), "light")
+        self.smooth_combo.addItem(tr("Medium"), "medium")
+        self.smooth_combo.addItem(tr("Heavy"), "heavy")
+        self.smooth_combo.currentIndexChanged.connect(self.refresh_plots)
         display_form.addRow(tr("Smoothing:"), self.smooth_combo)
         
         self.unit_combo = QComboBox()
@@ -914,10 +917,41 @@ class NetworkAnalyzerWidget(QWidget):
         self.phases.append(phase)
         self.refresh_plots()
 
+    def _apply_smoothing(self, freqs, mags, phases, mode):
+        # Apply simple Savitzky-Golay smoothing in the display domain; leave data unchanged when disabled.
+        if not len(freqs):
+            return mags, phases
+
+        key = (mode or "off").lower()
+        window_map = {
+            "light": 5,
+            "medium": 11,
+            "heavy": 21,
+        }
+        window = window_map.get(key)
+        if window is None:
+            return mags, phases
+
+        # Window length must be odd and not exceed available points.
+        max_len = len(freqs) if len(freqs) % 2 == 1 else len(freqs) - 1
+        window = min(window, max_len)
+        if window < 3:
+            return mags, phases
+
+        mags_smooth = scipy.signal.savgol_filter(mags, window_length=window, polyorder=2)
+
+        # Unwrap before smoothing phase to avoid discontinuities, then re-wrap to [-180, 180].
+        phase_unwrapped = np.unwrap(np.radians(phases))
+        phase_smooth_rad = scipy.signal.savgol_filter(phase_unwrapped, window_length=window, polyorder=2)
+        phase_smooth = np.degrees(phase_smooth_rad)
+        phase_smooth = (phase_smooth + 180) % 360 - 180
+
+        return mags_smooth, phase_smooth
+
     def refresh_plots(self):
         if not self.freqs: return
         
-        smooth_mode = self.smooth_combo.currentText()
+        smooth_mode = self.smooth_combo.currentData()
         unit = self.unit_combo.currentText()
         
         # Filter data if limit is enabled
@@ -1015,6 +1049,8 @@ class NetworkAnalyzerWidget(QWidget):
                 phases_to_plot -= interp_phases
                 # Wrap to [-180, 180]
                 phases_to_plot = (phases_to_plot + 180) % 360 - 180
+
+        y_values, phases_to_plot = self._apply_smoothing(freqs_to_plot, y_values, phases_to_plot, smooth_mode)
 
         self.mag_curve.setData(freqs_to_plot, y_values)
         self.phase_curve.setData(freqs_to_plot, phases_to_plot)
