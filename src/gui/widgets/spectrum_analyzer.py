@@ -192,8 +192,16 @@ class SpectrumAnalyzerWidget(QWidget):
         # Mode Selection
         row1_layout.addWidget(QLabel(tr("Mode:")))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems([tr('Spectrum'), tr('PSD'), tr('Cross Spectrum')])
-        self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
+        self.mode_combo.addItem(tr('Spectrum'), 'Spectrum')
+        self.mode_combo.addItem(tr('PSD'), 'PSD')
+        self.mode_combo.addItem(tr('Cross Spectrum'), 'Cross Spectrum')
+        
+        # Set initial selection
+        index = self.mode_combo.findData(self.module.analysis_mode)
+        if index >= 0:
+            self.mode_combo.setCurrentIndex(index)
+            
+        self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         row1_layout.addWidget(self.mode_combo)
 
         # Channel Selection
@@ -239,8 +247,18 @@ class SpectrumAnalyzerWidget(QWidget):
         # Smoothing
         row2_layout.addWidget(QLabel(tr("Smoothing:")))
         self.smooth_combo = QComboBox()
-        self.smooth_combo.addItems([tr('None'), tr('1/1 Octave'), tr('1/3 Octave'), tr('1/6 Octave'), tr('1/12 Octave'), tr('1/24 Octave')])
-        self.smooth_combo.currentTextChanged.connect(self.on_smooth_changed)
+        self.smooth_combo.addItem(tr('None'), 'None')
+        self.smooth_combo.addItem(tr('1/1 Octave'), '1/1 Octave')
+        self.smooth_combo.addItem(tr('1/3 Octave'), '1/3 Octave')
+        self.smooth_combo.addItem(tr('1/6 Octave'), '1/6 Octave')
+        self.smooth_combo.addItem(tr('1/12 Octave'), '1/12 Octave')
+        self.smooth_combo.addItem(tr('1/24 Octave'), '1/24 Octave')
+        
+        index = self.smooth_combo.findData(self.module.octave_smoothing)
+        if index >= 0:
+            self.smooth_combo.setCurrentIndex(index)
+            
+        self.smooth_combo.currentIndexChanged.connect(self.on_smooth_changed)
         row2_layout.addWidget(self.smooth_combo)
 
         # Averaging
@@ -392,7 +410,10 @@ class SpectrumAnalyzerWidget(QWidget):
             self.timer.stop()
             self.toggle_btn.setText(tr("Start Analysis"))
 
-    def on_mode_changed(self, val):
+    def on_mode_changed(self, index):
+        val = self.mode_combo.itemData(index)
+        if val is None:
+            return
         self.module.analysis_mode = val
         # Reset averages when mode changes
         self.module._avg_magnitude = None
@@ -430,7 +451,10 @@ class SpectrumAnalyzerWidget(QWidget):
         self.module._peak_magnitude = None
         self.peak_curve.setData([], [])
 
-    def on_smooth_changed(self, val):
+    def on_smooth_changed(self, index):
+        val = self.smooth_combo.itemData(index)
+        if val is None:
+            return
         self.module.octave_smoothing = val
 
     def on_avg_changed(self, val):
@@ -778,8 +802,7 @@ class SpectrumAnalyzerWidget(QWidget):
                     avg_pow = np.mean(pow_stereo, axis=1)
                     mag_mono = np.sqrt(avg_pow)
                 elif self.module.channel_mode == 'Dual':
-                    # Not fully supported in display yet, fallback to Left
-                    mag_mono = mag_stereo[:, 0]
+                    mag_mono = mag_stereo
                 else:
                     mag_mono = mag_stereo[:, 0]
                 
@@ -957,7 +980,7 @@ class SpectrumAnalyzerWidget(QWidget):
         plot_freqs_linear = plot_freqs + 1e-12 # Avoid exact 0
         
         # Handle Dual Mode Plotting
-        if self.module.analysis_mode == 'Spectrum' and self.module.channel_mode == 'Dual':
+        if self.module.analysis_mode in ['Spectrum', 'PSD'] and self.module.channel_mode == 'Dual':
             # plot_mags should be (N, 2)
             if plot_mags.ndim == 2 and plot_mags.shape[1] >= 2:
                 # Curve 1 (Left) - Green
