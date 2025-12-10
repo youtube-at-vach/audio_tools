@@ -215,7 +215,7 @@ class SpectrumAnalyzerWidget(QWidget):
         # FFT Size
         row1_layout.addWidget(QLabel(tr("FFT Size:")))
         self.fft_combo = QComboBox()
-        self.fft_combo.addItems(['1024', '2048', '4096', '8192', '16384', '32768'])
+        self.fft_combo.addItems(['1024', '2048', '4096', '8192', '16384', '32768', '65536', '131072', '262144'])
         self.fft_combo.setCurrentText(str(self.module.buffer_size))
         self.fft_combo.currentTextChanged.connect(self.on_fft_size_changed)
         row1_layout.addWidget(self.fft_combo)
