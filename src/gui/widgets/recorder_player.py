@@ -284,6 +284,28 @@ class RecorderPlayerWidget(QWidget):
         self.out_mode_combo.currentTextChanged.connect(self.on_out_mode_changed)
         out_layout.addWidget(self.out_mode_combo)
         pb_layout.addLayout(out_layout)
+
+        # Output Destination
+        dest_layout = QHBoxLayout()
+        dest_layout.addWidget(QLabel(tr("Destination:")))
+        self.dest_combo = QComboBox()
+        self.dest_combo.addItem(tr("Physical Output"), "physical")
+        self.dest_combo.addItem(tr("Internal Loopback (Silent)"), "loopback_silent")
+        self.dest_combo.addItem(tr("Loopback + Physical"), "loopback_mix")
+        self.dest_combo.setToolTip(tr("Select where the signal is sent.\nLoopback routes output to input internally."))
+        self.dest_combo.currentTextChanged.connect(self.on_dest_changed)
+        
+        # Init state
+        if self.module.audio_engine.loopback:
+            if self.module.audio_engine.mute_output:
+                self.dest_combo.setCurrentIndex(1)
+            else:
+                self.dest_combo.setCurrentIndex(2)
+        else:
+            self.dest_combo.setCurrentIndex(0)
+
+        dest_layout.addWidget(self.dest_combo)
+        pb_layout.addLayout(dest_layout)
         
         pb_group.setLayout(pb_layout)
         layout.addWidget(pb_group)
@@ -323,19 +345,6 @@ class RecorderPlayerWidget(QWidget):
         rec_group.setLayout(rec_layout)
         layout.addWidget(rec_group)
 
-        # --- Audio Routing Section ---
-        route_group = QGroupBox(tr("Audio Routing"))
-        route_layout = QVBoxLayout()
-        
-        # Internal Loopback
-        self.loopback_check = QCheckBox(tr("Internal Loopback (Software)"))
-        self.loopback_check.setToolTip(tr("Record internal audio output instead of microphone. Also allows Spectrum Analyzer to see playback."))
-        self.loopback_check.toggled.connect(self.on_loopback_toggled)
-        route_layout.addWidget(self.loopback_check)
-        
-        route_group.setLayout(route_layout)
-        layout.addWidget(route_group)
-        
         layout.addStretch()
         self.setLayout(layout)
 
@@ -438,8 +447,17 @@ class RecorderPlayerWidget(QWidget):
     def on_in_mode_changed(self, text):
         self.module.input_mode = self.in_mode_combo.currentData()
 
-    def on_loopback_toggled(self, checked):
-        self.module.audio_engine.set_loopback(checked)
+    def on_dest_changed(self, text):
+        data = self.dest_combo.currentData()
+        if data == "physical":
+            self.module.audio_engine.set_loopback(False)
+            self.module.audio_engine.set_mute_output(False)
+        elif data == "loopback_silent":
+            self.module.audio_engine.set_loopback(True)
+            self.module.audio_engine.set_mute_output(True)
+        elif data == "loopback_mix":
+            self.module.audio_engine.set_loopback(True)
+            self.module.audio_engine.set_mute_output(False)
 
     def update_ui(self):
         # Update Playback UI
