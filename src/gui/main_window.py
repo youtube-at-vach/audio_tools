@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QStackedWidget, QStatusBar, QApplication
+from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QStackedWidget, QStatusBar, QApplication, QComboBox
 from PyQt6.QtCore import Qt, QTimer
 from src.core.audio_engine import AudioEngine
 from src.core.config_manager import ConfigManager
@@ -149,8 +149,10 @@ class MainWindow(QMainWindow):
         self.content_area.addWidget(self.settings_widget)
         
         # Add module widgets (Index 2+)
+        self.module_widgets = []
         for module in self.modules:
             widget = module.get_widget()
+            self.module_widgets.append(widget)
             if widget:
                 self.content_area.addWidget(widget)
             else:
@@ -166,6 +168,13 @@ class MainWindow(QMainWindow):
         self.sr_label = QLabel(tr("SR: -"))
         self.cpu_label = QLabel(tr("CPU: 0%"))
         self.clients_label = QLabel(tr("Clients: 0"))
+        self.output_dest_label = QLabel(tr("Output:"))
+        self.output_dest_combo = QComboBox()
+        self.output_dest_combo.addItem(tr("Physical Output"), "physical")
+        self.output_dest_combo.addItem(tr("Internal Loopback (Silent)"), "loopback_silent")
+        self.output_dest_combo.addItem(tr("Loopback + Physical"), "loopback_mix")
+        self.output_dest_combo.setToolTip(tr("Global output destination for all modules."))
+        self.output_dest_combo.currentIndexChanged.connect(self.on_output_destination_changed)
         
         # Add labels to status bar
         self.status_bar.addPermanentWidget(self.status_label)
@@ -173,14 +182,23 @@ class MainWindow(QMainWindow):
         self.status_bar.addPermanentWidget(self.sr_label)
         self.status_bar.addPermanentWidget(self.cpu_label)
         self.status_bar.addPermanentWidget(self.clients_label)
+        self.status_bar.addPermanentWidget(self.output_dest_label)
+        self.status_bar.addPermanentWidget(self.output_dest_combo)
         
         # Timer for status update
         self.status_timer = QTimer()
         self.status_timer.timeout.connect(self.update_status)
         self.status_timer.start(500) # 500ms update rate
 
+        # Sync output destination control with engine state on startup
+        self._sync_output_destination_ui(self._get_engine_output_destination(), propagate=True)
+
     def update_status(self):
         status = self.audio_engine.get_status()
+
+        # Keep global output selector in sync if a widget changed it
+        current_mode = self._get_engine_output_destination()
+        self._sync_output_destination_ui(current_mode, propagate=True)
         
         # Active State
         if status['active']:
@@ -213,6 +231,45 @@ class MainWindow(QMainWindow):
         
         # Clients
         self.clients_label.setText(tr("Clients: {0}").format(status['active_clients']))
+
+    def _get_engine_output_destination(self):
+        if self.audio_engine.loopback:
+            return "loopback_silent" if self.audio_engine.mute_output else "loopback_mix"
+        return "physical"
+
+    def _sync_output_destination_ui(self, mode: str, propagate: bool = False):
+        idx = self.output_dest_combo.findData(mode)
+        if idx == -1:
+            return
+        if idx != self.output_dest_combo.currentIndex():
+            self.output_dest_combo.blockSignals(True)
+            self.output_dest_combo.setCurrentIndex(idx)
+            self.output_dest_combo.blockSignals(False)
+            if propagate:
+                self._propagate_output_destination(mode)
+
+    def _propagate_output_destination(self, mode: str):
+        for widget in self.module_widgets:
+            if widget and hasattr(widget, 'set_output_destination'):
+                try:
+                    widget.set_output_destination(mode)
+                except Exception as e:
+                    print(f"Failed to sync output destination: {e}")
+
+    def on_output_destination_changed(self, index):
+        data = self.output_dest_combo.currentData()
+        if data == "physical":
+            self.audio_engine.set_loopback(False)
+            self.audio_engine.set_mute_output(False)
+        elif data == "loopback_silent":
+            self.audio_engine.set_loopback(True)
+            self.audio_engine.set_mute_output(True)
+        elif data == "loopback_mix":
+            self.audio_engine.set_loopback(True)
+            self.audio_engine.set_mute_output(False)
+
+        # Mirror selection to widgets that expose destination controls
+        self._propagate_output_destination(data)
         
     def on_tool_selected(self, index):
         self.content_area.setCurrentIndex(index)

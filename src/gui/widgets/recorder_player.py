@@ -459,6 +459,15 @@ class RecorderPlayerWidget(QWidget):
             self.module.audio_engine.set_loopback(True)
             self.module.audio_engine.set_mute_output(False)
 
+    def set_output_destination(self, mode: str):
+        """Update destination combo without emitting signals."""
+        idx = self.dest_combo.findData(mode)
+        if idx == -1 or idx == self.dest_combo.currentIndex():
+            return
+        self.dest_combo.blockSignals(True)
+        self.dest_combo.setCurrentIndex(idx)
+        self.dest_combo.blockSignals(False)
+
     def update_ui(self):
         # Update Playback UI
         if self.module.is_playing:
