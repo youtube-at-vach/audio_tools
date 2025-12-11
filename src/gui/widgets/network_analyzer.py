@@ -136,7 +136,7 @@ class NetworkAnalyzer(MeasurementModule):
         self.input_mode = 'L' # 'L', 'R', 'XFER'
         
         # Fast Sweep Parameters
-        self.sweep_mode = "Stepped Sine" # or "Fast Chirp"
+        self.sweep_mode = "Fast Chirp" # or "Stepped Sine"
         self.chirp_duration = 1.0
         
         self.worker = None
@@ -535,6 +535,12 @@ class NetworkAnalyzerWidget(QWidget):
         self.mode_combo.addItem(tr("Stepped Sine"), "Stepped Sine")
         self.mode_combo.addItem(tr("Fast Chirp"), "Fast Chirp")
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
+        # Default to the module's current mode (Fast Chirp by default)
+        default_mode_idx = self.mode_combo.findData(self.module.sweep_mode)
+        if default_mode_idx != -1:
+            self.mode_combo.blockSignals(True)
+            self.mode_combo.setCurrentIndex(default_mode_idx)
+            self.mode_combo.blockSignals(False)
         form.addRow(tr("Sweep Mode:"), self.mode_combo)
         
         # Routing
@@ -578,6 +584,9 @@ class NetworkAnalyzerWidget(QWidget):
         self.duration_label = QLabel(tr("Duration (s):"))
         form.addRow(self.duration_label, self.duration_spin)
         self.duration_label.hide(); self.duration_spin.hide()
+
+        # Apply initial visibility/state after controls exist
+        self.on_mode_changed(self.mode_combo.currentIndex())
         
         self.amp_spin = QDoubleSpinBox()
         self.amp_spin.setRange(0, 1); self.amp_spin.setValue(0.5); self.amp_spin.setSingleStep(0.1)
