@@ -82,6 +82,9 @@ class ProcessingWorker(QThread):
             map_freqs = map_data[:, 0]
             map_mags = map_data[:, 1]
             map_phases = map_data[:, 2]
+
+            # Unwrap phase to avoid 180/360 degree jumps that create spurious ringing
+            map_phases = np.degrees(np.unwrap(np.radians(map_phases)))
             
             # Interpolate
             # Use linear interpolation. Fill_value behavior: clamp
@@ -397,12 +400,13 @@ class InverseFilterWidget(QWidget):
         inv_mags_smooth_clipped = np.clip(inv_mags_smooth, -200, max_gain)
         
         # Plot
-        # Avoid log(0)
-        target_freqs[0] = target_freqs[1] / 10 
-        log_target_freqs = np.log10(target_freqs)
+        # Avoid log(0) without mutating the design grid used later
+        target_freqs_plot = target_freqs.copy()
+        target_freqs_plot[0] = target_freqs_plot[1] / 10 
+        log_target_freqs = np.log10(target_freqs_plot)
         
         # Show only the span of the loaded map so smoothing does not stretch x-axis
-        freq_mask = (target_freqs >= freqs[0]) & (target_freqs <= freqs[-1])
+        freq_mask = (target_freqs_plot >= freqs[0]) & (target_freqs_plot <= freqs[-1])
         self.curve_inv_raw.setData(log_target_freqs[freq_mask], inv_mags_raw_clipped[freq_mask])
         self.curve_inv.setData(log_target_freqs[freq_mask], inv_mags_smooth_clipped[freq_mask])
         self.plot.setXRange(np.log10(freqs[0]), np.log10(freqs[-1]), padding=0.02)
