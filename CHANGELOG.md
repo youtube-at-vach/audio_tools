@@ -1,5 +1,27 @@
 # Changelog
 
+## [v0.2.1] - 2025-12-11
+
+### Added
+
+* Inverse Filter の GUI／処理パイプラインを追加し、デフォルトのキャリブレーションマップと単体テストを同梱
+* インバースフィルター出力に入力RMSへ合わせる正規化オプションを追加（デフォルト有効）
+* MainWindow／RecorderPlayerWidget／SignalGeneratorWidget で出力先選択・同期・ミュートを追加し、ルーティングを統一
+* DistortionAnalyzer に IMD 平均化を追加し、分析メソッドを拡張
+* SpectrumAnalyzer の FFT サイズ選択肢を拡大し高分解能モードに対応
+
+### Changed
+
+* NetworkAnalyzer の平滑化を Savitzky–Golay フィルタに置き換え、プロット処理を改善
+* Group delay 表示単位を ms から s に変更し計算を調整
+* Inverse Filter の位相アンラップとログ周波数ハンドリング、進捗表示を改善
+* SpectrumAnalyzer のモード／平滑化の初期状態処理を改善
+* .gitignore を更新（map_mic.json やログファイルを除外）
+
+### Fixed
+
+* 各言語ファイルの翻訳修正を反映
+
 ## [v0.2.0] - 2025-12-09
 
 ### Added
