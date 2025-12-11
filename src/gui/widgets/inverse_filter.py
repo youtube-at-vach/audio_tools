@@ -45,7 +45,7 @@ class ProcessingWorker(QThread):
     progress = pyqtSignal(int)
     finished = pyqtSignal(bool, str) # success, message
     
-    def __init__(self, input_path, output_path, calibration_map, max_gain_db, taps, smoothing, normalize_gain):
+    def __init__(self, input_path, output_path, calibration_map, max_gain_db, taps, smoothing, normalize_rms):
         super().__init__()
         self.input_path = input_path
         self.output_path = output_path
@@ -53,7 +53,7 @@ class ProcessingWorker(QThread):
         self.max_gain_db = max_gain_db
         self.taps = taps
         self.smoothing = smoothing
-        self.normalize_gain = normalize_gain
+        self.normalize_rms = normalize_rms
         self.is_cancelled = False
         
     def run(self):
@@ -164,14 +164,28 @@ class ProcessingWorker(QThread):
 
                         if data.ndim == 1:
                             # Mono
+                            input_rms = float(np.sqrt(np.mean(np.square(data))))
                             out_data = signal.oaconvolve(data, kernel, mode='same')
+
+                            if self.normalize_rms:
+                                processed_rms = float(np.sqrt(np.mean(np.square(out_data))))
+                                if processed_rms > 0 and input_rms > 0:
+                                    out_data = out_data * (input_rms / processed_rms)
+
                             processed_channels.append(out_data)
                             self.progress.emit(25 + int(60 * 1 / channel_count))
                         else:
                             # Multichannel
                             for ch in range(channel_count):
                                 ch_data = data[:, ch]
+                                input_rms = float(np.sqrt(np.mean(np.square(ch_data))))
                                 out_data = signal.oaconvolve(ch_data, kernel, mode='same')
+
+                                if self.normalize_rms:
+                                    processed_rms = float(np.sqrt(np.mean(np.square(out_data))))
+                                    if processed_rms > 0 and input_rms > 0:
+                                        out_data = out_data * (input_rms / processed_rms)
+
                                 processed_channels.append(out_data)
                                 # Emit incremental progress per channel
                                 self.progress.emit(25 + int(60 * (ch + 1) / channel_count))
@@ -180,12 +194,6 @@ class ProcessingWorker(QThread):
                             data = processed_channels[0]
                         else:
                             data = np.column_stack(processed_channels)
-                        
-                        # Normalize Gain if Requested (Peak Normalize)
-                        if self.normalize_gain:
-                            peak = np.max(np.abs(data))
-                            if peak > 0:
-                                data = data / peak * 0.95 # -0.5 dB roughly
                         
                         self.progress.emit(90)
                         outfile.write(data)
@@ -314,7 +322,7 @@ class InverseFilterWidget(QWidget):
         out_layout.addWidget(out_btn)
         proc_layout.addRow(tr("Output:"), out_layout)
         
-        self.norm_check = QCheckBox(tr("Normalize Output (Peak)"))
+        self.norm_check = QCheckBox(tr("Normalize Output (RMS to Input)"))
         self.norm_check.setChecked(True)
         proc_layout.addRow(self.norm_check)
         
