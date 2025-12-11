@@ -18,6 +18,7 @@ class InverseFilter(MeasurementModule):
     def __init__(self, audio_engine):
         self.audio_engine = audio_engine
         self.is_running = False
+        self.cal_loaded = False
         
     @property
     def name(self) -> str:
@@ -69,7 +70,7 @@ class ProcessingWorker(QThread):
                 info = sf.info(self.input_path)
                 sr = info.samplerate
             except Exception as e:
-                self.finished.emit(False, f"Failed to read input file: {e}")
+                self.finished.emit(False, tr("Failed to read input file: {0}").format(e))
                 return
             
             # Create Inverse Filter Response
@@ -203,10 +204,10 @@ class ProcessingWorker(QThread):
                         # Let's try loading all. Most WAVs are short.
                         # If huge, we risk MemoryError.
                         
-                        self.finished.emit(False, "File too large (> 10 mins) for current implementation.")
+                        self.finished.emit(False, tr("File too large (> 10 mins) for current implementation."))
                         return
 
-            self.finished.emit(True, "Processing Complete.")
+            self.finished.emit(True, tr("Processing Complete."))
 
         except Exception as e:
             import traceback
@@ -235,12 +236,11 @@ class InverseFilterWidget(QWidget):
         self.cal_status_label.setStyleSheet("color: orange;")
         cal_layout.addWidget(self.cal_status_label)
         
-        self.load_cal_btn = QPushButton(tr("Reload Calibration Data"))
         self.load_cal_btn = QPushButton(tr("Reload from Memory"))
         self.load_cal_btn.clicked.connect(self.load_calibration)
         cal_layout.addWidget(self.load_cal_btn)
 
-        self.load_file_btn = QPushButton(tr("Load File..."))
+        self.load_file_btn = QPushButton(tr("Load File"))
         self.load_file_btn.clicked.connect(self.load_calibration_file)
         cal_layout.addWidget(self.load_file_btn)
         
@@ -337,11 +337,12 @@ class InverseFilterWidget(QWidget):
     def load_calibration(self):
         cal = self.module.audio_engine.calibration
         if hasattr(cal, 'frequency_map') and cal.frequency_map:
+            self.cal_loaded = True
             self.cal_status_label.setText(tr("Status: Calibration Loaded ({0} points)").format(len(cal.frequency_map)))
             self.cal_status_label.setStyleSheet("color: green;")
             self.update_plot()
         else:
-            self.cal_status_label.setText(tr("Status: No Map Found in AudioEngine"))
+            self.cal_loaded = False
             self.cal_status_label.setText(tr("Status: No Map Found in AudioEngine"))
             self.cal_status_label.setStyleSheet("color: red;")
             
@@ -431,7 +432,7 @@ class InverseFilterWidget(QWidget):
         self.process_btn.setEnabled(
             os.path.exists(self.in_path_edit.text()) and 
             self.out_path_edit.text() != "" and
-            "Loaded" in self.cal_status_label.text()
+            self.cal_loaded
         )
         
     def start_processing(self):
