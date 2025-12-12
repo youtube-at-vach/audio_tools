@@ -93,6 +93,8 @@ class SplCalibrationDialog(QDialog):
         self._pink = _PinkNoise()
         self._bpf_sos = None
         self._bpf_zi = None
+        self._noise_ref_rms = None
+        self._target_fs_rms = None
         self._c_b = None
         self._c_a = None
         self._c_zi = None
@@ -117,10 +119,19 @@ class SplCalibrationDialog(QDialog):
         form.addRow(tr("Test Signal Band") + ":", self.profile_combo)
 
         self.level_spin = QDoubleSpinBox()
-        self.level_spin.setRange(-60.0, -3.0)
-        self.level_spin.setValue(-20.0)
+        self.level_unit_combo = QComboBox()
+        self._populate_level_units()
+        self.level_unit_combo.currentIndexChanged.connect(self._on_level_unit_changed)
+
         self.level_spin.setSingleStep(1.0)
-        form.addRow(tr("Noise Level (dBFS)") + ":", self.level_spin)
+        self._configure_level_spin_for_unit(self.level_unit_combo.currentText())
+
+        level_layout = QHBoxLayout()
+        level_layout.setContentsMargins(0, 0, 0, 0)
+        level_layout.addWidget(self.level_spin)
+        level_layout.addWidget(self.level_unit_combo)
+        level_layout.addStretch(1)
+        form.addRow(tr("Output Level (RMS)") + ":", level_layout)
 
         self.avg_spin = QDoubleSpinBox()
         self.avg_spin.setRange(0.2, 10.0)
@@ -158,6 +169,89 @@ class SplCalibrationDialog(QDialog):
 
         self.setLayout(layout)
 
+    def _populate_level_units(self):
+        self.level_unit_combo.clear()
+        self.level_unit_combo.addItem("dBFS")
+
+        cal = getattr(self.audio_engine, 'calibration', None)
+        has_output_cal = False
+        try:
+            has_output_cal = bool(getattr(cal, 'output_gain_is_calibrated', False))
+        except Exception:
+            has_output_cal = False
+
+        if has_output_cal:
+            self.level_unit_combo.addItems(["Vrms", "mVrms", "dBV", "dBu"])
+
+        # Default
+        idx = self.level_unit_combo.findText("dBFS")
+        if idx >= 0:
+            self.level_unit_combo.setCurrentIndex(idx)
+
+    def _configure_level_spin_for_unit(self, unit: str):
+        unit = str(unit)
+        if unit == "dBFS":
+            self.level_spin.setDecimals(1)
+            self.level_spin.setRange(-80.0, 0.0)
+            self.level_spin.setValue(-20.0)
+            self.level_spin.setSingleStep(1.0)
+        elif unit == "Vrms":
+            self.level_spin.setDecimals(3)
+            self.level_spin.setRange(0.001, 20.0)
+            self.level_spin.setValue(0.100)
+            self.level_spin.setSingleStep(0.010)
+        elif unit == "mVrms":
+            self.level_spin.setDecimals(1)
+            self.level_spin.setRange(1.0, 20000.0)
+            self.level_spin.setValue(100.0)
+            self.level_spin.setSingleStep(10.0)
+        elif unit == "dBV":
+            self.level_spin.setDecimals(1)
+            self.level_spin.setRange(-80.0, 20.0)
+            self.level_spin.setValue(-20.0)
+            self.level_spin.setSingleStep(1.0)
+        elif unit == "dBu":
+            self.level_spin.setDecimals(1)
+            self.level_spin.setRange(-80.0, 20.0)
+            self.level_spin.setValue(-20.0)
+            self.level_spin.setSingleStep(1.0)
+        else:
+            # Fallback
+            self.level_spin.setDecimals(1)
+            self.level_spin.setRange(-80.0, 0.0)
+            self.level_spin.setValue(-20.0)
+
+    def _on_level_unit_changed(self):
+        self._configure_level_spin_for_unit(self.level_unit_combo.currentText())
+
+    def _get_target_fs_rms(self) -> float:
+        """Returns desired output RMS level in full-scale units (FS RMS)."""
+        unit = self.level_unit_combo.currentText()
+        val = float(self.level_spin.value())
+
+        if unit == "dBFS":
+            return float(10 ** (val / 20.0))
+
+        # Voltage-based units require output calibration
+        cal = self.audio_engine.calibration
+        out_gain = float(getattr(cal, 'output_gain', 0.0) or 0.0)
+        if out_gain <= 0 or not np.isfinite(out_gain):
+            raise ValueError(tr("Output calibration is required for voltage units."))
+
+        if unit == "Vrms":
+            v_rms = val
+        elif unit == "mVrms":
+            v_rms = val / 1000.0
+        elif unit == "dBV":
+            v_rms = 10 ** (val / 20.0)
+        elif unit == "dBu":
+            # 0 dBu = 0.7745966692 Vrms
+            v_rms = 0.7745966692 * (10 ** (val / 20.0))
+        else:
+            raise ValueError(tr("Invalid level unit"))
+
+        return float(v_rms / out_gain)
+
     def _prepare_filters(self):
         sr = float(self.audio_engine.sample_rate)
         if sr <= 0:
@@ -182,6 +276,20 @@ class SplCalibrationDialog(QDialog):
         # Streaming state for sosfilt: shape (n_sections, 2)
         self._bpf_zi = np.zeros((bpf_sos.shape[0], 2), dtype=np.float64)
 
+        # Reference RMS for unscaled output noise (used to map desired RMS -> scale).
+        try:
+            sim_pink = _PinkNoise()
+            sim_zi = np.zeros((bpf_sos.shape[0], 2), dtype=np.float64)
+            n = int(max(1, sr * 2.0))
+            x = sim_pink.generate(n).astype(np.float64)
+            y, _ = scipy.signal.sosfilt(bpf_sos, x, zi=sim_zi)
+            discard = int(min(n - 1, sr * 0.5))
+            y2 = y[discard:]
+            rms = float(np.sqrt(np.mean(y2 * y2) + 1e-24))
+            self._noise_ref_rms = float(max(rms, 1e-12))
+        except Exception:
+            self._noise_ref_rms = 1.0
+
         # C-weighting for input measurement
         c_b, c_a = _design_c_weighting(sr)
         self._c_b = c_b
@@ -199,6 +307,11 @@ class SplCalibrationDialog(QDialog):
                 self.start_measurement()
                 self.start_btn.setText(tr("Stop"))
                 self.timer.start(100)
+                # Avoid changing settings mid-stream.
+                self.profile_combo.setEnabled(False)
+                self.level_spin.setEnabled(False)
+                self.level_unit_combo.setEnabled(False)
+                self.avg_spin.setEnabled(False)
             except Exception as e:
                 self.start_btn.setChecked(False)
                 QMessageBox.critical(self, tr("Error"), str(e))
@@ -206,11 +319,18 @@ class SplCalibrationDialog(QDialog):
             self.stop_measurement()
             self.start_btn.setText(tr("Start"))
             self.timer.stop()
+            self.profile_combo.setEnabled(True)
+            self.level_spin.setEnabled(True)
+            self.level_unit_combo.setEnabled(True)
+            self.avg_spin.setEnabled(True)
 
     def start_measurement(self):
         band = self._prepare_filters()
 
-        amp = 10 ** (float(self.level_spin.value()) / 20.0)
+        self._target_fs_rms = self._get_target_fs_rms()
+        if not np.isfinite(self._target_fs_rms) or self._target_fs_rms <= 0:
+            raise ValueError(tr("Invalid output level"))
+
         tau = float(self.avg_spin.value())
         sr = float(self.audio_engine.sample_rate)
 
@@ -218,7 +338,13 @@ class SplCalibrationDialog(QDialog):
             # --- Output: band-limited pink noise ---
             pink = self._pink.generate(frames).astype(np.float64)
             y, self._bpf_zi = scipy.signal.sosfilt(self._bpf_sos, pink, zi=self._bpf_zi)
-            y = (y * amp).astype(np.float32)
+
+            # Scale so that output RMS ~= target FS RMS.
+            ref = float(self._noise_ref_rms or 1.0)
+            scale = float(self._target_fs_rms) / max(1e-12, ref)
+            y = y * scale
+            # Prevent hard overflow if user requests too much level.
+            y = np.clip(y, -0.99, 0.99).astype(np.float32)
 
             if outdata.shape[1] >= 2:
                 outdata[:, 0] = y
@@ -252,6 +378,10 @@ class SplCalibrationDialog(QDialog):
                 self.audio_engine.unregister_callback(self.callback_id)
                 self.callback_id = None
             self.is_running = False
+            self.profile_combo.setEnabled(True)
+            self.level_spin.setEnabled(True)
+            self.level_unit_combo.setEnabled(True)
+            self.avg_spin.setEnabled(True)
 
     def update_level(self):
         self.level_label.setText(

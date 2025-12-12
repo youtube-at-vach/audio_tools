@@ -11,6 +11,9 @@ class CalibrationManager:
         self.config_path = config_path
         self.input_sensitivity = 1.0 # Volts per Full Scale (V/FS) (Peak)
         self.output_gain = 1.0 # Volts per Full Scale (V/FS) (Peak)
+        # Whether the output gain was explicitly calibrated by the user.
+        # Used to decide when to offer voltage-based UI controls.
+        self.output_gain_is_calibrated = False
         self.frequency_calibration = 1.0 # Multiplier for frequency correction
         self.lockin_gain_offset = 0.0 # dB offset for Lock-in Amplifier
         # SPL calibration: maps measured (C-weighted) dBFS to SPL.
@@ -26,6 +29,15 @@ class CalibrationManager:
                     data = json.load(f)
                     self.input_sensitivity = data.get('input_sensitivity', 1.0)
                     self.output_gain = data.get('output_gain', 1.0)
+                    # New flag (backward compatible)
+                    if 'output_gain_is_calibrated' in data:
+                        self.output_gain_is_calibrated = bool(data.get('output_gain_is_calibrated'))
+                    else:
+                        # Heuristic for older files: treat non-default values as calibrated.
+                        try:
+                            self.output_gain_is_calibrated = abs(float(self.output_gain) - 1.0) > 1e-12
+                        except Exception:
+                            self.output_gain_is_calibrated = False
                     self.frequency_calibration = data.get('frequency_calibration', 1.0)
                     self.lockin_gain_offset = data.get('lockin_gain_offset', 0.0)
 
@@ -59,6 +71,7 @@ class CalibrationManager:
         data = {
             'input_sensitivity': self.input_sensitivity,
             'output_gain': self.output_gain,
+            'output_gain_is_calibrated': bool(self.output_gain_is_calibrated),
             'frequency_calibration': self.frequency_calibration,
             'lockin_gain_offset': self.lockin_gain_offset,
             # Keep a single SPL calibration value.
@@ -119,7 +132,15 @@ class CalibrationManager:
 
     def set_output_gain(self, v_per_fs):
         """Sets output gain in Volts (Peak) corresponding to 1.0 FS."""
+        try:
+            v_per_fs = float(v_per_fs)
+        except Exception:
+            raise ValueError("Invalid output gain")
+        if not np.isfinite(v_per_fs) or v_per_fs <= 0:
+            raise ValueError("Invalid output gain")
+
         self.output_gain = v_per_fs
+        self.output_gain_is_calibrated = True
         self.save()
 
     def set_frequency_calibration(self, factor):
