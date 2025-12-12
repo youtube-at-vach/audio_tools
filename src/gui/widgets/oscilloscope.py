@@ -21,11 +21,15 @@ class Oscilloscope(MeasurementModule):
         self.timebase = 0.01 # Seconds per division (approx) -> Total view window
         self.gain = 1.0
         self.trigger_source = 0 # 0: Left, 1: Right
-        self.trigger_mode = 'Auto' # 'Auto', 'Normal'
+        self.trigger_mode = 'Auto' # 'Auto', 'Normal', 'Single'
         self.trigger_slope = 'Rising' # 'Rising', 'Falling'
         self.trigger_level = 0.0
         self.show_left = True
         self.show_right = True
+
+        # Single-shot trigger state
+        self.single_shot_armed = False
+        self.single_shot_fired = False
         
         # Math Mode
         self.math_mode = 'Off' # 'Off', 'Derivative', 'Integral'
@@ -58,6 +62,10 @@ class Oscilloscope(MeasurementModule):
 
         self.is_running = True
         self.input_data = np.zeros((self.buffer_size, 2))
+
+        if self.trigger_mode == 'Single':
+            self.single_shot_armed = True
+            self.single_shot_fired = False
         
         def callback(indata, outdata, frames, time, status):
             if status:
@@ -98,6 +106,9 @@ class Oscilloscope(MeasurementModule):
             required_samples = self.buffer_size
             
         data = self.input_data
+
+        if self.trigger_mode == 'Single' and not self.single_shot_armed:
+            return None
         trigger_channel = data[:, self.trigger_source]
         
         # Simple Trigger Search
@@ -133,6 +144,11 @@ class Oscilloscope(MeasurementModule):
         if len(crossings) > 0:
             # Pick the last one for most recent update
             trigger_idx = start_idx + crossings[-1] + 1 # +1 because crossing is between i and i+1
+
+            if self.trigger_mode == 'Single':
+                self.single_shot_fired = True
+                self.single_shot_armed = False
+
             return data[trigger_idx : trigger_idx + required_samples]
         else:
             # No trigger found
@@ -328,7 +344,7 @@ class OscilloscopeWidget(QWidget):
         hbox_mode = QHBoxLayout()
         hbox_mode.addWidget(QLabel(tr("Mode:")))
         self.trig_mode_combo = QComboBox()
-        self.trig_mode_combo.addItems([tr("Auto"), tr("Normal")])
+        self.trig_mode_combo.addItems([tr("Auto"), tr("Normal"), tr("Single")])
         self.trig_mode_combo.currentTextChanged.connect(self.on_trig_mode_changed)
         hbox_mode.addWidget(self.trig_mode_combo)
         trig_layout.addLayout(hbox_mode)
@@ -515,7 +531,23 @@ class OscilloscopeWidget(QWidget):
         self.module.trigger_slope = text
 
     def on_trig_mode_changed(self, text):
-        self.module.trigger_mode = text
+        text_to_mode = {
+            tr('Auto'): 'Auto',
+            tr('Normal'): 'Normal',
+            tr('Single'): 'Single',
+            'Auto': 'Auto',
+            'Normal': 'Normal',
+            'Single': 'Single',
+        }
+        mode = text_to_mode.get(text, text)
+        self.module.trigger_mode = mode
+
+        if mode == 'Single':
+            self.module.single_shot_armed = True
+            self.module.single_shot_fired = False
+        else:
+            self.module.single_shot_armed = False
+            self.module.single_shot_fired = False
 
     def on_trig_level_changed(self, val):
         self.module.trigger_level = val
@@ -705,6 +737,15 @@ class OscilloscopeWidget(QWidget):
             # Update cursor info if they are on (to update voltage readings)
             if self.chk_cursors.isChecked():
                 self.update_cursor_info()
+
+            # Single-shot mode: stop updates immediately after the first trigger capture.
+            if self.module.trigger_mode == 'Single' and self.module.single_shot_fired:
+                self.timer.stop()
+                self.module.stop_analysis()
+                self.toggle_btn.blockSignals(True)
+                self.toggle_btn.setChecked(False)
+                self.toggle_btn.setText(tr('Start'))
+                self.toggle_btn.blockSignals(False)
 
     def apply_theme(self, theme_name):
         if theme_name == 'system' and hasattr(self.app, 'theme_manager'):
