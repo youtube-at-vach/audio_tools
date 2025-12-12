@@ -159,6 +159,191 @@ class Oscilloscope(MeasurementModule):
                 # Normal mode: return None (keep last frame)
                 return None
 
+    @staticmethod
+    def _interp_crossing_time(t: np.ndarray, y: np.ndarray, level: float, direction: str):
+        """Return interpolated crossing time for the first crossing in the requested direction.
+
+        direction: 'rising' or 'falling'
+        """
+        if t is None or y is None or len(t) < 2:
+            return None
+        if direction == 'rising':
+            idxs = np.where((y[:-1] < level) & (y[1:] >= level))[0]
+        else:
+            idxs = np.where((y[:-1] > level) & (y[1:] <= level))[0]
+        if len(idxs) == 0:
+            return None
+        i = int(idxs[0])
+        y0 = float(y[i])
+        y1 = float(y[i + 1])
+        t0 = float(t[i])
+        t1 = float(t[i + 1])
+        denom = (y1 - y0)
+        if denom == 0:
+            return t0
+        frac = (level - y0) / denom
+        if frac < 0:
+            frac = 0
+        elif frac > 1:
+            frac = 1
+        return t0 + frac * (t1 - t0)
+
+    @staticmethod
+    def estimate_frequency_hz(t: np.ndarray, y: np.ndarray):
+        """Estimate frequency from rising zero-crossings (DC-removed)."""
+        if t is None or y is None or len(t) < 4:
+            return None
+        yy = np.asarray(y, dtype=float)
+        tt = np.asarray(t, dtype=float)
+        if yy.size != tt.size:
+            return None
+
+        yy = yy - np.mean(yy)
+        crossings = np.where((yy[:-1] < 0.0) & (yy[1:] >= 0.0))[0]
+        if len(crossings) < 2:
+            return None
+
+        times = []
+        for i in crossings:
+            y0 = float(yy[i])
+            y1 = float(yy[i + 1])
+            t0 = float(tt[i])
+            t1 = float(tt[i + 1])
+            denom = (y1 - y0)
+            if denom == 0:
+                continue
+            frac = (-y0) / denom
+            if 0.0 <= frac <= 1.0:
+                times.append(t0 + frac * (t1 - t0))
+
+        if len(times) < 2:
+            return None
+
+        periods = np.diff(np.asarray(times, dtype=float))
+        periods = periods[np.isfinite(periods) & (periods > 0)]
+        if periods.size == 0:
+            return None
+
+        period = float(np.median(periods))
+        if period <= 0:
+            return None
+        return 1.0 / period
+
+    @staticmethod
+    def estimate_rise_fall_times_s(t: np.ndarray, y: np.ndarray):
+        """Estimate 10-90% rise time and 90-10% fall time for step-like waveforms.
+
+        This implementation measures *within a single edge neighborhood* to avoid accidentally
+        spanning multiple periods (a common failure mode on square waves).
+
+        Returns (rise_time_s, fall_time_s, low_level, high_level) where times can be None.
+        """
+        if t is None or y is None or len(t) < 4:
+            return (None, None, None, None)
+
+        yy = np.asarray(y, dtype=float)
+        tt = np.asarray(t, dtype=float)
+        if yy.size != tt.size:
+            return (None, None, None, None)
+
+        # Robust low/high estimates from quantiles.
+        low_q = float(np.percentile(yy, 10))
+        high_q = float(np.percentile(yy, 90))
+        if not np.isfinite(low_q) or not np.isfinite(high_q):
+            return (None, None, None, None)
+
+        low_level = min(low_q, high_q)
+        high_level = max(low_q, high_q)
+        amp = high_level - low_level
+        if amp <= 1e-9:
+            return (None, None, low_level, high_level)
+
+        # Heuristic: only attempt rise/fall when waveform looks step-like.
+        near_low = np.mean(yy <= (low_level + 0.2 * amp))
+        near_high = np.mean(yy >= (high_level - 0.2 * amp))
+        if not (near_low > 0.05 and near_high > 0.05):
+            return (None, None, low_level, high_level)
+
+        th10 = low_level + 0.1 * amp
+        th90 = low_level + 0.9 * amp
+        th50 = low_level + 0.5 * amp
+
+        def _interp_time_at(i_local: int, level: float):
+            y0 = float(yy[i_local])
+            y1 = float(yy[i_local + 1])
+            t0 = float(tt[i_local])
+            t1 = float(tt[i_local + 1])
+            denom = (y1 - y0)
+            if denom == 0:
+                return t0
+            frac = (level - y0) / denom
+            if frac < 0.0:
+                frac = 0.0
+            elif frac > 1.0:
+                frac = 1.0
+            return t0 + frac * (t1 - t0)
+
+        n = len(yy)
+        win = min(max(16, n // 8), 4000)
+        center = n // 2
+
+        def _pick_edge(direction: str):
+            if direction == 'rising':
+                candidates = np.where((yy[:-1] < th50) & (yy[1:] >= th50))[0]
+            else:
+                candidates = np.where((yy[:-1] > th50) & (yy[1:] <= th50))[0]
+            if candidates.size == 0:
+                return None
+            dy = np.abs(yy[candidates + 1] - yy[candidates])
+            dist = np.abs(candidates - center)
+            dist_w = 1.0 - (dist / max(1, center))
+            score = dy * (0.25 + 0.75 * dist_w)
+            return int(candidates[int(np.argmax(score))])
+
+        def _rise_time_from_edge(i50: int):
+            lo = max(0, i50 - win)
+            hi = min(n - 2, i50 + win)
+            pre = np.where((yy[lo:hi] < th10) & (yy[lo + 1:hi + 1] >= th10))[0]
+            if pre.size == 0:
+                return None
+            i10 = lo + int(pre[-1])
+            post = np.where((yy[i10:hi] < th90) & (yy[i10 + 1:hi + 1] >= th90))[0]
+            if post.size == 0:
+                return None
+            i90 = i10 + int(post[0])
+            t10 = _interp_time_at(i10, th10)
+            t90 = _interp_time_at(i90, th90)
+            dt = float(t90) - float(t10)
+            return dt if dt > 0 else None
+
+        def _fall_time_from_edge(i50: int):
+            lo = max(0, i50 - win)
+            hi = min(n - 2, i50 + win)
+            pre = np.where((yy[lo:hi] > th90) & (yy[lo + 1:hi + 1] <= th90))[0]
+            if pre.size == 0:
+                return None
+            i90 = lo + int(pre[-1])
+            post = np.where((yy[i90:hi] > th10) & (yy[i90 + 1:hi + 1] <= th10))[0]
+            if post.size == 0:
+                return None
+            i10 = i90 + int(post[0])
+            t90 = _interp_time_at(i90, th90)
+            t10 = _interp_time_at(i10, th10)
+            dt = float(t10) - float(t90)
+            return dt if dt > 0 else None
+
+        rise_time = None
+        i50r = _pick_edge('rising')
+        if i50r is not None:
+            rise_time = _rise_time_from_edge(i50r)
+
+        fall_time = None
+        i50f = _pick_edge('falling')
+        if i50f is not None:
+            fall_time = _fall_time_from_edge(i50f)
+
+        return (rise_time, fall_time, low_level, high_level)
+
 class OscilloscopeWidget(QWidget):
     def __init__(self, module: Oscilloscope):
         super().__init__()
@@ -177,17 +362,29 @@ class OscilloscopeWidget(QWidget):
         
         # Measurements
         meas_group = QGroupBox(tr("Measurements"))
-        meas_layout = QHBoxLayout()
-        
+        meas_layout = QVBoxLayout()
+
+        meas_row_1 = QHBoxLayout()
         self.meas_l_label = QLabel(tr("L: Vrms: 0.000 V  Vpp: 0.000 V"))
         self.meas_l_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #00ff00;")
-        meas_layout.addWidget(self.meas_l_label)
-        
+        meas_row_1.addWidget(self.meas_l_label)
+
         self.meas_r_label = QLabel(tr("R: Vrms: 0.000 V  Vpp: 0.000 V"))
         self.meas_r_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #ff0000;")
-        meas_layout.addWidget(self.meas_r_label)
-        
-        meas_layout.addStretch()
+        meas_row_1.addWidget(self.meas_r_label)
+        meas_row_1.addStretch()
+        meas_layout.addLayout(meas_row_1)
+
+        self.meas_l_auto_label = QLabel(tr("Freq") + ": --  " + tr("Rise") + ": --  " + tr("Fall") + ": --")
+        self.meas_l_auto_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #00ff00;")
+        self.meas_l_auto_label.setVisible(False)
+        meas_layout.addWidget(self.meas_l_auto_label)
+
+        self.meas_r_auto_label = QLabel(tr("Freq") + ": --  " + tr("Rise") + ": --  " + tr("Fall") + ": --")
+        self.meas_r_auto_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #ff0000;")
+        self.meas_r_auto_label.setVisible(False)
+        meas_layout.addWidget(self.meas_r_auto_label)
+
         meas_group.setLayout(meas_layout)
         left_layout.addWidget(meas_group)
         
@@ -377,6 +574,10 @@ class OscilloscopeWidget(QWidget):
         self.chk_cursors = QCheckBox(tr("Enable Cursors"))
         self.chk_cursors.toggled.connect(self.on_cursors_toggled)
         tools_layout.addWidget(self.chk_cursors)
+
+        self.chk_wave_meas = QCheckBox(tr("Enable Waveform Measurements"))
+        self.chk_wave_meas.toggled.connect(self.on_wave_meas_toggled)
+        tools_layout.addWidget(self.chk_wave_meas)
         
         tools_group.setLayout(tools_layout)
         right_layout.addWidget(tools_group)
@@ -577,6 +778,14 @@ class OscilloscopeWidget(QWidget):
                 self.cursor_2.setPos(center + width/4)
         self.update_cursor_info()
 
+    def on_wave_meas_toggled(self, checked):
+        self.meas_l_auto_label.setVisible(checked and self.module.show_left)
+        self.meas_r_auto_label.setVisible(checked and self.module.show_right)
+
+        if not checked:
+            self.meas_l_auto_label.setText(tr("Freq") + ": --  " + tr("Rise") + ": --  " + tr("Fall") + ": --")
+            self.meas_r_auto_label.setText(tr("Freq") + ": --  " + tr("Rise") + ": --  " + tr("Fall") + ": --")
+
     def update_cursor_info(self):
         if not self.chk_cursors.isChecked():
             self.cursor_info_label.setText(tr("Cursors: Off"))
@@ -676,6 +885,51 @@ class OscilloscopeWidget(QWidget):
 
             # Create time axis
             t = np.linspace(0, window_duration, len(data))
+
+            # Waveform-derived measurements (optional)
+            def _format_time(seconds):
+                if seconds is None or not np.isfinite(seconds) or seconds <= 0:
+                    return "--"
+                if seconds < 1e-6:
+                    return f"{seconds * 1e9:.1f} ns"
+                if seconds < 1e-3:
+                    return f"{seconds * 1e6:.2f} us"
+                if seconds < 1.0:
+                    return f"{seconds * 1e3:.3f} ms"
+                return f"{seconds:.3f} s"
+
+            def _format_freq(hz):
+                if hz is None or not np.isfinite(hz) or hz <= 0:
+                    return "--"
+                if hz >= 1e6:
+                    return f"{hz / 1e6:.3f} MHz"
+                if hz >= 1e3:
+                    return f"{hz / 1e3:.3f} kHz"
+                return f"{hz:.3f} Hz"
+
+            wave_meas_enabled = hasattr(self, 'chk_wave_meas') and self.chk_wave_meas.isChecked()
+            self.meas_l_auto_label.setVisible(wave_meas_enabled and self.module.show_left)
+            self.meas_r_auto_label.setVisible(wave_meas_enabled and self.module.show_right)
+
+            if wave_meas_enabled:
+                if self.module.show_left:
+                    y = data[:, 0]
+                    freq_hz = self.module.estimate_frequency_hz(t, y)
+                    rise_s, fall_s, _low, _high = self.module.estimate_rise_fall_times_s(t, y)
+                    self.meas_l_auto_label.setText(
+                        tr("Freq") + f": {_format_freq(freq_hz)}  "
+                        + tr("Rise") + f": {_format_time(rise_s)}  "
+                        + tr("Fall") + f": {_format_time(fall_s)}"
+                    )
+                if self.module.show_right:
+                    y = data[:, 1]
+                    freq_hz = self.module.estimate_frequency_hz(t, y)
+                    rise_s, fall_s, _low, _high = self.module.estimate_rise_fall_times_s(t, y)
+                    self.meas_r_auto_label.setText(
+                        tr("Freq") + f": {_format_freq(freq_hz)}  "
+                        + tr("Rise") + f": {_format_time(rise_s)}  "
+                        + tr("Fall") + f": {_format_time(fall_s)}"
+                    )
             
             # Store for cursor interpolation
             self.latest_data = data
@@ -761,6 +1015,10 @@ class OscilloscopeWidget(QWidget):
             )
             self.meas_l_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #00ff00;")
             self.meas_r_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #ff0000;")
+            if hasattr(self, 'meas_l_auto_label'):
+                self.meas_l_auto_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #00ff00;")
+            if hasattr(self, 'meas_r_auto_label'):
+                self.meas_r_auto_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #ff0000;")
             self.cursor_info_label.setStyleSheet("font-family: monospace; font-weight: bold; color: yellow;")
         else:
             # Light Theme
@@ -772,4 +1030,8 @@ class OscilloscopeWidget(QWidget):
             )
             self.meas_l_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #008800;")
             self.meas_r_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #cc0000;")
+            if hasattr(self, 'meas_l_auto_label'):
+                self.meas_l_auto_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #008800;")
+            if hasattr(self, 'meas_r_auto_label'):
+                self.meas_r_auto_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #cc0000;")
             self.cursor_info_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #888800;")
