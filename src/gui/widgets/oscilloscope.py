@@ -2,7 +2,7 @@ import argparse
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QComboBox, QCheckBox, QSlider, QGroupBox, QDoubleSpinBox, QStackedWidget, QFormLayout, QApplication)
+                             QComboBox, QCheckBox, QSlider, QGroupBox, QDoubleSpinBox, QStackedWidget, QFormLayout, QApplication, QTabWidget)
 from PyQt6.QtCore import QTimer, Qt
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
@@ -26,6 +26,10 @@ class Oscilloscope(MeasurementModule):
         self.trigger_level = 0.0
         self.show_left = True
         self.show_right = True
+
+        # Per-channel vertical display scale (multiplier)
+        self.vscale_left = 1.0
+        self.vscale_right = 1.0
 
         # Single-shot trigger state
         self.single_shot_armed = False
@@ -426,11 +430,49 @@ class OscilloscopeWidget(QWidget):
         right_widget.setFixedWidth(250) # Fixed width for controls
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # 1. General Controls
+
+        tabs = QTabWidget()
+        right_layout.addWidget(tabs)
+
+        tab_controls = QWidget()
+        tab_tools_filter = QWidget()
+
+        tabs.addTab(tab_controls, tr("General"))
+        tabs.addTab(tab_tools_filter, tr("Tools"))
+
+        controls_layout = QVBoxLayout(tab_controls)
+        tools_tab_layout = QVBoxLayout(tab_tools_filter)
+
         gen_group = QGroupBox(tr("General"))
         gen_layout = QVBoxLayout()
+        gen_group.setLayout(gen_layout)
+        controls_layout.addWidget(gen_group)
+
+        vert_group = QGroupBox(tr("Vertical"))
+        vert_layout = QVBoxLayout()
+        vert_group.setLayout(vert_layout)
+        controls_layout.addWidget(vert_group)
+
+        trig_group = QGroupBox(tr("Trigger"))
+        trig_layout = QVBoxLayout()
+        trig_group.setLayout(trig_layout)
+        controls_layout.addWidget(trig_group)
+
+        controls_layout.addStretch()
+
+        tools_group = QGroupBox(tr("Tools"))
+        tools_layout = QVBoxLayout()
+        tools_group.setLayout(tools_layout)
+        tools_tab_layout.addWidget(tools_group)
+
+        filter_group = QGroupBox(tr("Filter"))
+        filter_layout = QVBoxLayout()
+        filter_group.setLayout(filter_layout)
+        tools_tab_layout.addWidget(filter_group)
+
+        tools_tab_layout.addStretch()
         
+        # 1. General Controls
         # Start/Stop
         self.toggle_btn = QPushButton(tr("Start"))
         self.toggle_btn.setCheckable(True)
@@ -470,38 +512,51 @@ class OscilloscopeWidget(QWidget):
         if "10 ms" in self.timebase_keys:
             self.timebase_slider.setValue(self.timebase_keys.index("10 ms"))
         gen_layout.addWidget(self.timebase_slider)
-        
-        gen_group.setLayout(gen_layout)
-        right_layout.addWidget(gen_group)
+
+        # gen_layout stretch is handled by controls_layout
         
         # 2. Vertical Controls
-        vert_group = QGroupBox(tr("Vertical"))
-        vert_layout = QVBoxLayout()
-        
-        hbox_scale = QHBoxLayout()
-        hbox_scale.addWidget(QLabel(tr("Scale:")))
-        self.vscale_combo = QComboBox()
         self.vscale_options = {
             "0.01x": 0.01, "0.02x": 0.02, "0.05x": 0.05,
-            "0.1x": 0.1, "0.2x": 0.2, "0.5x": 0.5, 
+            "0.1x": 0.1, "0.2x": 0.2, "0.5x": 0.5,
             "1.0x": 1.0, "2.0x": 2.0, "5.0x": 5.0, "10.0x": 10.0,
-            "20.0x": 20.0, "50.0x": 50.0, "100.0x": 100.0, 
+            "20.0x": 20.0, "50.0x": 50.0, "100.0x": 100.0,
             "200.0x": 200.0, "500.0x": 500.0, "1000.0x": 1000.0,
             "2000.0x": 2000.0, "5000.0x": 5000.0, "10000.0x": 10000.0
         }
         self.vscale_keys = list(self.vscale_options.keys())
-        self.vscale_combo.addItems(self.vscale_keys)
-        self.vscale_combo.setCurrentText("1.0x")
-        self.vscale_combo.currentTextChanged.connect(self.on_vscale_changed)
-        hbox_scale.addWidget(self.vscale_combo)
-        vert_layout.addLayout(hbox_scale)
-        
-        self.vscale_slider = QSlider(Qt.Orientation.Horizontal)
-        self.vscale_slider.setRange(0, len(self.vscale_keys) - 1)
-        self.vscale_slider.valueChanged.connect(self.on_vscale_slider_changed)
+
+        hbox_scale_l = QHBoxLayout()
+        hbox_scale_l.addWidget(QLabel(tr("Left") + " " + tr("Scale:")))
+        self.vscale_combo_l = QComboBox()
+        self.vscale_combo_l.addItems(self.vscale_keys)
+        self.vscale_combo_l.setCurrentText("1.0x")
+        self.vscale_combo_l.currentTextChanged.connect(self.on_vscale_left_changed)
+        hbox_scale_l.addWidget(self.vscale_combo_l)
+        vert_layout.addLayout(hbox_scale_l)
+
+        self.vscale_slider_l = QSlider(Qt.Orientation.Horizontal)
+        self.vscale_slider_l.setRange(0, len(self.vscale_keys) - 1)
+        self.vscale_slider_l.valueChanged.connect(self.on_vscale_left_slider_changed)
         if "1.0x" in self.vscale_keys:
-            self.vscale_slider.setValue(self.vscale_keys.index("1.0x"))
-        vert_layout.addWidget(self.vscale_slider)
+            self.vscale_slider_l.setValue(self.vscale_keys.index("1.0x"))
+        vert_layout.addWidget(self.vscale_slider_l)
+
+        hbox_scale_r = QHBoxLayout()
+        hbox_scale_r.addWidget(QLabel(tr("Right") + " " + tr("Scale:")))
+        self.vscale_combo_r = QComboBox()
+        self.vscale_combo_r.addItems(self.vscale_keys)
+        self.vscale_combo_r.setCurrentText("1.0x")
+        self.vscale_combo_r.currentTextChanged.connect(self.on_vscale_right_changed)
+        hbox_scale_r.addWidget(self.vscale_combo_r)
+        vert_layout.addLayout(hbox_scale_r)
+
+        self.vscale_slider_r = QSlider(Qt.Orientation.Horizontal)
+        self.vscale_slider_r.setRange(0, len(self.vscale_keys) - 1)
+        self.vscale_slider_r.valueChanged.connect(self.on_vscale_right_slider_changed)
+        if "1.0x" in self.vscale_keys:
+            self.vscale_slider_r.setValue(self.vscale_keys.index("1.0x"))
+        vert_layout.addWidget(self.vscale_slider_r)
         
         hbox_ch = QHBoxLayout()
         self.chk_left = QCheckBox(tr("Left Ch"))
@@ -514,14 +569,10 @@ class OscilloscopeWidget(QWidget):
         self.chk_right.toggled.connect(lambda x: setattr(self.module, 'show_right', x))
         hbox_ch.addWidget(self.chk_right)
         vert_layout.addLayout(hbox_ch)
-        
-        vert_group.setLayout(vert_layout)
-        right_layout.addWidget(vert_group)
+
+        # per-tab stretch handled by controls_layout
         
         # 3. Trigger Controls
-        trig_group = QGroupBox(tr("Trigger"))
-        trig_layout = QVBoxLayout()
-        
         hbox_src = QHBoxLayout()
         hbox_src.addWidget(QLabel(tr("Source:")))
         self.trig_source_combo = QComboBox()
@@ -555,14 +606,10 @@ class OscilloscopeWidget(QWidget):
         self.trig_level_spin.valueChanged.connect(self.on_trig_level_changed)
         hbox_lvl.addWidget(self.trig_level_spin)
         trig_layout.addLayout(hbox_lvl)
-        
-        trig_group.setLayout(trig_layout)
-        right_layout.addWidget(trig_group)
+
+        # per-tab stretch handled by controls_layout
         
         # 4. Tools
-        tools_group = QGroupBox(tr("Tools"))
-        tools_layout = QVBoxLayout()
-        
         hbox_math = QHBoxLayout()
         hbox_math.addWidget(QLabel(tr("Math:")))
         self.math_combo = QComboBox()
@@ -578,14 +625,10 @@ class OscilloscopeWidget(QWidget):
         self.chk_wave_meas = QCheckBox(tr("Enable Waveform Measurements"))
         self.chk_wave_meas.toggled.connect(self.on_wave_meas_toggled)
         tools_layout.addWidget(self.chk_wave_meas)
-        
-        tools_group.setLayout(tools_layout)
-        right_layout.addWidget(tools_group)
+
+        # per-tab stretch handled by tools_tab_layout
         
         # 5. Filter Controls
-        filter_group = QGroupBox(tr("Filter"))
-        filter_layout = QVBoxLayout()
-        
         hbox_ft = QHBoxLayout()
         hbox_ft.addWidget(QLabel(tr("Type:")))
         self.filter_combo = QComboBox()
@@ -630,8 +673,8 @@ class OscilloscopeWidget(QWidget):
         self.filter_stack.addWidget(bpf_widget)
         
         filter_layout.addWidget(self.filter_stack)
-        filter_group.setLayout(filter_layout)
-        right_layout.addWidget(filter_group)
+
+        # per-tab stretch handled by tools_tab_layout
         
         # Math Curve
         # Create a new ViewBox for Math
@@ -656,7 +699,6 @@ class OscilloscopeWidget(QWidget):
         self.curve_math = pg.PlotCurveItem(pen=pg.mkPen('w', width=2, style=Qt.PenStyle.DotLine), name=tr("Math"))
         self.math_view.addItem(self.curve_math)
         
-        right_layout.addStretch()
         main_layout.addWidget(right_widget)
         
         self.setLayout(main_layout)
@@ -695,6 +737,40 @@ class OscilloscopeWidget(QWidget):
             key = self.timebase_keys[idx]
             if self.timebase_combo.currentText() != key:
                 self.timebase_combo.setCurrentText(key)
+
+    def on_vscale_left_slider_changed(self, idx):
+        if 0 <= idx < len(self.vscale_keys):
+            key = self.vscale_keys[idx]
+            if self.vscale_combo_l.currentText() != key:
+                self.vscale_combo_l.setCurrentText(key)
+
+    def on_vscale_left_changed(self, text):
+        if text not in self.vscale_options:
+            return
+        scale = float(self.vscale_options[text])
+        self.module.vscale_left = scale
+
+        if text in self.vscale_keys:
+            idx = self.vscale_keys.index(text)
+            if self.vscale_slider_l.value() != idx:
+                self.vscale_slider_l.setValue(idx)
+
+    def on_vscale_right_slider_changed(self, idx):
+        if 0 <= idx < len(self.vscale_keys):
+            key = self.vscale_keys[idx]
+            if self.vscale_combo_r.currentText() != key:
+                self.vscale_combo_r.setCurrentText(key)
+
+    def on_vscale_right_changed(self, text):
+        if text not in self.vscale_options:
+            return
+        scale = float(self.vscale_options[text])
+        self.module.vscale_right = scale
+
+        if text in self.vscale_keys:
+            idx = self.vscale_keys.index(text)
+            if self.vscale_slider_r.value() != idx:
+                self.vscale_slider_r.setValue(idx)
 
     def on_vscale_slider_changed(self, idx):
         if 0 <= idx < len(self.vscale_keys):
@@ -936,12 +1012,12 @@ class OscilloscopeWidget(QWidget):
             self.latest_t = t
             
             if self.module.show_left:
-                self.curve_l.setData(t, data[:, 0])
+                self.curve_l.setData(t, data[:, 0] * float(getattr(self.module, 'vscale_left', 1.0)))
             else:
                 self.curve_l.setData([], [])
                 
             if self.module.show_right:
-                self.curve_r.setData(t, data[:, 1])
+                self.curve_r.setData(t, data[:, 1] * float(getattr(self.module, 'vscale_right', 1.0)))
             else:
                 self.curve_r.setData([], [])
                 
