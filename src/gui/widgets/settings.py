@@ -442,10 +442,10 @@ class OutputCalibrationDialog(QDialog):
         layout = QVBoxLayout()
         
         # Step 1
-        layout.addWidget(QLabel(f"<b>Step 1:</b> {tr('Connect a voltmeter to the output.')}"))
+        layout.addWidget(QLabel(f"<b>{tr('Step 1:')}</b> {tr('Connect a voltmeter to the output.')}"))
         
         # Step 2
-        layout.addWidget(QLabel(f"<b>Step 2:</b> {tr('Set Test Tone.')}"))
+        layout.addWidget(QLabel(f"<b>{tr('Step 2:')}</b> {tr('Set Test Tone.')}"))
         form = QFormLayout()
         self.freq_spin = QDoubleSpinBox()
         self.freq_spin.setRange(20, 20000); self.freq_spin.setValue(1000)
@@ -457,14 +457,14 @@ class OutputCalibrationDialog(QDialog):
         layout.addLayout(form)
         
         # Step 3
-        layout.addWidget(QLabel(f"<b>Step 3:</b> {tr('Play Tone.')}"))
+        layout.addWidget(QLabel(f"<b>{tr('Step 3:')}</b> {tr('Play Tone.')}"))
         self.play_btn = QPushButton(tr("Start Tone"))
         self.play_btn.setCheckable(True)
         self.play_btn.clicked.connect(self.on_play_toggle)
         layout.addWidget(self.play_btn)
         
         # Step 4
-        layout.addWidget(QLabel(f"<b>Step 4:</b> {tr('Enter measured voltage.')}"))
+        layout.addWidget(QLabel(f"<b>{tr('Step 4:')}</b> {tr('Enter measured voltage.')}"))
         meas_layout = QHBoxLayout()
         self.meas_spin = QDoubleSpinBox()
         self.meas_spin.setRange(-200, 1000); self.meas_spin.setDecimals(4)
@@ -476,7 +476,7 @@ class OutputCalibrationDialog(QDialog):
         layout.addLayout(meas_layout)
         
         # Step 5
-        layout.addWidget(QLabel(f"<b>Step 5:</b> {tr('Save.')}"))
+        layout.addWidget(QLabel(f"<b>{tr('Step 5:')}</b> {tr('Save.')}"))
         self.save_btn = QPushButton(tr("Calculate & Save"))
         self.save_btn.clicked.connect(self.on_save)
         layout.addWidget(self.save_btn)
@@ -544,7 +544,11 @@ class OutputCalibrationDialog(QDialog):
             gain = v_peak / (10**(dbfs/20))
             
             self.audio_engine.calibration.set_output_gain(gain)
-            QMessageBox.information(self, tr("Success"), f"Output Gain calibrated to {gain:.4f} V/FS")
+            QMessageBox.information(
+                self,
+                tr("Success"),
+                tr("Output Gain calibrated to {0:.4f} V/FS").format(gain),
+            )
             self.accept()
             
         except Exception as e:
@@ -572,10 +576,10 @@ class InputCalibrationDialog(QDialog):
         layout = QVBoxLayout()
         
         # Step 1
-        layout.addWidget(QLabel(f"<b>Step 1:</b> {tr('Connect a known signal source to the input.')}"))
+        layout.addWidget(QLabel(f"<b>{tr('Step 1:')}</b> {tr('Connect a known signal source to the input.')}"))
         
         # Step 2
-        layout.addWidget(QLabel(f"<b>Step 2:</b> {tr('Measure Input Level.')}"))
+        layout.addWidget(QLabel(f"<b>{tr('Step 2:')}</b> {tr('Measure Input Level.')}"))
         self.measure_btn = QPushButton(tr("Start Measurement"))
         self.measure_btn.setCheckable(True)
         self.measure_btn.clicked.connect(self.on_measure_toggle)
@@ -586,7 +590,7 @@ class InputCalibrationDialog(QDialog):
         layout.addWidget(self.level_label)
         
         # Step 3
-        layout.addWidget(QLabel(f"<b>Step 3:</b> {tr('Enter known source voltage.')}"))
+        layout.addWidget(QLabel(f"<b>{tr('Step 3:')}</b> {tr('Enter known source voltage.')}"))
         meas_layout = QHBoxLayout()
         self.meas_spin = QDoubleSpinBox()
         self.meas_spin.setRange(-200, 1000); self.meas_spin.setDecimals(4)
@@ -598,7 +602,7 @@ class InputCalibrationDialog(QDialog):
         layout.addLayout(meas_layout)
         
         # Step 4
-        layout.addWidget(QLabel(f"<b>Step 4:</b> {tr('Save.')}"))
+        layout.addWidget(QLabel(f"<b>{tr('Step 4:')}</b> {tr('Save.')}"))
         self.save_btn = QPushButton(tr("Calculate & Save"))
         self.save_btn.clicked.connect(self.on_save)
         layout.addWidget(self.save_btn)
@@ -644,7 +648,7 @@ class InputCalibrationDialog(QDialog):
             measured_dbfs = self.current_rms_dbfs
             
             if measured_dbfs < -100:
-                raise ValueError("No signal detected. Please check connections.")
+                raise ValueError(tr("No signal detected. Please check connections."))
             
             # Convert Known Voltage to Vpeak
             if unit == "Vrms":
@@ -668,7 +672,11 @@ class InputCalibrationDialog(QDialog):
             sensitivity = v_peak / measured_fs_peak
             
             self.audio_engine.calibration.set_input_sensitivity(sensitivity)
-            QMessageBox.information(self, tr("Success"), f"Input Sensitivity calibrated to {sensitivity:.4f} V/FS")
+            QMessageBox.information(
+                self,
+                tr("Success"),
+                tr("Input Sensitivity calibrated to {0:.4f} V/FS").format(sensitivity),
+            )
             self.accept()
             
         except Exception as e:
