@@ -2,7 +2,7 @@ import numpy as np
 import scipy.signal
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, QPushButton, 
                              QFormLayout, QGroupBox, QMessageBox, QLineEdit, QDialog,
-                             QDialogButtonBox, QDoubleSpinBox, QHBoxLayout)
+                             QDialogButtonBox, QDoubleSpinBox, QHBoxLayout, QTabWidget)
 from PyQt6.QtCore import QTimer, Qt
 from src.core.audio_engine import AudioEngine
 from src.core.config_manager import ConfigManager
@@ -686,13 +686,21 @@ class SettingsWidget(QWidget):
         self.init_ui()
 
     def init_ui(self):
-        layout = QVBoxLayout()
+        main_layout = QVBoxLayout()
         
         # Title
         title = QLabel(tr("Audio Device Settings"))
         title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;")
-        layout.addWidget(title)
+        main_layout.addWidget(title)
 
+        # Tabs
+        self.tabs = QTabWidget()
+        main_layout.addWidget(self.tabs)
+
+        # --- Tab 1: General ---
+        general_tab = QWidget()
+        general_layout = QVBoxLayout()
+        
         # Language Settings
         lang_group = QGroupBox(tr("Language"))
         lang_layout = QFormLayout()
@@ -718,7 +726,7 @@ class SettingsWidget(QWidget):
         lang_layout.addRow(tr("Language") + ":", self.lang_combo)
         
         lang_group.setLayout(lang_layout)
-        layout.addWidget(lang_group)
+        general_layout.addWidget(lang_group)
 
         # Appearance Settings
         appearance_group = QGroupBox(tr("Appearance"))
@@ -739,7 +747,15 @@ class SettingsWidget(QWidget):
         appearance_layout.addRow(tr("Theme") + ":", self.theme_combo)
         
         appearance_group.setLayout(appearance_layout)
-        layout.addWidget(appearance_group)
+        general_layout.addWidget(appearance_group)
+        
+        general_layout.addStretch()
+        general_tab.setLayout(general_layout)
+        self.tabs.addTab(general_tab, tr("General"))
+
+        # --- Tab 2: Audio ---
+        audio_tab = QWidget()
+        audio_layout = QVBoxLayout()
 
         # Device Selection Group
         dev_group = QGroupBox(tr("Audio Devices"))
@@ -762,7 +778,7 @@ class SettingsWidget(QWidget):
         dev_layout.addRow(tr("Active Output:"), self.active_out_label)
         
         dev_group.setLayout(dev_layout)
-        layout.addWidget(dev_group)
+        audio_layout.addWidget(dev_group)
         
         # Audio Configuration Group
         conf_group = QGroupBox(tr("Audio Configuration"))
@@ -798,7 +814,7 @@ class SettingsWidget(QWidget):
         self.in_ch_combo.setCurrentText(self.audio_engine.input_channel_mode.capitalize())
         self.in_ch_combo.currentTextChanged.connect(self.on_ch_mode_changed)
         conf_layout.addRow(tr("Input Channels:"), self.in_ch_combo)
-        
+
         # Output Channels
         self.out_ch_combo = QComboBox()
         self.out_ch_combo.addItems([tr('Stereo'), tr('Left'), tr('Right')])
@@ -807,8 +823,16 @@ class SettingsWidget(QWidget):
         conf_layout.addRow(tr("Output Channels:"), self.out_ch_combo)
         
         conf_group.setLayout(conf_layout)
-        layout.addWidget(conf_group)
+        audio_layout.addWidget(conf_group)
         
+        audio_layout.addStretch()
+        audio_tab.setLayout(audio_layout)
+        self.tabs.addTab(audio_tab, tr("Audio"))
+
+        # --- Tab 3: Calibration ---
+        calibration_tab = QWidget()
+        calibration_layout = QVBoxLayout()
+
         # Calibration Group
         cal_group = QGroupBox(tr("Calibration"))
         cal_layout = QFormLayout()
@@ -871,10 +895,13 @@ class SettingsWidget(QWidget):
         cal_layout.addRow(tr("SPL Offset:"), spl_layout)
         
         cal_group.setLayout(cal_layout)
-        layout.addWidget(cal_group)
+        calibration_layout.addWidget(cal_group)
         
-        layout.addStretch()
-        self.setLayout(layout)
+        calibration_layout.addStretch()
+        calibration_tab.setLayout(calibration_layout)
+        self.tabs.addTab(calibration_tab, tr("Calibration"))
+        
+        self.setLayout(main_layout)
         
         # Initialize
         self.refresh_devices()
