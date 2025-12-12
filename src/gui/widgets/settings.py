@@ -885,8 +885,8 @@ class SettingsWidget(QWidget):
         self.spl_offset_edit.editingFinished.connect(self.on_spl_offset_changed)
 
         self.spl_offset_unit = QComboBox()
-        self.spl_offset_unit.addItems(["dB"])
-        self.spl_offset_unit.setEnabled(False)
+        self.spl_offset_unit.addItems(["dB SPL/FS"])
+        self.spl_offset_unit.setEnabled(True)
 
         spl_btn = QPushButton(tr("Wizard"))
         spl_btn.clicked.connect(self.open_spl_calibration)
