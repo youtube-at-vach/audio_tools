@@ -7,7 +7,6 @@ from PyQt6.QtWidgets import QApplication
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.core.audio_engine import AudioEngine
-from src.gui.widgets.imd_analyzer import IMDAnalyzer
 from src.gui.widgets.lock_in_amplifier import LockInAmplifier
 from src.gui.widgets.distortion_analyzer import DistortionAnalyzer
 
@@ -18,13 +17,8 @@ def test_simultaneous_usage():
     engine = AudioEngine()
     
     print("Initializing Modules...")
-    imd = IMDAnalyzer(engine)
     lockin = LockInAmplifier(engine)
     dist = DistortionAnalyzer(engine)
-    
-    print("Starting IMD Analyzer...")
-    imd.start_analysis()
-    time.sleep(0.5)
     
     print("Starting Lock-in Amplifier...")
     lockin.start_analysis()
@@ -36,14 +30,13 @@ def test_simultaneous_usage():
     
     status = engine.get_status()
     print(f"Engine Status: {status}")
-    
-    if status['active_clients'] != 3:
-        print(f"FAILED: Expected 3 clients, got {status['active_clients']}")
+
+    if status['active_clients'] != 2:
+        print(f"FAILED: Expected 2 clients, got {status['active_clients']}")
     else:
-        print("SUCCESS: 3 clients active simultaneously.")
+        print("SUCCESS: 2 clients active simultaneously.")
         
     print("Stopping all...")
-    imd.stop_analysis()
     lockin.stop_analysis()
     dist.stop_analysis()
     

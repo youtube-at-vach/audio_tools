@@ -1,4 +1,5 @@
 import argparse
+import time
 import numpy as np
 import pyqtgraph as pg
 from scipy import signal
@@ -29,6 +30,12 @@ class LufsMeter(MeasurementModule):
         # Values
         self.momentary_lufs = -100.0
         self.short_term_lufs = -100.0
+        self.integrated_lufs = -100.0
+
+        # Integrated loudness accumulation (simple running mean square of K-weighted samples)
+        self._i_sumsq = 0.0
+        self._i_count = 0
+        self._i_started_at = None
         
         # Stereo RMS & Peak
         self.rms_l = -100.0
@@ -71,6 +78,16 @@ class LufsMeter(MeasurementModule):
         self.peak_hold_l = -100.0
         self.peak_hold_r = -100.0
 
+    def reset_integration(self):
+        self._i_sumsq = 0.0
+        self._i_count = 0
+        self.integrated_lufs = -100.0
+        self._i_started_at = time.perf_counter()
+
+    def reset_all_stats(self):
+        self.reset_peaks()
+        self.reset_integration()
+
     def start_meter(self):
         if self.is_running:
             return
@@ -78,6 +95,9 @@ class LufsMeter(MeasurementModule):
         self.is_running = True
         self.sample_rate = self.audio_engine.sample_rate
         self._init_filters()
+
+        # Reset session accumulators
+        self.reset_integration()
         
         # Initialize buffers
         self.buffer_size_m = int(self.momentary_window * self.sample_rate)
@@ -138,6 +158,13 @@ class LufsMeter(MeasurementModule):
             # Update buffer
             self.audio_buffer = np.roll(self.audio_buffer, -len(k_weighted))
             self.audio_buffer[-len(k_weighted):] = k_weighted
+
+            # Integrated (simple running average over all K-weighted samples)
+            # Note: This is not full BS.1770 gating; it is a useful session statistic.
+            self._i_sumsq += float(np.sum(k_weighted**2))
+            self._i_count += int(len(k_weighted))
+            if self._i_count > 0:
+                self.integrated_lufs = self._to_lufs(self._i_sumsq / self._i_count)
             
             # Momentary (last 400ms)
             m_data = self.audio_buffer[-self.buffer_size_m:]
@@ -170,6 +197,11 @@ class LufsMeter(MeasurementModule):
             return -100.0
         return -0.691 + 10 * np.log10(mean_square)
 
+    def get_integrated_seconds(self) -> float:
+        if self._i_count <= 0 or self.sample_rate <= 0:
+            return 0.0
+        return self._i_count / float(self.sample_rate)
+
 class LufsMeterWidget(QWidget):
     def __init__(self, module: LufsMeter):
         super().__init__()
@@ -179,6 +211,9 @@ class LufsMeterWidget(QWidget):
         self.history_size = 400 # 20s at 50ms interval
         self.m_history = np.full(self.history_size, -100.0)
         self.s_history = np.full(self.history_size, -100.0)
+
+        # Session stats (since last reset)
+        self._reset_session_stats()
         
         self.init_ui()
         
@@ -199,6 +234,10 @@ class LufsMeterWidget(QWidget):
         self.reset_btn = QPushButton(tr("Reset Peaks"))
         self.reset_btn.clicked.connect(self.module.reset_peaks)
         controls_layout.addWidget(self.reset_btn)
+
+        self.reset_stats_btn = QPushButton(tr("Reset Stats"))
+        self.reset_stats_btn.clicked.connect(self.on_reset_stats)
+        controls_layout.addWidget(self.reset_stats_btn)
         layout.addLayout(controls_layout)
         
         # --- Meters Area ---
@@ -278,6 +317,50 @@ class LufsMeterWidget(QWidget):
 
         meters_group.setLayout(grid)
         layout.addWidget(meters_group)
+
+        # --- Statistics Area ---
+        stats_group = QGroupBox(tr("Statistics"))
+        stats_grid = QGridLayout()
+
+        # Headers
+        stats_grid.addWidget(QLabel(tr("")), 0, 0)
+        stats_grid.addWidget(QLabel(tr("Current")), 0, 1)
+        stats_grid.addWidget(QLabel(tr("Min")), 0, 2)
+        stats_grid.addWidget(QLabel(tr("Max")), 0, 3)
+        stats_grid.addWidget(QLabel(tr("Avg")), 0, 4)
+
+        # Momentary row
+        stats_grid.addWidget(QLabel(tr("LUFS (M)")), 1, 0)
+        self.stats_m_cur = QLabel(tr("-INF"))
+        self.stats_m_min = QLabel(tr("-INF"))
+        self.stats_m_max = QLabel(tr("-INF"))
+        self.stats_m_avg = QLabel(tr("-INF"))
+        stats_grid.addWidget(self.stats_m_cur, 1, 1)
+        stats_grid.addWidget(self.stats_m_min, 1, 2)
+        stats_grid.addWidget(self.stats_m_max, 1, 3)
+        stats_grid.addWidget(self.stats_m_avg, 1, 4)
+
+        # Short-term row
+        stats_grid.addWidget(QLabel(tr("LUFS (S)")), 2, 0)
+        self.stats_s_cur = QLabel(tr("-INF"))
+        self.stats_s_min = QLabel(tr("-INF"))
+        self.stats_s_max = QLabel(tr("-INF"))
+        self.stats_s_avg = QLabel(tr("-INF"))
+        stats_grid.addWidget(self.stats_s_cur, 2, 1)
+        stats_grid.addWidget(self.stats_s_min, 2, 2)
+        stats_grid.addWidget(self.stats_s_max, 2, 3)
+        stats_grid.addWidget(self.stats_s_avg, 2, 4)
+
+        # Integrated + duration row
+        stats_grid.addWidget(QLabel(tr("LUFS (I)")), 3, 0)
+        self.stats_i_val = QLabel(tr("-INF"))
+        stats_grid.addWidget(self.stats_i_val, 3, 1)
+        stats_grid.addWidget(QLabel(tr("Time")), 3, 2)
+        self.stats_i_time = QLabel(tr("0.0 s"))
+        stats_grid.addWidget(self.stats_i_time, 3, 3, 1, 2)
+
+        stats_group.setLayout(stats_grid)
+        layout.addWidget(stats_group)
         
         # --- Time Series Plot ---
         self.plot_widget = pg.PlotWidget()
@@ -295,11 +378,35 @@ class LufsMeterWidget(QWidget):
         # Target Line
         self.target_line = pg.InfiniteLine(angle=0, pos=-23, pen=pg.mkPen('g', style=Qt.PenStyle.DashLine))
         self.plot_widget.addItem(self.target_line)
+
+        # Target band (-23 LUFS ±2) for quick visual alignment
+        self.target_band = pg.LinearRegionItem(values=[-25, -21], orientation=pg.LinearRegionItem.Horizontal)
+        self.target_band.setBrush(pg.mkBrush(0, 255, 0, 35))
+        self.target_band.setMovable(False)
+        self.target_band.setZValue(-10)
+        self.plot_widget.addItem(self.target_band)
         
         layout.addWidget(self.plot_widget)
         
         layout.addStretch()
         self.setLayout(layout)
+
+    def _reset_session_stats(self):
+        self._m_min = None
+        self._m_max = None
+        self._m_sum = 0.0
+        self._m_n = 0
+
+        self._s_min = None
+        self._s_max = None
+        self._s_sum = 0.0
+        self._s_n = 0
+
+    def on_reset_stats(self):
+        self._reset_session_stats()
+        self.m_history[:] = -100.0
+        self.s_history[:] = -100.0
+        self.module.reset_all_stats()
 
     def on_toggle(self, checked):
         if checked:
@@ -342,6 +449,10 @@ class LufsMeterWidget(QWidget):
         
         self.m_val_label.setText(tr("{0:.1f}").format(m_lufs))
         self.s_val_label.setText(tr("{0:.1f}").format(s_lufs))
+
+        # Update session stats
+        self._update_session_stats(m_lufs, s_lufs)
+        self._update_stats_labels(m_lufs, s_lufs)
         
         # Color coding
         self._set_bar_color(self.l_bar, rms_l)
@@ -362,6 +473,52 @@ class LufsMeterWidget(QWidget):
         
         self.m_curve.setData(x, self.m_history)
         self.s_curve.setData(x, self.s_history)
+
+    def _format_db(self, value: float) -> str:
+        if value <= -99.9:
+            return tr("-INF")
+        return tr("{0:.1f}").format(value)
+
+    def _format_seconds(self, seconds: float) -> str:
+        if seconds < 0:
+            seconds = 0.0
+        if seconds < 60:
+            return tr("{0:.1f} s").format(seconds)
+        minutes = int(seconds // 60)
+        rem = seconds - (minutes * 60)
+        return tr("{0:d} m {1:.0f} s").format(minutes, rem)
+
+    def _update_session_stats(self, m_lufs: float, s_lufs: float):
+        # Momentary
+        if m_lufs > -99.9:
+            self._m_min = m_lufs if self._m_min is None else min(self._m_min, m_lufs)
+            self._m_max = m_lufs if self._m_max is None else max(self._m_max, m_lufs)
+            self._m_sum += float(m_lufs)
+            self._m_n += 1
+
+        # Short-term
+        if s_lufs > -99.9:
+            self._s_min = s_lufs if self._s_min is None else min(self._s_min, s_lufs)
+            self._s_max = s_lufs if self._s_max is None else max(self._s_max, s_lufs)
+            self._s_sum += float(s_lufs)
+            self._s_n += 1
+
+    def _update_stats_labels(self, m_lufs: float, s_lufs: float):
+        self.stats_m_cur.setText(self._format_db(m_lufs))
+        self.stats_s_cur.setText(self._format_db(s_lufs))
+
+        self.stats_m_min.setText(self._format_db(self._m_min if self._m_min is not None else -100.0))
+        self.stats_m_max.setText(self._format_db(self._m_max if self._m_max is not None else -100.0))
+        m_avg = (self._m_sum / self._m_n) if self._m_n > 0 else -100.0
+        self.stats_m_avg.setText(self._format_db(m_avg))
+
+        self.stats_s_min.setText(self._format_db(self._s_min if self._s_min is not None else -100.0))
+        self.stats_s_max.setText(self._format_db(self._s_max if self._s_max is not None else -100.0))
+        s_avg = (self._s_sum / self._s_n) if self._s_n > 0 else -100.0
+        self.stats_s_avg.setText(self._format_db(s_avg))
+
+        self.stats_i_val.setText(self._format_db(self.module.integrated_lufs))
+        self.stats_i_time.setText(self._format_seconds(self.module.get_integrated_seconds()))
 
     def _set_bar_color(self, bar, val):
         # Standard dBFS colors
