@@ -403,9 +403,6 @@ class SplCalibrationDialog(QDialog):
             self.audio_engine.calibration.set_spl_calibration(
                 measured_dbfs_c=float(self.current_dbfs_c),
                 measured_spl_db=spl,
-                band_hz=band,
-                weighting='C',
-                notes='Band-limited pink noise; C-weighted input; EMA power average',
             )
 
             off = self.audio_engine.calibration.get_spl_offset_db()

@@ -19,7 +19,7 @@ class CalibrationManager:
         # SPL calibration: maps measured (C-weighted) dBFS to SPL.
         # Stored as an offset: SPL[dB] = dBFS_C + spl_offset_db.
         self.spl_offset_db = None
-        self.spl_meta = {}
+        self.spl_offset_db = None
         self.load()
 
     def load(self):
@@ -47,7 +47,6 @@ class CalibrationManager:
                             self.spl_offset_db = float(data.get('spl_offset_db'))
                         except Exception:
                             self.spl_offset_db = None
-                    self.spl_meta = data.get('spl_meta', {}) or {}
 
                     # Backward compatibility (older dict-based format)
                     if self.spl_offset_db is None:
@@ -76,7 +75,6 @@ class CalibrationManager:
             'lockin_gain_offset': self.lockin_gain_offset,
             # Keep a single SPL calibration value.
             'spl_offset_db': self.spl_offset_db,
-            'spl_meta': self.spl_meta,
         }
         try:
             with open(self.config_path, 'w') as f:
@@ -86,8 +84,7 @@ class CalibrationManager:
 
     # --- SPL Calibration ---
 
-    def set_spl_calibration(self, measured_dbfs_c, measured_spl_db, *,
-                            band_hz=None, weighting='C', notes=None):
+    def set_spl_calibration(self, measured_dbfs_c, measured_spl_db):
         """Stores SPL calibration as an offset (SPL = dBFS_C + spl_offset_db)."""
         try:
             measured_dbfs_c = float(measured_dbfs_c)
@@ -97,19 +94,6 @@ class CalibrationManager:
 
         offset_db = measured_spl_db - measured_dbfs_c
         self.spl_offset_db = float(offset_db)
-        meta = {
-            'measured_dbfs_c': float(measured_dbfs_c),
-            'measured_spl_db': float(measured_spl_db),
-            'weighting': str(weighting),
-        }
-        if band_hz is not None:
-            meta['band_hz'] = list(band_hz)
-        if notes:
-            meta['notes'] = str(notes)
-
-        if not isinstance(self.spl_meta, dict):
-            self.spl_meta = {}
-        self.spl_meta = meta
         self.save()
 
     def get_spl_offset_db(self):
