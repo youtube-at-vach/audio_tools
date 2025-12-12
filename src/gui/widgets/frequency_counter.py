@@ -52,7 +52,7 @@ class FrequencyCounter(MeasurementModule):
         try:
             while True:
                 freq = self.process()
-                if freq:
+                if freq is not None:
                     print(f"Frequency: {freq:.4f} Hz")
                 import time
                 time.sleep(0.1)
@@ -135,7 +135,7 @@ class FrequencyCounter(MeasurementModule):
         # With ring buffer, it's always "full" with something (zeros initially).
         
         data = self.input_buffer.copy()
-        sr = self.audio_engine.sample_rate
+        sr = getattr(self.audio_engine, "sample_rate", 48000)
         
         # 1. Check Amplitude (Gate)
         rms = np.sqrt(np.mean(data**2))
@@ -164,8 +164,16 @@ class FrequencyCounter(MeasurementModule):
                 precise_freq = AudioCalc.optimize_frequency(data, sr, coarse_freq)
                 
                 # Apply Calibration
-                cal_factor = self.audio_engine.calibration.frequency_calibration
-                precise_freq *= cal_factor
+                cal_factor = 1.0
+                calibration = getattr(self.audio_engine, "calibration", None)
+                if calibration is not None:
+                    cal_factor = getattr(calibration, "frequency_calibration", 1.0)
+                try:
+                    cal_factor = float(cal_factor)
+                except Exception:
+                    cal_factor = 1.0
+
+                precise_freq = float(precise_freq) * cal_factor
                 
                 self.current_freq = precise_freq
                 return precise_freq

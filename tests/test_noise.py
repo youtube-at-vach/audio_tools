@@ -25,10 +25,10 @@ def test_noise_generation():
     
     for color in noise_types:
         print(f"Testing {color} noise...")
-        sg.noise_color = color
+        sg.params_L.noise_color = color
         
         # Generate 1 second
-        noise = sg._generate_noise_buffer(48000, duration=1.0)
+        noise = sg._generate_noise_buffer(sg.params_L, 48000, duration=1.0)
         
         # Check for validity
         if np.any(np.isnan(noise)) or np.any(np.isinf(noise)):

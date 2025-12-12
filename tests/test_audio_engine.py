@@ -2,6 +2,7 @@ import unittest
 import numpy as np
 import time
 import sys
+import os
 from pathlib import Path
 
 # Add project root to path
@@ -11,6 +12,11 @@ from src.core.audio_engine import AudioEngine
 
 class TestAudioEngine(unittest.TestCase):
     def setUp(self):
+        # This test requires a specific physical loopback wiring/device.
+        # By default we skip it to keep CI/dev machines without hardware green.
+        if os.environ.get("AUDIO_TOOLS_ENABLE_HARDWARE_TESTS") != "1":
+            self.skipTest("Requires audio hardware + loopback wiring. Set AUDIO_TOOLS_ENABLE_HARDWARE_TESTS=1 to run.")
+
         self.engine = AudioEngine()
         # Use UAC-232 (Device 3) as per user instructions
         # Connected Output R (Channel 2) -> Input L (Channel 1)
