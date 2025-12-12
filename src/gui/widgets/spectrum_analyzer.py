@@ -559,22 +559,17 @@ class SpectrumAnalyzerWidget(QWidget):
             windows = self.module._get_dpss_windows(len(data)) # (K, N)
             K = windows.shape[0]
             
-            if self.module.analysis_mode == 'Spectrum':
-                # Average PSD over K windows
-                # We need to compute PSD for each channel and each window
+            if self.module.analysis_mode == 'Spectrum' or self.module.analysis_mode == 'PSD':
+                # --- Spectrum or PSD Mode ---
+                # Calculate PSD for each channel and each window
+                # psd = |FFT(x*w)|^2
                 
-                # data: (N, 2)
-                # windows: (K, N)
-                
-                # We can process each channel
-                # Channel 0
                 psd_accum_0 = np.zeros(len(freqs))
                 psd_accum_1 = np.zeros(len(freqs))
                 
                 for k in range(K):
                     w = windows[k]
                     
-                    # Apply window
                     # Channel 0
                     fft_0 = np.fft.rfft(data[:, 0] * w)
                     psd_accum_0 += np.abs(fft_0)**2
@@ -582,50 +577,70 @@ class SpectrumAnalyzerWidget(QWidget):
                     # Channel 1
                     fft_1 = np.fft.rfft(data[:, 1] * w)
                     psd_accum_1 += np.abs(fft_1)**2
-                
+                    
                 # Average over K windows
-                psd_avg_0 = psd_accum_0 / K
-                psd_avg_1 = psd_accum_1 / K
+                psd_0 = psd_accum_0 / K
+                psd_1 = psd_accum_1 / K
                 
-                # Combine channels (average)
-                psd_total = (psd_avg_0 + psd_avg_1) / 2
+                # Apply Channel Selection
+                if self.module.channel_mode == 'Left':
+                    psd_target = psd_0
+                    psd_second = None
+                elif self.module.channel_mode == 'Right':
+                    psd_target = psd_1
+                    psd_second = None
+                elif self.module.channel_mode == 'Average':
+                    psd_target = (psd_0 + psd_1) / 2
+                    psd_second = None
+                elif self.module.channel_mode == 'Dual':
+                    psd_target = psd_0
+                    psd_second = psd_1
+                else:
+                    psd_target = (psd_0 + psd_1) / 2
+                    psd_second = None
+                    
+                # Convert to Magnitude (Linear)
+                if self.module.analysis_mode == 'PSD':
+                    # PSD (V/rtHz)
+                    # mag = sqrt(PSD * 2 / fs)
+                    # Note: PSD here is Power per Bin (approx A^2*N)
+                    # Correct normalization to V/rtHz:
+                    # using the formula from previous implementation: sqrt(PSD * 2 / fs)
+                    norm_factor_sq = 2 / sample_rate
+                else:
+                    # Spectrum (Peak Amplitude)
+                    # mag = sqrt(PSD) / sqrt(N)
+                    norm_factor_sq = 1 / len(data)
+
+                magnitudes = []
                 
-                # Convert to Magnitude (Amplitude Spectrum)
-                mag_linear = np.sqrt(psd_total)
+                # Target
+                mag_target = np.sqrt(psd_target * norm_factor_sq)
+                magnitudes.append(mag_target)
                 
-                # Normalize
-                mag_linear = mag_linear / np.sqrt(len(data))
+                # Second (if Dual)
+                if psd_second is not None:
+                    mag_second = np.sqrt(psd_second * norm_factor_sq)
+                    magnitudes.append(mag_second)
                 
-                # Convert to dB
-                magnitude = 20 * np.log10(mag_linear + 1e-12)
+                # Combine
+                if len(magnitudes) == 1:
+                    mag_linear = magnitudes[0]
+                else:
+                    mag_linear = np.column_stack(magnitudes)
                 
-            elif self.module.analysis_mode == 'PSD':
-                # Multitaper PSD (Voltage Noise Density)
-                # Calculate average PSD across tapers
-                psd_accum_0 = np.zeros(len(freqs))
-                psd_accum_1 = np.zeros(len(freqs))
+                # Peak -> RMS conversion if Physical Units
+                if self.module.analysis_mode == 'Spectrum' and self.module.use_physical_units:
+                    mag_linear /= np.sqrt(2)
                 
-                for k in range(K):
-                    w = windows[k]
-                    fft_0 = np.fft.rfft(data[:, 0] * w)
-                    psd_accum_0 += np.abs(fft_0)**2
-                    fft_1 = np.fft.rfft(data[:, 1] * w)
-                    psd_accum_1 += np.abs(fft_1)**2
+                # Temporal Averaging
+                if self.module._avg_magnitude is None or self.module._avg_magnitude.shape != mag_linear.shape:
+                    self.module._avg_magnitude = mag_linear
+                else:
+                    alpha = self.module.averaging
+                    self.module._avg_magnitude = alpha * self.module._avg_magnitude + (1 - alpha) * mag_linear
                 
-                psd_avg_0 = psd_accum_0 / K
-                psd_avg_1 = psd_accum_1 / K
-                
-                # Combine channels (average power)
-                psd_total = (psd_avg_0 + psd_avg_1) / 2
-                
-                # Normalize to V/rtHz
-                # psd_total is approx sigma^2 (Power) if window energy is 1.
-                # Density = Power * 2 / fs (Single-sided)
-                # V_density = sqrt(Density)
-                
-                mag_linear = np.sqrt(psd_total * 2 / sample_rate)
-                
-                magnitude = 20 * np.log10(mag_linear + 1e-12)
+                magnitude = 20 * np.log10(self.module._avg_magnitude + 1e-12)
                 
             elif self.module.analysis_mode == 'Cross Spectrum':
                 # Average Cross Spectrum over K windows
@@ -639,35 +654,22 @@ class SpectrumAnalyzerWidget(QWidget):
                 
                 cs_avg = cs_accum / K
                 
-                # Magnitude
-                mag_linear = np.sqrt(np.abs(cs_avg))
-                
-                # Normalize
-                mag_linear = mag_linear / np.sqrt(len(data))
-                
-                magnitude = 20 * np.log10(mag_linear + 1e-12)
-                
-                # Update average cross spectrum state for smoothing if needed
-                if self.module._avg_cross_spectrum is None:
+                # Complex Temporal Averaging
+                if self.module._avg_cross_spectrum is None or self.module._avg_cross_spectrum.shape != cs_avg.shape:
                     self.module._avg_cross_spectrum = cs_avg
                 else:
                     alpha = self.module.averaging
                     self.module._avg_cross_spectrum = alpha * self.module._avg_cross_spectrum + (1 - alpha) * cs_avg
-                    
-                # Re-calculate magnitude from temporally averaged CS
-                avg_cs = self.module._avg_cross_spectrum
-                mag_linear = np.sqrt(np.abs(avg_cs)) / np.sqrt(len(data))
-                magnitude = 20 * np.log10(mag_linear + 1e-12)
-
-            # Temporal Averaging for Spectrum/PSD Mode
-            if self.module.analysis_mode in ['Spectrum', 'PSD']:
-                if self.module._avg_magnitude is None:
-                    self.module._avg_magnitude = mag_linear
-                else:
-                    alpha = self.module.averaging
-                    self.module._avg_magnitude = alpha * self.module._avg_magnitude + (1 - alpha) * mag_linear
                 
-                magnitude = 20 * np.log10(self.module._avg_magnitude + 1e-12)
+                avg_cs = self.module._avg_cross_spectrum
+                
+                # Normalize and Magnitude
+                mag_linear = np.sqrt(np.abs(avg_cs)) / np.sqrt(len(data))
+                
+                if self.module.use_physical_units:
+                    mag_linear /= np.sqrt(2)
+
+                magnitude = 20 * np.log10(mag_linear + 1e-12)
 
         else:
             # --- Standard Method ---
