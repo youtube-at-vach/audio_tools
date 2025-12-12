@@ -348,6 +348,9 @@ class FrequencyCounterWidget(QWidget):
     def __init__(self, module: FrequencyCounter):
         super().__init__()
         self.module = module
+
+        # Display mode: 'frequency' or 'period'
+        self.display_mode = 'frequency'
         self.init_ui()
         
         self.timer = QTimer()
@@ -430,6 +433,16 @@ class FrequencyCounterWidget(QWidget):
         self.speed_combo.currentIndexChanged.connect(self.on_speed_changed)
         speed_layout.addWidget(self.speed_combo)
         controls_layout.addLayout(speed_layout)
+
+        # Display Mode
+        display_layout = QHBoxLayout()
+        display_layout.addWidget(QLabel(tr("Display:")))
+        self.display_combo = QComboBox()
+        self.display_combo.addItem(tr("Frequency"), 'frequency')
+        self.display_combo.addItem(tr("Period"), 'period')
+        self.display_combo.currentIndexChanged.connect(self.on_display_mode_changed)
+        display_layout.addWidget(self.display_combo)
+        controls_layout.addLayout(display_layout)
         
         # Start/Stop
         self.run_btn = QPushButton(tr("Start"))
@@ -468,6 +481,104 @@ class FrequencyCounterWidget(QWidget):
         
         self.setLayout(layout)
 
+    def _format_frequency_text(self, freq_hz: float) -> str:
+        return tr("{0:.5f} Hz").format(freq_hz)
+
+    def _format_period_text(self, freq_hz: float) -> str:
+        if freq_hz is None or freq_hz <= 0:
+            return tr("---.----- s")
+
+        period_s = 1.0 / float(freq_hz)
+
+        # Choose a human-friendly unit
+        if period_s >= 1.0:
+            value, unit = period_s, 's'
+        elif period_s >= 1e-3:
+            value, unit = period_s * 1e3, 'ms'
+        elif period_s >= 1e-6:
+            value, unit = period_s * 1e6, 'µs'
+        else:
+            value, unit = period_s * 1e9, 'ns'
+
+        return f"{value:.5f} {unit}"
+
+    def _format_seconds_value(self, seconds: float, decimals: int = 3) -> str:
+        if seconds is None or not np.isfinite(seconds) or seconds < 0:
+            return "--"
+
+        if seconds >= 1.0:
+            value, unit = seconds, 's'
+        elif seconds >= 1e-3:
+            value, unit = seconds * 1e3, 'ms'
+        elif seconds >= 1e-6:
+            value, unit = seconds * 1e6, 'µs'
+        else:
+            value, unit = seconds * 1e9, 'ns'
+
+        return f"{value:.{decimals}f} {unit}"
+
+    def _placeholder_main_text(self) -> str:
+        if self.display_mode == 'period':
+            return tr("---.----- s")
+        return tr("---.----- Hz")
+
+    def _update_plot_labels_for_display_mode(self):
+        if self.display_mode == 'period':
+            self.plot_widget.setTitle(tr("Period Drift"))
+            self.plot_widget.setLabel('left', tr('Period'), units='s')
+            self.tab_widget.setTabText(0, tr("Period Drift"))
+        else:
+            self.plot_widget.setTitle(tr("Frequency Drift"))
+            self.plot_widget.setLabel('left', tr('Frequency'), units='Hz')
+            self.tab_widget.setTabText(0, tr("Frequency Drift"))
+
+    def _calculate_period_stats_from_freq_history(self):
+        if len(self.module.freq_history) < 2:
+            return None, None
+
+        data = np.array(self.module.freq_history, dtype=float)
+        data = data[np.isfinite(data) & (data > 0)]
+        if len(data) < 2:
+            return None, None
+
+        periods = 1.0 / data
+        std_dev = float(np.std(periods, ddof=1)) if len(periods) >= 2 else 0.0
+        diffs = np.diff(periods)
+        allan_dev = float(np.sqrt(0.5 * np.mean(diffs**2))) if len(diffs) >= 1 else 0.0
+        return std_dev, allan_dev
+
+    def _calculate_allan_plot_data_for_series(self, series, dt_seconds: float):
+        if series is None or len(series) < 10:
+            return [], []
+
+        data = np.asarray(series, dtype=float)
+        data = data[np.isfinite(data)]
+        if len(data) < 10:
+            return [], []
+
+        n = len(data)
+        taus = []
+        devs = []
+        max_m = n // 2
+        m = 1
+        while m <= max_m:
+            num_samples = (n // m) * m
+            if num_samples < 2 * m:
+                break
+
+            y = data[:num_samples].reshape(-1, m).mean(axis=1)
+            if len(y) < 2:
+                break
+
+            diffs = np.diff(y)
+            sigma = float(np.sqrt(0.5 * np.mean(diffs**2)))
+            tau_seconds = m * dt_seconds
+            taus.append(tau_seconds)
+            devs.append(sigma)
+            m *= 2
+
+        return taus, devs
+
     def open_calibration(self):
         if not self.module.is_running:
             QMessageBox.warning(self, tr("Warning"), tr("Please start the counter first."))
@@ -483,6 +594,23 @@ class FrequencyCounterWidget(QWidget):
             
         self.module.set_update_interval(interval_ms)
         self.timer.setInterval(interval_ms)
+
+    def on_display_mode_changed(self, idx):
+        mode = self.display_combo.currentData()
+        if mode not in ('frequency', 'period'):
+            mode = 'frequency'
+
+        self.display_mode = mode
+        self._update_plot_labels_for_display_mode()
+        # Update placeholders immediately
+        if not self.module.is_running:
+            self.freq_label.setText(self._placeholder_main_text())
+            if self.display_mode == 'period':
+                self.std_label.setText(tr("Std Dev: --"))
+                self.allan_label.setText(tr("Allan Dev: --"))
+            else:
+                self.std_label.setText(tr("Std Dev: -- Hz"))
+                self.allan_label.setText(tr("Allan Dev: -- Hz"))
 
     def on_run_toggle(self, checked):
         if checked:
@@ -503,7 +631,10 @@ class FrequencyCounterWidget(QWidget):
         
         if freq is not None:
             # Update Label
-            self.freq_label.setText(tr("{0:.5f} Hz").format(freq))
+            if self.display_mode == 'period':
+                self.freq_label.setText(self._format_period_text(freq))
+            else:
+                self.freq_label.setText(self._format_frequency_text(freq))
             
             # Update History
             t = time.time() - self.module.start_time
@@ -512,14 +643,29 @@ class FrequencyCounterWidget(QWidget):
             
             # Update Stats
             self.module.calculate_stats()
-            self.std_label.setText(tr("Std Dev: {0:.5f} Hz").format(self.module.std_dev))
-            self.allan_label.setText(tr("Allan Dev: {0:.5f} Hz").format(self.module.allan_deviation))
+            if self.display_mode == 'period':
+                std_s, allan_s = self._calculate_period_stats_from_freq_history()
+                if std_s is None or allan_s is None:
+                    self.std_label.setText(tr("Std Dev: --"))
+                    self.allan_label.setText(tr("Allan Dev: --"))
+                else:
+                    self.std_label.setText(tr("Std Dev: {0}").format(self._format_seconds_value(std_s)))
+                    self.allan_label.setText(tr("Allan Dev: {0}").format(self._format_seconds_value(allan_s)))
+            else:
+                self.std_label.setText(tr("Std Dev: {0:.5f} Hz").format(self.module.std_dev))
+                self.allan_label.setText(tr("Allan Dev: {0:.5f} Hz").format(self.module.allan_deviation))
             
             # Update Plots based on visibility
             current_tab = self.tab_widget.currentIndex()
             
             if current_tab == 0: # Frequency Drift
-                self.curve.setData(list(self.module.time_history), list(self.module.freq_history))
+                if self.display_mode == 'period':
+                    freq_data = np.array(self.module.freq_history, dtype=float)
+                    freq_data = np.where(freq_data > 0, freq_data, np.nan)
+                    period_data = (1.0 / freq_data).tolist()
+                    self.curve.setData(list(self.module.time_history), period_data)
+                else:
+                    self.curve.setData(list(self.module.time_history), list(self.module.freq_history))
             
             elif current_tab == 1: # Allan Deviation
                 # Update Allan Plot
@@ -528,10 +674,22 @@ class FrequencyCounterWidget(QWidget):
                 should_update = self.module.update_interval_ms >= 1000 or (int(time.time() * 10) % 5 == 0)
                 
                 if len(self.module.freq_history) > 10 and should_update:
-                    taus, devs = self.module.calculate_allan_plot_data()
+                    if self.display_mode == 'period':
+                        dt_seconds = self.module.update_interval_ms / 1000.0
+                        freq_data = np.array(self.module.freq_history, dtype=float)
+                        freq_data = freq_data[np.isfinite(freq_data) & (freq_data > 0)]
+                        period_series = (1.0 / freq_data).tolist()
+                        taus, devs = self._calculate_allan_plot_data_for_series(period_series, dt_seconds)
+                    else:
+                        taus, devs = self.module.calculate_allan_plot_data()
+
                     if len(taus) > 0:
                         self.allan_curve.setData(taus, devs)
         else:
-            self.freq_label.setText(tr("---.----- Hz"))
-            self.std_label.setText(tr("Std Dev: -- Hz"))
-            self.allan_label.setText(tr("Allan Dev: -- Hz"))
+            self.freq_label.setText(self._placeholder_main_text())
+            if self.display_mode == 'period':
+                self.std_label.setText(tr("Std Dev: --"))
+                self.allan_label.setText(tr("Allan Dev: --"))
+            else:
+                self.std_label.setText(tr("Std Dev: -- Hz"))
+                self.allan_label.setText(tr("Allan Dev: -- Hz"))
