@@ -13,6 +13,10 @@ class CalibrationManager:
         self.output_gain = 1.0 # Volts per Full Scale (V/FS) (Peak)
         self.frequency_calibration = 1.0 # Multiplier for frequency correction
         self.lockin_gain_offset = 0.0 # dB offset for Lock-in Amplifier
+        # SPL calibration: maps measured (C-weighted) dBFS to SPL.
+        # Stored as an offset: SPL[dB] = dBFS_C + spl_offset_db.
+        self.spl_offset_db = None
+        self.spl_meta = {}
         self.load()
 
     def load(self):
@@ -24,6 +28,30 @@ class CalibrationManager:
                     self.output_gain = data.get('output_gain', 1.0)
                     self.frequency_calibration = data.get('frequency_calibration', 1.0)
                     self.lockin_gain_offset = data.get('lockin_gain_offset', 0.0)
+
+                    # New format
+                    if 'spl_offset_db' in data:
+                        try:
+                            self.spl_offset_db = float(data.get('spl_offset_db'))
+                        except Exception:
+                            self.spl_offset_db = None
+                    self.spl_meta = data.get('spl_meta', {}) or {}
+
+                    # Backward compatibility (older dict-based format)
+                    if self.spl_offset_db is None:
+                        legacy = data.get('spl_calibration', None)
+                        if isinstance(legacy, dict) and legacy:
+                            entry = legacy.get('speaker') or legacy.get('subwoofer')
+                            if entry is None:
+                                try:
+                                    entry = next(iter(legacy.values()))
+                                except Exception:
+                                    entry = None
+                            if isinstance(entry, dict) and 'offset_db' in entry:
+                                try:
+                                    self.spl_offset_db = float(entry.get('offset_db'))
+                                except Exception:
+                                    self.spl_offset_db = None
             except Exception as e:
                 print(f"Failed to load calibration: {e}")
 
@@ -32,13 +60,57 @@ class CalibrationManager:
             'input_sensitivity': self.input_sensitivity,
             'output_gain': self.output_gain,
             'frequency_calibration': self.frequency_calibration,
-            'lockin_gain_offset': self.lockin_gain_offset
+            'lockin_gain_offset': self.lockin_gain_offset,
+            # Keep a single SPL calibration value.
+            'spl_offset_db': self.spl_offset_db,
+            'spl_meta': self.spl_meta,
         }
         try:
             with open(self.config_path, 'w') as f:
                 json.dump(data, f, indent=4)
         except Exception as e:
             print(f"Failed to save calibration: {e}")
+
+    # --- SPL Calibration ---
+
+    def set_spl_calibration(self, measured_dbfs_c, measured_spl_db, *,
+                            band_hz=None, weighting='C', notes=None):
+        """Stores SPL calibration as an offset (SPL = dBFS_C + spl_offset_db)."""
+        try:
+            measured_dbfs_c = float(measured_dbfs_c)
+            measured_spl_db = float(measured_spl_db)
+        except Exception:
+            raise ValueError("Invalid SPL calibration values")
+
+        offset_db = measured_spl_db - measured_dbfs_c
+        self.spl_offset_db = float(offset_db)
+        meta = {
+            'measured_dbfs_c': float(measured_dbfs_c),
+            'measured_spl_db': float(measured_spl_db),
+            'weighting': str(weighting),
+        }
+        if band_hz is not None:
+            meta['band_hz'] = list(band_hz)
+        if notes:
+            meta['notes'] = str(notes)
+
+        if not isinstance(self.spl_meta, dict):
+            self.spl_meta = {}
+        self.spl_meta = meta
+        self.save()
+
+    def get_spl_offset_db(self):
+        try:
+            return None if self.spl_offset_db is None else float(self.spl_offset_db)
+        except Exception:
+            return None
+
+    def dbfs_to_spl(self, dbfs_c, profile=None):
+        """Converts (C-weighted) dBFS to SPL using the stored offset."""
+        off = self.get_spl_offset_db()
+        if off is None:
+            return None
+        return float(dbfs_c) + off
 
     def set_input_sensitivity(self, v_per_fs):
         """Sets input sensitivity in Volts (Peak) corresponding to 1.0 FS."""

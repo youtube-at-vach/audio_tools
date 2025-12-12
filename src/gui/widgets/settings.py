@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.signal
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, QPushButton, 
                              QFormLayout, QGroupBox, QMessageBox, QLineEdit, QDialog,
                              QDialogButtonBox, QDoubleSpinBox, QHBoxLayout)
@@ -6,6 +7,296 @@ from PyQt6.QtCore import QTimer, Qt
 from src.core.audio_engine import AudioEngine
 from src.core.config_manager import ConfigManager
 from src.core.localization import tr, get_manager
+
+
+def _design_c_weighting(sr: float):
+    """Design digital C-weighting filter (IEC 61672) for sample rate sr."""
+    sr = float(sr)
+    if sr <= 0:
+        raise ValueError("Invalid sample rate")
+
+    # Analog poles (rad/s)
+    w1 = 2 * np.pi * 20.6
+    w2 = 2 * np.pi * 12194.0
+
+    # C-weighting analog transfer function: H(s) = K * s^2 / ((s + w1)^2 (s + w2)^2)
+    zeros = np.array([0.0, 0.0])
+    poles = np.array([-w1, -w1, -w2, -w2])
+    gain = 1.0
+
+    # Normalize to 0 dB at 1 kHz
+    s = 1j * 2 * np.pi * 1000.0
+    h = gain * (s**2) / ((s + w1)**2 * (s + w2)**2)
+    gain = 1.0 / np.abs(h)
+
+    z, p, k = scipy.signal.bilinear_zpk(zeros, poles, gain, fs=sr)
+    b, a = scipy.signal.zpk2tf(z, p, k)
+    return b.astype(np.float64), a.astype(np.float64)
+
+
+class _PinkNoise:
+    """Stateful pink-noise generator (Paul Kellet filter)."""
+
+    def __init__(self):
+        self.b0 = 0.0
+        self.b1 = 0.0
+        self.b2 = 0.0
+        self.b3 = 0.0
+        self.b4 = 0.0
+        self.b5 = 0.0
+        self.b6 = 0.0
+
+    def generate(self, n: int):
+        white = np.random.randn(n).astype(np.float32)
+
+        out = np.empty(n, dtype=np.float32)
+        b0 = self.b0
+        b1 = self.b1
+        b2 = self.b2
+        b3 = self.b3
+        b4 = self.b4
+        b5 = self.b5
+        b6 = self.b6
+
+        # Coefficients from Paul Kellet's refined pink noise filter.
+        for i in range(n):
+            w = float(white[i])
+            b0 = 0.99886 * b0 + w * 0.0555179
+            b1 = 0.99332 * b1 + w * 0.0750759
+            b2 = 0.96900 * b2 + w * 0.1538520
+            b3 = 0.86650 * b3 + w * 0.3104856
+            b4 = 0.55000 * b4 + w * 0.5329522
+            b5 = -0.7616 * b5 - w * 0.0168980
+            y = b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362
+            b6 = w * 0.115926
+            out[i] = y * 0.11
+
+        self.b0, self.b1, self.b2, self.b3, self.b4, self.b5, self.b6 = b0, b1, b2, b3, b4, b5, b6
+        return out
+
+
+class SplCalibrationDialog(QDialog):
+    def __init__(self, audio_engine: AudioEngine, parent=None):
+        super().__init__(parent)
+        self.audio_engine = audio_engine
+        self.setWindowTitle(tr("SPL Calibration Wizard"))
+        self.resize(460, 360)
+
+        self.is_running = False
+        self.callback_id = None
+
+        # Measurement state
+        self.current_dbfs_c = -120.0
+        self._ema_power = None
+
+        # DSP state
+        self._pink = _PinkNoise()
+        self._bpf_sos = None
+        self._bpf_zi = None
+        self._c_b = None
+        self._c_a = None
+        self._c_zi = None
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_level)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+
+        layout.addWidget(QLabel(f"<b>1.</b> {tr('Prepare a speaker and measurement microphone.')}"))
+        layout.addWidget(QLabel(f"<b>2.</b> {tr('Play band-limited pink noise, measure SPL with an external meter.')}"))
+        layout.addWidget(QLabel(f"<b>3.</b> {tr('Enter the SPL shown on the meter.')}"))
+        layout.addWidget(QLabel(f"<b>4.</b> {tr('Store the conversion between input dBFS and SPL.')}"))
+
+        form = QFormLayout()
+
+        self.profile_combo = QComboBox()
+        self.profile_combo.addItem(tr("Speaker (500–2000 Hz)"), "speaker")
+        self.profile_combo.addItem(tr("Subwoofer (30–80 Hz)"), "subwoofer")
+        form.addRow(tr("Test Signal Band") + ":", self.profile_combo)
+
+        self.level_spin = QDoubleSpinBox()
+        self.level_spin.setRange(-60.0, -3.0)
+        self.level_spin.setValue(-20.0)
+        self.level_spin.setSingleStep(1.0)
+        form.addRow(tr("Noise Level (dBFS)") + ":", self.level_spin)
+
+        self.avg_spin = QDoubleSpinBox()
+        self.avg_spin.setRange(0.2, 10.0)
+        self.avg_spin.setValue(1.0)
+        self.avg_spin.setSingleStep(0.2)
+        form.addRow(tr("Averaging Time (s)") + ":", self.avg_spin)
+
+        layout.addLayout(form)
+
+        self.start_btn = QPushButton(tr("Start"))
+        self.start_btn.setCheckable(True)
+        self.start_btn.clicked.connect(self.on_start_toggle)
+        layout.addWidget(self.start_btn)
+
+        self.level_label = QLabel(tr("Input Level (C-weighted): -- dBFS"))
+        self.level_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        layout.addWidget(self.level_label)
+
+        spl_row = QHBoxLayout()
+        self.spl_spin = QDoubleSpinBox()
+        self.spl_spin.setRange(0.0, 160.0)
+        self.spl_spin.setDecimals(1)
+        self.spl_spin.setValue(80.0)
+        spl_row.addWidget(self.spl_spin)
+        self.spl_unit = QLabel(tr("dB SPL"))
+        spl_row.addWidget(self.spl_unit)
+        spl_row.addStretch(1)
+
+        layout.addWidget(QLabel(tr("Measured SPL from external meter:")))
+        layout.addLayout(spl_row)
+
+        self.save_btn = QPushButton(tr("Calculate & Save"))
+        self.save_btn.clicked.connect(self.on_save)
+        layout.addWidget(self.save_btn)
+
+        self.setLayout(layout)
+
+    def _prepare_filters(self):
+        sr = float(self.audio_engine.sample_rate)
+        if sr <= 0:
+            raise ValueError("Invalid sample rate")
+
+        profile = self.profile_combo.currentData()
+        if profile == "speaker":
+            band = (500.0, 2000.0)
+        else:
+            band = (30.0, 80.0)
+
+        # Band-pass for noise output (Butterworth)
+        nyq = 0.5 * sr
+        low = max(1.0, band[0]) / nyq
+        high = min(nyq * 0.99, band[1]) / nyq
+        if not (0 < low < high < 1):
+            raise ValueError("Invalid bandpass settings")
+
+        # Use SOS for numerical stability, especially at very low normalized frequencies.
+        bpf_sos = scipy.signal.butter(4, [low, high], btype='bandpass', output='sos')
+        self._bpf_sos = bpf_sos
+        # Streaming state for sosfilt: shape (n_sections, 2)
+        self._bpf_zi = np.zeros((bpf_sos.shape[0], 2), dtype=np.float64)
+
+        # C-weighting for input measurement
+        c_b, c_a = _design_c_weighting(sr)
+        self._c_b = c_b
+        self._c_a = c_a
+        self._c_zi = scipy.signal.lfilter_zi(c_b, c_a).astype(np.float64)
+
+        self._ema_power = None
+        self.current_dbfs_c = -120.0
+
+        return band
+
+    def on_start_toggle(self, checked):
+        if checked:
+            try:
+                self.start_measurement()
+                self.start_btn.setText(tr("Stop"))
+                self.timer.start(100)
+            except Exception as e:
+                self.start_btn.setChecked(False)
+                QMessageBox.critical(self, tr("Error"), str(e))
+        else:
+            self.stop_measurement()
+            self.start_btn.setText(tr("Start"))
+            self.timer.stop()
+
+    def start_measurement(self):
+        band = self._prepare_filters()
+
+        amp = 10 ** (float(self.level_spin.value()) / 20.0)
+        tau = float(self.avg_spin.value())
+        sr = float(self.audio_engine.sample_rate)
+
+        def callback(indata, outdata, frames, time, status):
+            # --- Output: band-limited pink noise ---
+            pink = self._pink.generate(frames).astype(np.float64)
+            y, self._bpf_zi = scipy.signal.sosfilt(self._bpf_sos, pink, zi=self._bpf_zi)
+            y = (y * amp).astype(np.float32)
+
+            if outdata.shape[1] >= 2:
+                outdata[:, 0] = y
+                outdata[:, 1] = y
+            else:
+                outdata[:, 0] = y
+
+            # --- Input: C-weighted RMS (channel 0) ---
+            if indata.shape[1] > 0:
+                x = indata[:, 0].astype(np.float64)
+                xw, self._c_zi = scipy.signal.lfilter(self._c_b, self._c_a, x, zi=self._c_zi)
+                p = float(np.mean(xw * xw) + 1e-24)
+
+                # EMA on power for stable reading
+                dt = frames / sr
+                alpha = float(np.exp(-dt / max(1e-3, tau)))
+                if self._ema_power is None:
+                    self._ema_power = p
+                else:
+                    self._ema_power = alpha * self._ema_power + (1.0 - alpha) * p
+
+                self.current_dbfs_c = 10.0 * np.log10(self._ema_power + 1e-24)
+
+        self.callback_id = self.audio_engine.register_callback(callback)
+        self.is_running = True
+        # No popup here (per UX request). The dialog already explains the steps.
+
+    def stop_measurement(self):
+        if self.is_running:
+            if self.callback_id is not None:
+                self.audio_engine.unregister_callback(self.callback_id)
+                self.callback_id = None
+            self.is_running = False
+
+    def update_level(self):
+        self.level_label.setText(
+            tr("Input Level (C-weighted): {0:.1f} dBFS").format(self.current_dbfs_c)
+        )
+
+    def on_save(self):
+        try:
+            if not np.isfinite(self.current_dbfs_c) or self.current_dbfs_c < -110:
+                raise ValueError(tr("No signal detected. Please start measurement and check connections."))
+
+            spl = float(self.spl_spin.value())
+            profile = self.profile_combo.currentData()
+            if profile == "speaker":
+                band = (500.0, 2000.0)
+            else:
+                band = (30.0, 80.0)
+
+            self.audio_engine.calibration.set_spl_calibration(
+                measured_dbfs_c=float(self.current_dbfs_c),
+                measured_spl_db=spl,
+                band_hz=band,
+                weighting='C',
+                notes='Band-limited pink noise; C-weighted input; EMA power average',
+            )
+
+            off = self.audio_engine.calibration.get_spl_offset_db()
+            QMessageBox.information(
+                self,
+                tr("Success"),
+                tr("SPL calibration saved. Offset = {0:.2f} dB (SPL = dBFS + offset)").format(off if off is not None else 0.0),
+            )
+
+            # Stop test signal immediately after saving.
+            self.stop_measurement()
+            self.start_btn.setChecked(False)
+            self.start_btn.setText(tr("Start"))
+            self.timer.stop()
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, tr("Error"), str(e))
+
+    def closeEvent(self, event):
+        self.stop_measurement()
+        super().closeEvent(event)
 
 class OutputCalibrationDialog(QDialog):
     def __init__(self, audio_engine: AudioEngine, parent=None):
@@ -429,6 +720,25 @@ class SettingsWidget(QWidget):
         out_cal_layout.addWidget(out_cal_btn)
         
         cal_layout.addRow(tr("Output Gain:"), out_cal_layout)
+
+        # SPL Calibration (Measurement Mic)
+        self.spl_offset_edit = QLineEdit()
+        self.spl_offset_edit.editingFinished.connect(self.on_spl_offset_changed)
+
+        self.spl_offset_unit = QComboBox()
+        self.spl_offset_unit.addItems(["dB"])
+        self.spl_offset_unit.setEnabled(False)
+
+        spl_btn = QPushButton(tr("Wizard"))
+        spl_btn.clicked.connect(self.open_spl_calibration)
+
+        spl_layout = QHBoxLayout()
+        spl_layout.setContentsMargins(0, 0, 0, 0)
+        spl_layout.addWidget(self.spl_offset_edit)
+        spl_layout.addWidget(self.spl_offset_unit)
+        spl_layout.addWidget(spl_btn)
+
+        cal_layout.addRow(tr("SPL Offset:"), spl_layout)
         
         cal_group.setLayout(cal_layout)
         layout.addWidget(cal_group)
@@ -441,6 +751,31 @@ class SettingsWidget(QWidget):
         self.update_buffer_duration()
         self.update_in_sens_display()
         self.update_out_gain_display()
+        self.update_spl_display()
+
+    def open_spl_calibration(self):
+        dlg = SplCalibrationDialog(self.audio_engine, self)
+        if dlg.exec():
+            self.update_spl_display()
+
+    def update_spl_display(self):
+        off = self.audio_engine.calibration.get_spl_offset_db()
+        self.spl_offset_edit.setText("" if off is None else f"{off:.2f}")
+
+    def on_spl_offset_changed(self):
+        try:
+            txt = self.spl_offset_edit.text().strip()
+            if not txt:
+                self.audio_engine.calibration.spl_offset_db = None
+                self.audio_engine.calibration.save()
+                self.update_spl_display()
+                return
+            val = float(txt)
+            self.audio_engine.calibration.spl_offset_db = float(val)
+            self.audio_engine.calibration.save()
+            self.update_spl_display()
+        except ValueError:
+            self.update_spl_display()
 
     def on_language_changed(self):
         lang = self.lang_combo.currentData()
