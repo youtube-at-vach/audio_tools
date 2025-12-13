@@ -1,4 +1,4 @@
-# 🚀 **Audio Measurement Suite**
+# 🚀 **Audio Measurement Suite** 🎶
 
 A collection of DIY audio measurement and analysis tools, grown organically as needed.
 「必要に応じて作り足しながら育ててきた DIY のオーディオ測定・解析ツール集」です。
