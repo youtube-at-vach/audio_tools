@@ -22,6 +22,7 @@ from src.gui.widgets.impedance_analyzer import ImpedanceAnalyzer
 from src.gui.widgets.noise_profiler import NoiseProfiler
 from src.gui.widgets.recorder_player import RecorderPlayer
 from src.gui.widgets.inverse_filter import InverseFilter
+from src.gui.widgets.sound_level_meter import SoundLevelMeter
 from src.core.localization import get_manager, tr
 
 class MainWindow(QMainWindow):
@@ -103,6 +104,7 @@ class MainWindow(QMainWindow):
         self.modules = [
             SignalGenerator(self.audio_engine),
             SpectrumAnalyzer(self.audio_engine),
+            SoundLevelMeter(self.audio_engine),
             LufsMeter(self.audio_engine),
             LoopbackFinder(self.audio_engine),
             DistortionAnalyzer(self.audio_engine),
