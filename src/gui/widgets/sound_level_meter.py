@@ -3,7 +3,7 @@ import numpy as np
 import scipy.signal
 import time
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, QPushButton, 
-                             QGridLayout, QGroupBox, QHBoxLayout)
+                             QGridLayout, QGroupBox, QHBoxLayout, QDoubleSpinBox)
 from PyQt6.QtCore import QTimer, Qt
 import pyqtgraph as pg
 
@@ -21,6 +21,10 @@ class SoundLevelMeter(MeasurementModule):
         self.freq_weighting = 'A'  # A, C, Z
         self.time_weighting = 'FAST'  # FAST, SLOW, IMPULSE, 10ms
         self.channel = 0 # 0 for Left, 1 for Right
+        self.target_duration = None # None means continuous
+        self.sampling_period = 0.1 # seconds
+        self.start_time = None
+        self.bandwidth_mode = '20Hz - 20kHz (Wide)' # Default
         
         # State variables
         self.leq_integrator = 0.0
@@ -35,6 +39,8 @@ class SoundLevelMeter(MeasurementModule):
         # Filters
         self.sos_filter = None
         self.filter_state = None
+        self.bw_filter = None
+        self.bw_filter_state = None
         
         # Time weighting constants (tau)
         self.TIME_CONSTANTS = {
@@ -85,6 +91,24 @@ class SoundLevelMeter(MeasurementModule):
         self.channel = channel
         self.reset_measurements()
 
+    def set_target_duration(self, duration_str):
+        if duration_str == 'Continuous':
+            self.target_duration = None
+        else:
+            # Parse "1s", "1min"
+            val = int(duration_str[:-1]) if duration_str[-1] == 's' else int(duration_str[:-3]) * 60
+            self.target_duration = float(val)
+        # Don't reset immediately, applies to next start? Or reset if running?
+        # Usually settings apply to next run.
+
+    def set_sampling_period(self, period):
+        self.sampling_period = period
+
+    def set_bandwidth_mode(self, mode):
+        # mode: String from combobox
+        self.bandwidth_mode = mode
+        self._update_filters()
+
     def reset_measurements(self):
         self.leq_integrator = 0.0
         self.leq_samples = 0
@@ -98,6 +122,28 @@ class SoundLevelMeter(MeasurementModule):
         sr = self.audio_engine.sample_rate
         if not sr: 
             return
+
+        # Bandwidth Filter Design
+        # 20Hz is common lower bound.
+        # Upper: 12.5k, 20k, 8k
+        upper_freq = 20000
+        if '12.5kHz' in self.bandwidth_mode:
+            upper_freq = 12500
+        elif '8kHz' in self.bandwidth_mode:
+            upper_freq = 8000
+        elif '20kHz' in self.bandwidth_mode:
+            upper_freq = 20000
+        
+        # Ensure upper freq is below Nyquist
+        nyquist = sr / 2.0
+        if upper_freq >= nyquist * 0.95:
+            # Just Highpass 20Hz
+            self.bw_filter = scipy.signal.butter(4, 20, btype='highpass', fs=sr, output='sos')
+        else:
+            # Bandpass 20 - upper
+            self.bw_filter = scipy.signal.butter(4, [20, upper_freq], btype='bandpass', fs=sr, output='sos')
+            
+        self.bw_filter_state = np.zeros((self.bw_filter.shape[0], 2))
 
         if self.freq_weighting == 'Z':
             self.sos_filter = None
@@ -191,6 +237,7 @@ class SoundLevelMeter(MeasurementModule):
         self.is_running = True
         self._update_filters()
         self.reset_measurements()
+        self.start_time = time.time()
         
         # Setup callback
         try:
@@ -210,6 +257,12 @@ class SoundLevelMeter(MeasurementModule):
     def callback(self, indata, outdata, frames, time_info, status):
         if not self.is_running:
             return
+
+        # Check duration
+        if self.target_duration is not None:
+            if time.time() - self.start_time >= self.target_duration:
+                self.is_running = False
+                return
 
         # Mono processing for now (use channel 0 or mix?)
         # Let's use the first selected input channel or average if stereo.
@@ -235,6 +288,10 @@ class SoundLevelMeter(MeasurementModule):
         # Ah, but integrators need linear values.
         # Let's assume 1.0 FS = 0 dB for internal math, then add global offset.
         
+        # Apply Bandwidth Filter (HighSens/Wide/Normal)
+        if self.bw_filter is not None and self.bw_filter_state is not None:
+            sig, self.bw_filter_state = scipy.signal.sosfilt(self.bw_filter, sig, zi=self.bw_filter_state)
+
         # Apply Frequency Weighting
         if self.sos_filter is not None and self.filter_state is not None:
              sig, self.filter_state = scipy.signal.sosfilt(self.sos_filter, sig, zi=self.filter_state)
@@ -409,41 +466,79 @@ class SoundLevelMeterWidget(QWidget):
         
         # Controls Group
         controls_group = QGroupBox(tr("Settings"))
-        controls_layout = QHBoxLayout()
+        
+        # Use a vertical layout to hold two rows of controls
+        settings_layout = QVBoxLayout()
+        row1_layout = QHBoxLayout()
+        row2_layout = QHBoxLayout()
+        
+        # --- Row 1 ---
         
         # Start/Stop
         self.btn_start = QPushButton(tr("Start"))
         self.btn_start.setCheckable(True)
         self.btn_start.toggled.connect(self.on_start_toggle)
-        controls_layout.addWidget(self.btn_start)
+        row1_layout.addWidget(self.btn_start)
         
         # Reset
         self.btn_reset = QPushButton(tr("Reset"))
         self.btn_reset.clicked.connect(self.module.reset_measurements)
-        controls_layout.addWidget(self.btn_reset)
+        row1_layout.addWidget(self.btn_reset)
         
         # Channel Selection
-        controls_layout.addWidget(QLabel(tr("Channel:")))
+        row1_layout.addWidget(QLabel(tr("Channel:")))
         self.combo_channel = QComboBox()
         self.combo_channel.addItems(['L', 'R'])
         self.combo_channel.currentIndexChanged.connect(self.module.set_channel)
-        controls_layout.addWidget(self.combo_channel)
+        row1_layout.addWidget(self.combo_channel)
 
         # Freq Weighting
-        controls_layout.addWidget(QLabel(tr("Freq Weight:")))
+        row1_layout.addWidget(QLabel(tr("Freq Weight:")))
         self.combo_freq = QComboBox()
         self.combo_freq.addItems(['A', 'C', 'Z'])
         self.combo_freq.currentTextChanged.connect(self.module.set_freq_weighting)
-        controls_layout.addWidget(self.combo_freq)
+        row1_layout.addWidget(self.combo_freq)
+        
+        row1_layout.addStretch()
+
+        # --- Row 2 ---
+
+        # Bandwidth
+        row2_layout.addWidget(QLabel(tr("Bandwidth:")))
+        self.combo_bw = QComboBox()
+        self.combo_bw.addItems(['20Hz - 20kHz (Wide)', '20Hz - 12.5kHz', '20Hz - 8kHz (Normal)'])
+        self.combo_bw.currentTextChanged.connect(self.module.set_bandwidth_mode)
+        row2_layout.addWidget(self.combo_bw)
         
         # Time Weighting
-        controls_layout.addWidget(QLabel(tr("Time Weight:")))
+        row2_layout.addWidget(QLabel(tr("Time Weight:")))
         self.combo_time = QComboBox()
         self.combo_time.addItems(['FAST', 'SLOW', 'IMPULSE', '10ms'])
         self.combo_time.currentTextChanged.connect(self.module.set_time_weighting)
-        controls_layout.addWidget(self.combo_time)
+        row2_layout.addWidget(self.combo_time)
+
+        # Measurement Time
+        row2_layout.addWidget(QLabel(tr("Duration:")))
+        self.combo_duration = QComboBox()
+        self.combo_duration.addItems(['Continuous', '1s', '3s', '5s', '10s', '20s', '30s', '1min'])
+        self.combo_duration.currentTextChanged.connect(self.module.set_target_duration)
+        row2_layout.addWidget(self.combo_duration)
+
+        # Sampling Period
+        row2_layout.addWidget(QLabel(tr("Lp Interval:")))
+        self.spin_interval = QDoubleSpinBox()
+        self.spin_interval.setRange(0.01, 10.0)
+        self.spin_interval.setSingleStep(0.1)
+        self.spin_interval.setValue(0.1)
+        self.spin_interval.setSuffix(" s")
+        self.spin_interval.valueChanged.connect(self.module.set_sampling_period)
+        row2_layout.addWidget(self.spin_interval)
         
-        controls_group.setLayout(controls_layout)
+        row2_layout.addStretch()
+        
+        settings_layout.addLayout(row1_layout)
+        settings_layout.addLayout(row2_layout)
+        controls_group.setLayout(settings_layout)
         layout.addWidget(controls_group)
         
         # Display Grid
@@ -495,6 +590,12 @@ class SoundLevelMeterWidget(QWidget):
             self.module.stop_analysis()
 
     def update_display(self):
+        # Check if stopped automatically
+        if not self.module.is_running and self.btn_start.isChecked():
+            self.btn_start.setChecked(False)
+            self.btn_start.setText(tr("Start"))
+            self.module.stop_analysis()
+
         if not self.module.is_running:
             return
             
