@@ -1,7 +1,15 @@
-# 🚀 Audio Measurement Suite 🎶
+# 🚀 **Audio Measurement Suite**
 
-**Audio Measurement Suite** は、プロフェッショナルなオーディオ測定ツールをひとつの強力なGUIアプリケーションに統合したソフトウェアです。
-PythonとPyQt6で構築されており、高精度な信号生成、解析、測定を直感的なインターフェースで提供します。
+A collection of DIY audio measurement and analysis tools, grown organically as needed.
+「必要に応じて作り足しながら育ててきた DIY のオーディオ測定・解析ツール集」です。
+
+**Audio Measurement Suite** は、これらのツールを1つの GUI アプリにまとめた形で提供します。Python と PyQt6 製で、高精度な信号生成・解析・測定を直感的に扱えます。
+
+## Quick glance (English)
+
+- PyQt6 desktop app bundling 20+ DIY modules: signal generator, spectrum/PSD analyzer, sound level & LUFS meters, lock-in/FRA, network/impedance analyzers, oscilloscope, spectrogram, distortion/IMD tools, recorder/player, inverse filter, frequency counter, noise profiler, boxcar averager, goniometer, and more.
+- Built for hobbyists and engineers: device routing, calibration (input/output/SPL), multi-language UI, light/dark themes.
+- Runs on Windows/Linux; grab the AppImage/ZIP or `python main_gui.py` from source (Python 3.10+).
 
 ## ✨ 主な機能 (Features)
 
