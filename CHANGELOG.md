@@ -1,5 +1,32 @@
 # Changelog
 
+## [v0.2.2] - 2025-12-13
+
+### Added
+
+* Sound Level Meter モジュールを追加し、A/C/Z ウェイティング、IEC 時定数、チャネル選択、ターゲット時間／サンプリング周期／帯域幅モード設定、ラベル整理、翻訳を含む SPL 測定系を拡充
+* LUFS Meter に統合ラウドネス計算とセッション統計、C ウェイティング対応を追加し、SPL キャリブレーション用途を強化
+* CalibrationManager／SettingsWidget に電圧ベースの単位へ対応した SPL キャリブレーションと出力ゲインキャリブレーションフラグを実装
+* FrequencyCounter に周波数／周期の表示モード切替とエラーハンドリング改善、ConfigManager にレガシーデバイス管理を追加
+* オシロスコープに波形計測・単発トリガー・チャネル別縦スケール・タブ分割 UI を追加し、関連翻訳を更新
+* Spectrum Analyzer にチャネル選択と PSD/スペクトラム処理の統合を追加
+* 多言語翻訳（pt/ru/zh など）とキャリブレーションダイアログのガイダンスを更新
+
+### Changed
+
+* レベル単位設定を dBFS / dBV / dB SPL から選べる形式に変更し、SPL オフセット表記を dB SPL/FS に統一
+* Settings UI を General / Audio / Calibration のタブ構成に再編成
+* Network Analyzer のデフォルト掃引を Fast Chirp に変更
+* README を最新モジュールに合わせて更新し、.gitignore でログファイルを除外
+
+### Fixed
+
+* キャリブレーション設定の適用漏れを修正
+
+### Documentation
+
+* AGENT.md の開発環境手順を更新
+
 ## [v0.2.1] - 2025-12-11
 
 ### Added
