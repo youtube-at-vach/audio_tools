@@ -122,7 +122,21 @@ class SoundLevelMeter(MeasurementModule):
         self.lmin = np.inf
         self.lpeak = -np.inf
         self.le_integrator = 0.0
-        # Reset current value effectively? Maybe keep instant.
+        
+        # Reset LN Statistics
+        self.ln_history = []
+        self.last_sample_time = time.time()
+        
+        # Reset Results
+        self.results = {
+            'Lp': -np.inf,
+            'Leq': -np.inf,
+            'LE': -np.inf,
+            'Lmax': -np.inf,
+            'Lmin': -np.inf,
+            'Lpeak': -np.inf,
+            'LN': {} 
+        }
         
     def _update_filters(self):
         sr = self.audio_engine.sample_rate
