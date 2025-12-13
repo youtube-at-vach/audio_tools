@@ -545,6 +545,67 @@ class SoundLevelMeterWidget(QWidget):
         top_bar.addStretch()
         layout.addLayout(top_bar)
         
+        # --- Settings (Always Visible) ---
+        settings_group = QGroupBox(tr("Settings"))
+        settings_layout = QVBoxLayout()
+        
+        row1_layout = QHBoxLayout()
+        row2_layout = QHBoxLayout()
+        
+        # Channel
+        row1_layout.addWidget(QLabel(tr("Channel:")))
+        self.combo_channel = QComboBox()
+        self.combo_channel.addItems(['L', 'R'])
+        self.combo_channel.currentIndexChanged.connect(self.module.set_channel)
+        row1_layout.addWidget(self.combo_channel)
+        
+        # Freq Weight
+        row1_layout.addWidget(QLabel(tr("Freq Weight:")))
+        self.combo_freq = QComboBox()
+        self.combo_freq.addItems(['A', 'C', 'Z'])
+        self.combo_freq.currentTextChanged.connect(self.module.set_freq_weighting)
+        row1_layout.addWidget(self.combo_freq)
+        
+        # Bandwidth
+        row1_layout.addWidget(QLabel(tr("Bandwidth:")))
+        self.combo_bw = QComboBox()
+        self.combo_bw.addItems(['20Hz - 20kHz', '20Hz - 12.5kHz', '20Hz - 8kHz'])
+        self.combo_bw.currentTextChanged.connect(self.module.set_bandwidth_mode)
+        row1_layout.addWidget(self.combo_bw)
+        
+        row1_layout.addStretch()
+        
+        # Time Weight
+        row2_layout.addWidget(QLabel(tr("Time Weight:")))
+        self.combo_time = QComboBox()
+        self.combo_time.addItems(['FAST', 'SLOW', 'IMPULSE', '10ms'])
+        self.combo_time.currentTextChanged.connect(self.module.set_time_weighting)
+        row2_layout.addWidget(self.combo_time)
+        
+        # Duration
+        row2_layout.addWidget(QLabel(tr("Duration:")))
+        self.combo_duration = QComboBox()
+        self.combo_duration.addItems(['Continuous', '1s', '3s', '5s', '10s', '20s', '30s', '1min'])
+        self.combo_duration.currentTextChanged.connect(self.module.set_target_duration)
+        row2_layout.addWidget(self.combo_duration)
+        
+        # Sampling Period
+        row2_layout.addWidget(QLabel(tr("Lp Interval:")))
+        self.spin_interval = QDoubleSpinBox()
+        self.spin_interval.setRange(0.01, 10.0)
+        self.spin_interval.setSingleStep(0.1)
+        self.spin_interval.setValue(0.1)
+        self.spin_interval.setSuffix(" s")
+        self.spin_interval.valueChanged.connect(self.module.set_sampling_period)
+        row2_layout.addWidget(self.spin_interval)
+        
+        row2_layout.addStretch()
+
+        settings_layout.addLayout(row1_layout)
+        settings_layout.addLayout(row2_layout)
+        settings_group.setLayout(settings_layout)
+        layout.addWidget(settings_group)
+        
         # --- Tabs ---
         self.tabs = QTabWidget()
         
@@ -634,77 +695,7 @@ class SoundLevelMeterWidget(QWidget):
         tab_stats.setLayout(stats_layout)
         self.tabs.addTab(tab_stats, tr("Statistics"))
         
-        # Tab 3: Settings
-        tab_settings = QWidget()
-        settings_layout = QVBoxLayout()
-        
-        row1_layout = QHBoxLayout()
-        row2_layout = QHBoxLayout()
-        
-        # Channel
-        row1_layout.addWidget(QLabel(tr("Channel:")))
-        self.combo_channel = QComboBox()
-        self.combo_channel.addItems(['L', 'R'])
-        self.combo_channel.currentIndexChanged.connect(self.module.set_channel)
-        row1_layout.addWidget(self.combo_channel)
-        
-        # Freq Weight
-        row1_layout.addWidget(QLabel(tr("Freq Weight:")))
-        self.combo_freq = QComboBox()
-        self.combo_freq.addItems(['A', 'C', 'Z'])
-        self.combo_freq.currentTextChanged.connect(self.module.set_freq_weighting)
-        row1_layout.addWidget(self.combo_freq)
-        
-        row1_layout.addStretch()
-        
-        # Row 2 (Bandwidth, Time, Duration, Interval)
-        # Wrap if too wide? QHBoxLayout usually handles it ok or scrolls? No scroll here.
-        # Let's use FlowLayout? Or just keep rows.
-        
-        # Bandwidth
-        row2_layout.addWidget(QLabel(tr("Bandwidth:")))
-        self.combo_bw = QComboBox()
-        self.combo_bw.addItems(['20Hz - 20kHz', '20Hz - 12.5kHz', '20Hz - 8kHz'])
-        self.combo_bw.currentTextChanged.connect(self.module.set_bandwidth_mode)
-        row2_layout.addWidget(self.combo_bw)
-        
-        # Time Weight
-        row2_layout.addWidget(QLabel(tr("Time Weight:")))
-        self.combo_time = QComboBox()
-        self.combo_time.addItems(['FAST', 'SLOW', 'IMPULSE', '10ms'])
-        self.combo_time.currentTextChanged.connect(self.module.set_time_weighting)
-        row2_layout.addWidget(self.combo_time)
-        
-        row2_layout.addStretch() # Spacer
-        
-        row3_layout = QHBoxLayout() # New row to avoid cramming
-        
-        # Duration
-        row3_layout.addWidget(QLabel(tr("Duration:")))
-        self.combo_duration = QComboBox()
-        self.combo_duration.addItems(['Continuous', '1s', '3s', '5s', '10s', '20s', '30s', '1min'])
-        self.combo_duration.currentTextChanged.connect(self.module.set_target_duration)
-        row3_layout.addWidget(self.combo_duration)
-        
-        # Sampling Period
-        row3_layout.addWidget(QLabel(tr("Lp Interval:")))
-        self.spin_interval = QDoubleSpinBox()
-        self.spin_interval.setRange(0.01, 10.0)
-        self.spin_interval.setSingleStep(0.1)
-        self.spin_interval.setValue(0.1)
-        self.spin_interval.setSuffix(" s")
-        self.spin_interval.valueChanged.connect(self.module.set_sampling_period)
-        row3_layout.addWidget(self.spin_interval)
-        
-        row3_layout.addStretch()
 
-        settings_layout.addLayout(row1_layout)
-        settings_layout.addLayout(row2_layout)
-        settings_layout.addLayout(row3_layout)
-        settings_layout.addStretch()
-        
-        tab_settings.setLayout(settings_layout)
-        self.tabs.addTab(tab_settings, tr("Settings"))
         
         layout.addWidget(self.tabs)
         self.setLayout(layout)
