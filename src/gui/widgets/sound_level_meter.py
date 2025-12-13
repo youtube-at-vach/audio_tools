@@ -548,24 +548,34 @@ class SoundLevelMeterWidget(QWidget):
         # Create labels
         self.labels = {}
         metrics = [
-            ('Lp', 0, 0), ('Leq', 0, 1),
-            ('Lmax', 1, 0), ('Lmin', 1, 1),
-            ('Lpeak', 2, 0), ('LE', 2, 1)
+            ('Lp', tr("Sound Pressure Level"), 0, 0),
+            ('Leq', tr("Equivalent Continuous Level"), 0, 1),
+            ('Lmax', tr("Maximum Level"), 1, 0),
+            ('Lmin', tr("Minimum Level"), 1, 1),
+            ('Lpeak', tr("Peak Level"), 2, 0),
+            ('LE', tr("Sound Exposure Level"), 2, 1)
         ]
         
         font_style = "font-size: 24px; font-weight: bold; color: #00ff00;"
         
-        for key, r, c in metrics:
+        for key, desc, r, c in metrics:
             container = QWidget()
             v_box = QVBoxLayout()
+            
             title = QLabel(key)
             title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            title.setStyleSheet("font-weight: bold; font-size: 14pt;")
+            
+            desc_lbl = QLabel(desc)
+            desc_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            desc_lbl.setStyleSheet("font-size: 10pt; color: #aaa;")
             
             value_lbl = QLabel("--.-")
             value_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             value_lbl.setStyleSheet(font_style)
             
             v_box.addWidget(title)
+            v_box.addWidget(desc_lbl)
             v_box.addWidget(value_lbl)
             container.setLayout(v_box)
             
