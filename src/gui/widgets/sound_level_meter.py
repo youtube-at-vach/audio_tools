@@ -20,6 +20,7 @@ class SoundLevelMeter(MeasurementModule):
         # Measurement parameters
         self.freq_weighting = 'A'  # A, C, Z
         self.time_weighting = 'FAST'  # FAST, SLOW, IMPULSE, 10ms
+        self.channel = 0 # 0 for Left, 1 for Right
         
         # State variables
         self.leq_integrator = 0.0
@@ -79,6 +80,10 @@ class SoundLevelMeter(MeasurementModule):
         self.time_weighting = weighting
         # Reset integration if needed or just continue? Usually better to keep current val but adapt tau.
         # But for impulse it's stateful.
+
+    def set_channel(self, channel):
+        self.channel = channel
+        self.reset_measurements()
 
     def reset_measurements(self):
         self.leq_integrator = 0.0
@@ -210,7 +215,12 @@ class SoundLevelMeter(MeasurementModule):
         # Let's use the first selected input channel or average if stereo.
         # Assuming indata is (frames, channels).
         
-        sig = indata[:, 0] # Simple mono take
+        if indata.shape[1] > self.channel:
+            sig = indata[:, self.channel]
+        else:
+            # Fallback to channel 0 if requested channel doesn't exist
+            sig = indata[:, 0]
+
         # If calibration is available, apply it to convert to Pascal? 
         # BUT wait, the calibration in settings is global input scale factor? 
         # Or usually 'dBFS to real unit'.
@@ -412,6 +422,13 @@ class SoundLevelMeterWidget(QWidget):
         self.btn_reset.clicked.connect(self.module.reset_measurements)
         controls_layout.addWidget(self.btn_reset)
         
+        # Channel Selection
+        controls_layout.addWidget(QLabel(tr("Channel:")))
+        self.combo_channel = QComboBox()
+        self.combo_channel.addItems(['L', 'R'])
+        self.combo_channel.currentIndexChanged.connect(self.module.set_channel)
+        controls_layout.addWidget(self.combo_channel)
+
         # Freq Weighting
         controls_layout.addWidget(QLabel(tr("Freq Weight:")))
         self.combo_freq = QComboBox()
