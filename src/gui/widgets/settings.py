@@ -98,6 +98,8 @@ class SplCalibrationDialog(QDialog):
         self._c_b = None
         self._c_a = None
         self._c_zi = None
+        self._measure_bw_sos = None
+        self._measure_bw_zi = None
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_level)
@@ -138,6 +140,40 @@ class SplCalibrationDialog(QDialog):
         self.avg_spin.setValue(1.0)
         self.avg_spin.setSingleStep(0.2)
         form.addRow(tr("Averaging Time (s)") + ":", self.avg_spin)
+
+        # Measurement bandwidth (matches Sound Level Meter presets, plus custom)
+        self.measure_bw_combo = QComboBox()
+        self.measure_bw_combo.addItem(tr("20 Hz - 20 kHz (Wide)"), "wide")
+        self.measure_bw_combo.addItem(tr("20 Hz - 12.5 kHz"), "12k5")
+        self.measure_bw_combo.addItem(tr("20 Hz - 8 kHz (Normal)"), "normal")
+        self.measure_bw_combo.addItem(tr("Custom"), "custom")
+        self.measure_bw_combo.setCurrentIndex(2)  # Default to "Normal"
+        self.measure_bw_combo.currentIndexChanged.connect(self._on_measure_bw_mode_changed)
+
+        self.measure_bw_low_spin = QDoubleSpinBox()
+        self.measure_bw_low_spin.setDecimals(1)
+        self.measure_bw_low_spin.setRange(0.1, 48000.0)
+        self.measure_bw_low_spin.setValue(20.0)
+        self.measure_bw_low_spin.setSuffix(" Hz")
+        self.measure_bw_low_spin.valueChanged.connect(self._on_custom_bw_changed)
+
+        self.measure_bw_high_spin = QDoubleSpinBox()
+        self.measure_bw_high_spin.setDecimals(1)
+        self.measure_bw_high_spin.setRange(1.0, 48000.0)
+        self.measure_bw_high_spin.setValue(8000.0)
+        self.measure_bw_high_spin.setSuffix(" Hz")
+        self.measure_bw_high_spin.valueChanged.connect(self._on_custom_bw_changed)
+
+        bw_layout = QHBoxLayout()
+        bw_layout.setContentsMargins(0, 0, 0, 0)
+        bw_layout.addWidget(self.measure_bw_combo)
+        bw_layout.addWidget(self.measure_bw_low_spin)
+        bw_layout.addWidget(QLabel("-"))
+        bw_layout.addWidget(self.measure_bw_high_spin)
+        bw_layout.addStretch(1)
+        form.addRow(tr("Measurement Bandwidth") + ":", bw_layout)
+
+        self._on_measure_bw_mode_changed()
 
         layout.addLayout(form)
 
@@ -224,6 +260,50 @@ class SplCalibrationDialog(QDialog):
     def _on_level_unit_changed(self):
         self._configure_level_spin_for_unit(self.level_unit_combo.currentText())
 
+    def _on_measure_bw_mode_changed(self):
+        is_custom = self.measure_bw_combo.currentData() == "custom"
+        self.measure_bw_low_spin.setEnabled(is_custom)
+        self.measure_bw_high_spin.setEnabled(is_custom)
+
+    def _on_custom_bw_changed(self):
+        # Keep upper cutoff above lower cutoff when the user drags quickly.
+        low = self.measure_bw_low_spin.value()
+        high = self.measure_bw_high_spin.value()
+        if high <= low:
+            self.measure_bw_high_spin.blockSignals(True)
+            self.measure_bw_high_spin.setValue(low + 10.0)
+            self.measure_bw_high_spin.blockSignals(False)
+
+    def _get_measurement_band_hz(self):
+        mode = self.measure_bw_combo.currentData()
+        presets = {
+            "wide": (20.0, 20000.0),
+            "12k5": (20.0, 12500.0),
+            "normal": (20.0, 8000.0),
+        }
+
+        if mode == "custom":
+            low = float(self.measure_bw_low_spin.value())
+            high = float(self.measure_bw_high_spin.value())
+        else:
+            low, high = presets.get(mode, presets["normal"])
+
+        if high <= low:
+            raise ValueError(tr("Invalid measurement bandwidth: upper cutoff must be higher than lower cutoff."))
+
+        return low, high
+
+    def _design_measurement_bandpass(self, sr: float, band_hz):
+        nyq = 0.5 * sr
+        low_norm = max(0.1, band_hz[0]) / nyq
+        high_norm = min(nyq * 0.99, band_hz[1]) / nyq
+        if not (0 < low_norm < high_norm < 1):
+            raise ValueError(tr("Measurement bandwidth is outside the valid range for this sample rate."))
+
+        sos = scipy.signal.butter(4, [low_norm, high_norm], btype='bandpass', output='sos')
+        zi = np.zeros((sos.shape[0], 2), dtype=np.float64)
+        return sos, zi
+
     def _get_target_fs_rms(self) -> float:
         """Returns desired output RMS level in full-scale units (FS RMS)."""
         unit = self.level_unit_combo.currentText()
@@ -296,6 +376,10 @@ class SplCalibrationDialog(QDialog):
         self._c_a = c_a
         self._c_zi = scipy.signal.lfilter_zi(c_b, c_a).astype(np.float64)
 
+        # Measurement bandwidth (input side)
+        meas_band = self._get_measurement_band_hz()
+        self._measure_bw_sos, self._measure_bw_zi = self._design_measurement_bandpass(sr, meas_band)
+
         self._ema_power = None
         self.current_dbfs_c = -120.0
 
@@ -312,6 +396,9 @@ class SplCalibrationDialog(QDialog):
                 self.level_spin.setEnabled(False)
                 self.level_unit_combo.setEnabled(False)
                 self.avg_spin.setEnabled(False)
+                self.measure_bw_combo.setEnabled(False)
+                self.measure_bw_low_spin.setEnabled(False)
+                self.measure_bw_high_spin.setEnabled(False)
             except Exception as e:
                 self.start_btn.setChecked(False)
                 QMessageBox.critical(self, tr("Error"), str(e))
@@ -323,6 +410,8 @@ class SplCalibrationDialog(QDialog):
             self.level_spin.setEnabled(True)
             self.level_unit_combo.setEnabled(True)
             self.avg_spin.setEnabled(True)
+            self.measure_bw_combo.setEnabled(True)
+            self._on_measure_bw_mode_changed()
 
     def start_measurement(self):
         band = self._prepare_filters()
@@ -355,6 +444,8 @@ class SplCalibrationDialog(QDialog):
             # --- Input: C-weighted RMS (channel 0) ---
             if indata.shape[1] > 0:
                 x = indata[:, 0].astype(np.float64)
+                if self._measure_bw_sos is not None and self._measure_bw_zi is not None:
+                    x, self._measure_bw_zi = scipy.signal.sosfilt(self._measure_bw_sos, x, zi=self._measure_bw_zi)
                 xw, self._c_zi = scipy.signal.lfilter(self._c_b, self._c_a, x, zi=self._c_zi)
                 p = float(np.mean(xw * xw) + 1e-24)
 
