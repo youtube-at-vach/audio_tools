@@ -3,7 +3,7 @@ import numpy as np
 import scipy.signal
 import time
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, QPushButton, 
-                             QGridLayout, QGroupBox, QHBoxLayout, QDoubleSpinBox)
+                             QGridLayout, QGroupBox, QHBoxLayout, QDoubleSpinBox, QTabWidget)
 from PyQt6.QtCore import QTimer, Qt
 import pyqtgraph as pg
 
@@ -34,6 +34,11 @@ class SoundLevelMeter(MeasurementModule):
         self.lpeak = -np.inf
         self.le_integrator = 0.0
         
+        # LN Statistics
+        self.ln_history = []
+        self.last_sample_time = 0.0
+        self.LN_SAMPLING_PERIOD = 0.1 # Fixed 0.1s for statistics as requested
+        
         self.callback_id = None
 
         # Filters
@@ -61,7 +66,8 @@ class SoundLevelMeter(MeasurementModule):
             'LE': -np.inf,
             'Lmax': -np.inf,
             'Lmin': -np.inf,
-            'Lpeak': -np.inf
+            'Lpeak': -np.inf,
+            'LN': {} # L5, L10, L50, L90, L95, Lhigh, Llow, Lave
         }
 
     @property
@@ -238,6 +244,7 @@ class SoundLevelMeter(MeasurementModule):
         self._update_filters()
         self.reset_measurements()
         self.start_time = time.time()
+        self.last_sample_time = self.start_time
         
         # Setup callback
         try:
@@ -432,6 +439,21 @@ class SoundLevelMeter(MeasurementModule):
         peak_curr = np.max(sq_sig)
         self.lpeak = max(self.lpeak, peak_curr)
         
+
+        # LN Data Collection (0.1s interval)
+        current_time = time.time()
+        if current_time - self.last_sample_time >= self.LN_SAMPLING_PERIOD:
+            # Add current instantaneous level (Lp) to history
+            # Lp is already calculated as linear power 'lp_inst'
+            # Convert to dB for storage? Better to store linear for averaging (Lave), 
+            # but usually Ln percentiles are on dB values.
+            # Lave is "Energy Average" usually -> Leq.
+            # But "Lave" might effectively be Leq. 
+            # Let's store LINEAR power to support accurate Leq/Lave calculation of the subset,
+            # and convert to dB for sorting/percentiles.
+            self.ln_history.append(lp_inst)
+            self.last_sample_time = current_time
+
         # Store for display (Atomic update preferred)
         self.results['Lp'] = 10 * np.log10(lp_inst + 1e-12)
         self.results['Leq'] = 10 * np.log10((self.leq_integrator / (self.leq_samples + 1e-12)) + 1e-12)
@@ -449,6 +471,50 @@ class SoundLevelMeter(MeasurementModule):
         self.results['Lmax'] = 10 * np.log10(self.lmax + 1e-12)
         self.results['Lmin'] = 10 * np.log10(self.lmin + 1e-12)
         self.results['Lpeak'] = 10 * np.log10(self.lpeak + 1e-12)
+        
+        # Calculate/Update Statistics periodically (or on demand)
+        # Since this is the audio callback, we should NOT sort a potentially large array here.
+        # It's better to defer this to the GUI timer or a separate method called by GUI.
+        # We just collected the data.
+        
+    def calculate_ln_statistics(self):
+        """Calculate LN statistics from history. Called by GUI."""
+        if not self.ln_history:
+            return {}
+            
+        data_linear = np.array(self.ln_history)
+        data_db = 10 * np.log10(data_linear + 1e-12)
+        
+        # Percentiles (Ln is level EXCEEDED n% of time)
+        # So L5 is the 95th percentile of the distribution (high level).
+        # L95 is the 5th percentile (low level).
+        # numpy.percentile calculates "p-th percentile below which p% of observations fall".
+        # So L5 = np.percentile(data, 95)
+        # L95 = np.percentile(data, 5)
+        
+        p_vals = np.percentile(data_db, [95, 90, 50, 10, 5])
+        l5, l10, l50, l90, l95 = p_vals
+        
+        lhigh = np.max(data_db)
+        llow = np.min(data_db)
+        
+        # Lave (Arithmetic average of levels or Energy average?)
+        # Standard in acoustics: Lave usually implies Leq (Energy Average).
+        # But if it means "Average of the sampled dB values", that's different.
+        # "Lave" (Label) usually acts as Leq short term or specified period.
+        # Since we have the linear history, we can calc Leq of the history.
+        lave = 10 * np.log10(np.mean(data_linear) + 1e-12)
+        
+        return {
+            'L5': l5,
+            'L10': l10,
+            'L50': l50,
+            'L90': l90,
+            'L95': l95,
+            'Lhigh': lhigh,
+            'Llow': llow,
+            'Lave': lave
+        }
 
 
 class SoundLevelMeterWidget(QWidget):
@@ -464,88 +530,30 @@ class SoundLevelMeterWidget(QWidget):
     def init_ui(self):
         layout = QVBoxLayout()
         
-        # Controls Group
-        controls_group = QGroupBox(tr("Settings"))
+        # --- Top Control Bar (Persistent) ---
+        top_bar = QHBoxLayout()
         
-        # Use a vertical layout to hold two rows of controls
-        settings_layout = QVBoxLayout()
-        row1_layout = QHBoxLayout()
-        row2_layout = QHBoxLayout()
-        
-        # --- Row 1 ---
-        
-        # Start/Stop
         self.btn_start = QPushButton(tr("Start"))
         self.btn_start.setCheckable(True)
         self.btn_start.toggled.connect(self.on_start_toggle)
-        row1_layout.addWidget(self.btn_start)
+        top_bar.addWidget(self.btn_start)
         
-        # Reset
         self.btn_reset = QPushButton(tr("Reset"))
         self.btn_reset.clicked.connect(self.module.reset_measurements)
-        row1_layout.addWidget(self.btn_reset)
+        top_bar.addWidget(self.btn_reset)
         
-        # Channel Selection
-        row1_layout.addWidget(QLabel(tr("Channel:")))
-        self.combo_channel = QComboBox()
-        self.combo_channel.addItems(['L', 'R'])
-        self.combo_channel.currentIndexChanged.connect(self.module.set_channel)
-        row1_layout.addWidget(self.combo_channel)
-
-        # Freq Weighting
-        row1_layout.addWidget(QLabel(tr("Freq Weight:")))
-        self.combo_freq = QComboBox()
-        self.combo_freq.addItems(['A', 'C', 'Z'])
-        self.combo_freq.currentTextChanged.connect(self.module.set_freq_weighting)
-        row1_layout.addWidget(self.combo_freq)
+        top_bar.addStretch()
+        layout.addLayout(top_bar)
         
-        row1_layout.addStretch()
-
-        # --- Row 2 ---
-
-        # Bandwidth
-        row2_layout.addWidget(QLabel(tr("Bandwidth:")))
-        self.combo_bw = QComboBox()
-        self.combo_bw.addItems(['20Hz - 20kHz (Wide)', '20Hz - 12.5kHz', '20Hz - 8kHz (Normal)'])
-        self.combo_bw.currentTextChanged.connect(self.module.set_bandwidth_mode)
-        row2_layout.addWidget(self.combo_bw)
+        # --- Tabs ---
+        self.tabs = QTabWidget()
         
-        # Time Weighting
-        row2_layout.addWidget(QLabel(tr("Time Weight:")))
-        self.combo_time = QComboBox()
-        self.combo_time.addItems(['FAST', 'SLOW', 'IMPULSE', '10ms'])
-        self.combo_time.currentTextChanged.connect(self.module.set_time_weighting)
-        row2_layout.addWidget(self.combo_time)
-
-        # Measurement Time
-        row2_layout.addWidget(QLabel(tr("Duration:")))
-        self.combo_duration = QComboBox()
-        self.combo_duration.addItems(['Continuous', '1s', '3s', '5s', '10s', '20s', '30s', '1min'])
-        self.combo_duration.currentTextChanged.connect(self.module.set_target_duration)
-        row2_layout.addWidget(self.combo_duration)
-
-        # Sampling Period
-        row2_layout.addWidget(QLabel(tr("Lp Interval:")))
-        self.spin_interval = QDoubleSpinBox()
-        self.spin_interval.setRange(0.01, 10.0)
-        self.spin_interval.setSingleStep(0.1)
-        self.spin_interval.setValue(0.1)
-        self.spin_interval.setSuffix(" s")
-        self.spin_interval.valueChanged.connect(self.module.set_sampling_period)
-        row2_layout.addWidget(self.spin_interval)
+        # Tab 1: Measurements (Main)
+        tab_measure = QWidget()
+        measure_layout = QVBoxLayout()
         
-        row2_layout.addStretch()
-        
-        settings_layout.addLayout(row1_layout)
-        settings_layout.addLayout(row2_layout)
-        controls_group.setLayout(settings_layout)
-        layout.addWidget(controls_group)
-        
-        # Display Grid
-        display_group = QGroupBox(tr("Measurements"))
+        # Measurement Grid
         grid_layout = QGridLayout()
-        
-        # Create labels
         self.labels = {}
         metrics = [
             ('Lp', tr("Sound Pressure Level"), 0, 0),
@@ -578,17 +586,127 @@ class SoundLevelMeterWidget(QWidget):
             v_box.addWidget(desc_lbl)
             v_box.addWidget(value_lbl)
             container.setLayout(v_box)
-            
-            # Add frame or background?
             container.setStyleSheet("background-color: #111; border-radius: 5px; margin: 5px;")
             
             grid_layout.addWidget(container, r, c)
             self.labels[key] = value_lbl
             
-        display_group.setLayout(grid_layout)
-        layout.addWidget(display_group)
+        measure_layout.addLayout(grid_layout)
+        measure_layout.addStretch()
+        tab_measure.setLayout(measure_layout)
+        self.tabs.addTab(tab_measure, tr("Measurements"))
         
-        layout.addStretch()
+        # Tab 2: Statistics (LN)
+        tab_stats = QWidget()
+        stats_layout = QVBoxLayout()
+        
+        ln_grid = QGridLayout()
+        self.ln_labels = {}
+        ln_metrics = [
+            ('L5', 'L5', 0, 0), ('L10', 'L10', 0, 1), ('L50', 'L50', 0, 2), ('L90', 'L90', 0, 3), ('L95', 'L95', 0, 4),
+            ('Lhigh', 'Lhigh', 1, 0), ('Llow', 'Llow', 1, 1), ('Lave', 'Lave', 1, 2)
+        ]
+        
+        ln_font_style = "font-size: 18px; font-weight: bold; color: #00ffff;"
+        
+        for key, title_text, r, c in ln_metrics:
+            container = QWidget()
+            v_box = QVBoxLayout()
+            
+            title = QLabel(title_text)
+            title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            title.setStyleSheet("font-weight: bold; font-size: 12pt; color: #eee;")
+
+            val_lbl = QLabel("--.-")
+            val_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            val_lbl.setStyleSheet(ln_font_style)
+            
+            v_box.addWidget(title)
+            v_box.addWidget(val_lbl)
+            container.setLayout(v_box)
+            container.setStyleSheet("background-color: #222; border-radius: 4px; margin: 2px;")
+            
+            ln_grid.addWidget(container, r, c)
+            self.ln_labels[key] = val_lbl
+            
+        stats_layout.addLayout(ln_grid)
+        stats_layout.addStretch()
+        tab_stats.setLayout(stats_layout)
+        self.tabs.addTab(tab_stats, tr("Statistics"))
+        
+        # Tab 3: Settings
+        tab_settings = QWidget()
+        settings_layout = QVBoxLayout()
+        
+        row1_layout = QHBoxLayout()
+        row2_layout = QHBoxLayout()
+        
+        # Channel
+        row1_layout.addWidget(QLabel(tr("Channel:")))
+        self.combo_channel = QComboBox()
+        self.combo_channel.addItems(['L', 'R'])
+        self.combo_channel.currentIndexChanged.connect(self.module.set_channel)
+        row1_layout.addWidget(self.combo_channel)
+        
+        # Freq Weight
+        row1_layout.addWidget(QLabel(tr("Freq Weight:")))
+        self.combo_freq = QComboBox()
+        self.combo_freq.addItems(['A', 'C', 'Z'])
+        self.combo_freq.currentTextChanged.connect(self.module.set_freq_weighting)
+        row1_layout.addWidget(self.combo_freq)
+        
+        row1_layout.addStretch()
+        
+        # Row 2 (Bandwidth, Time, Duration, Interval)
+        # Wrap if too wide? QHBoxLayout usually handles it ok or scrolls? No scroll here.
+        # Let's use FlowLayout? Or just keep rows.
+        
+        # Bandwidth
+        row2_layout.addWidget(QLabel(tr("Bandwidth:")))
+        self.combo_bw = QComboBox()
+        self.combo_bw.addItems(['20Hz - 20kHz', '20Hz - 12.5kHz', '20Hz - 8kHz'])
+        self.combo_bw.currentTextChanged.connect(self.module.set_bandwidth_mode)
+        row2_layout.addWidget(self.combo_bw)
+        
+        # Time Weight
+        row2_layout.addWidget(QLabel(tr("Time Weight:")))
+        self.combo_time = QComboBox()
+        self.combo_time.addItems(['FAST', 'SLOW', 'IMPULSE', '10ms'])
+        self.combo_time.currentTextChanged.connect(self.module.set_time_weighting)
+        row2_layout.addWidget(self.combo_time)
+        
+        row2_layout.addStretch() # Spacer
+        
+        row3_layout = QHBoxLayout() # New row to avoid cramming
+        
+        # Duration
+        row3_layout.addWidget(QLabel(tr("Duration:")))
+        self.combo_duration = QComboBox()
+        self.combo_duration.addItems(['Continuous', '1s', '3s', '5s', '10s', '20s', '30s', '1min'])
+        self.combo_duration.currentTextChanged.connect(self.module.set_target_duration)
+        row3_layout.addWidget(self.combo_duration)
+        
+        # Sampling Period
+        row3_layout.addWidget(QLabel(tr("Lp Interval:")))
+        self.spin_interval = QDoubleSpinBox()
+        self.spin_interval.setRange(0.01, 10.0)
+        self.spin_interval.setSingleStep(0.1)
+        self.spin_interval.setValue(0.1)
+        self.spin_interval.setSuffix(" s")
+        self.spin_interval.valueChanged.connect(self.module.set_sampling_period)
+        row3_layout.addWidget(self.spin_interval)
+        
+        row3_layout.addStretch()
+
+        settings_layout.addLayout(row1_layout)
+        settings_layout.addLayout(row2_layout)
+        settings_layout.addLayout(row3_layout)
+        settings_layout.addStretch()
+        
+        tab_settings.setLayout(settings_layout)
+        self.tabs.addTab(tab_settings, tr("Settings"))
+        
+        layout.addWidget(self.tabs)
         self.setLayout(layout)
 
     def on_start_toggle(self, checked):
@@ -626,4 +744,20 @@ class SoundLevelMeterWidget(QWidget):
                 # Apply calibration
                 display_val = val + cal_db
                 lbl.setText(f"{display_val:.1f} dB")
+                
+        # Update LN Stats
+        # For efficiency, maybe don't calculate on every 50ms GUI update if history is huge?
+        # But let's try.
+        if self.module.ln_history:
+            ln_stats = self.module.calculate_ln_statistics()
+            for key, lbl in self.ln_labels.items():
+                val = ln_stats.get(key, -np.inf)
+                if np.isinf(val) or np.isnan(val):
+                    lbl.setText("--.-")
+                else:
+                    display_val = val + cal_db
+                    lbl.setText(f"{display_val:.1f} dB")
+        else:
+            for lbl in self.ln_labels.values():
+                lbl.setText("--.-")
 
