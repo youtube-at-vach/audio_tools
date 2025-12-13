@@ -5,7 +5,7 @@ import os
 import time
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
                              QFileDialog, QComboBox, QCheckBox, QGroupBox, QProgressBar,
-                             QStyle, QMessageBox, QProgressDialog)
+                             QStyle, QMessageBox, QProgressDialog, QSlider)
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
@@ -52,6 +52,7 @@ class RecorderPlayer(MeasurementModule):
         self.is_playing = False
         self.is_recording = False
         self.loop_playback = False
+        self.playback_gain_db = 0.0
         
         # Buffers
         self.playback_buffer = None # numpy array (samples, channels)
@@ -183,6 +184,11 @@ class RecorderPlayer(MeasurementModule):
                 
                 # Get chunk from buffer
                 chunk = self.playback_buffer[self.playback_pos : self.playback_pos + to_copy]
+
+                # Apply digital gain/attenuation in linear domain
+                if self.playback_gain_db != 0.0:
+                    gain = 10 ** (self.playback_gain_db / 20.0)
+                    chunk = chunk * gain
                 
                 # Target slice in outdata
                 out_slice = outdata[current_idx : current_idx + to_copy]
@@ -284,6 +290,20 @@ class RecorderPlayerWidget(QWidget):
         self.out_mode_combo.currentTextChanged.connect(self.on_out_mode_changed)
         out_layout.addWidget(self.out_mode_combo)
         pb_layout.addLayout(out_layout)
+
+        # Playback Gain (digital)
+        gain_layout = QHBoxLayout()
+        gain_layout.addWidget(QLabel(tr("Playback Gain:")))
+        self.gain_slider = QSlider(Qt.Orientation.Horizontal)
+        self.gain_slider.setRange(-60, 12)  # dB
+        self.gain_slider.setValue(0)
+        self.gain_slider.setTickInterval(6)
+        self.gain_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.gain_slider.valueChanged.connect(self.on_gain_changed)
+        gain_layout.addWidget(self.gain_slider)
+        self.gain_value_label = QLabel(tr("0 dB"))
+        gain_layout.addWidget(self.gain_value_label)
+        pb_layout.addLayout(gain_layout)
 
         # Output Destination
         pb_group.setLayout(pb_layout)
@@ -400,6 +420,10 @@ class RecorderPlayerWidget(QWidget):
 
     def on_out_mode_changed(self, text):
         self.module.output_mode = self.out_mode_combo.currentData()
+
+    def on_gain_changed(self, value):
+        self.module.playback_gain_db = float(value)
+        self.gain_value_label.setText(tr("{0} dB").format(value))
 
     def on_record_toggle(self):
         if self.rec_btn.isChecked():
