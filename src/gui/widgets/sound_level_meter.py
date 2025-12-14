@@ -530,6 +530,54 @@ class SoundLevelMeter(MeasurementModule):
             'Lave': lave
         }
 
+    def get_ln_histogram(self, bin_size=0.5):
+        """
+        Calculate histogram of LN history.
+        
+        Args:
+            bin_size (float): Bin size in dB.
+            
+        Returns:
+            tuple: (bins, probabilities)
+                   bins: Center frequencies of bins
+                   probabilities: Normalized count (pdf) or absolute count? 
+                                  Let's return normalized probability (sum=100% or 1.0)
+        """
+        if not self.ln_history:
+            return np.array([]), np.array([])
+            
+        data_linear = np.array(self.ln_history)
+        data_db = 10 * np.log10(data_linear + 1e-12)
+        
+        # Determine range
+        min_val = np.min(data_db)
+        max_val = np.max(data_db)
+        
+        # Align bins to bin_size
+        start = np.floor(min_val / bin_size) * bin_size
+        end = np.ceil(max_val / bin_size) * bin_size
+        
+        # Create bins edges
+        # If flat, make sure we have at least one bin
+        if start == end:
+            end += bin_size
+            
+        bins = np.arange(start, end + bin_size, bin_size)
+        
+        hist, bin_edges = np.histogram(data_db, bins=bins, density=False)
+        
+        # Calculate centers
+        centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        
+        # Normalize to percent?
+        total = np.sum(hist)
+        if total > 0:
+            probs = (hist / total) * 100.0
+        else:
+            probs = hist
+            
+        return centers, probs
+
 
 class SoundLevelMeterWidget(QWidget):
     def __init__(self, module: SoundLevelMeter):
@@ -542,197 +590,252 @@ class SoundLevelMeterWidget(QWidget):
         self.timer.start(50) # 20Hz refresh
 
     def init_ui(self):
-        layout = QVBoxLayout()
+        # Main Layout: Sidebar (Left) + Content (Right)
+        main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
         
-        # --- Top Control Bar (Persistent) ---
-        top_bar = QHBoxLayout()
+        # --- Sidebar ---
+        self.sidebar = QWidget()
+        self.sidebar.setFixedWidth(250)
+        sidebar_layout = QVBoxLayout()
+        sidebar_layout.setContentsMargins(10, 10, 10, 10)
+        
+        # Controls Group
+        controls_group = QGroupBox(tr("Controls"))
+        controls_layout = QVBoxLayout()
         
         self.btn_start = QPushButton(tr("Start"))
         self.btn_start.setCheckable(True)
+        self.btn_start.setMinimumHeight(40)
+        self.btn_start.setStyleSheet("font-weight: bold; font-size: 14px;")
         self.btn_start.toggled.connect(self.on_start_toggle)
-        top_bar.addWidget(self.btn_start)
+        controls_layout.addWidget(self.btn_start)
         
         self.btn_reset = QPushButton(tr("Reset"))
         self.btn_reset.clicked.connect(self.module.reset_measurements)
-        top_bar.addWidget(self.btn_reset)
+        controls_layout.addWidget(self.btn_reset)
         
-        top_bar.addStretch()
-        layout.addLayout(top_bar)
+        controls_group.setLayout(controls_layout)
+        sidebar_layout.addWidget(controls_group)
         
-        # --- Settings (Always Visible) ---
+        # Settings Group
         settings_group = QGroupBox(tr("Settings"))
         settings_layout = QVBoxLayout()
         
-        row1_layout = QHBoxLayout()
-        row2_layout = QHBoxLayout()
-        
         # Channel
-        row1_layout.addWidget(QLabel(tr("Channel:")))
+        settings_layout.addWidget(QLabel(tr("Channel:")))
         self.combo_channel = QComboBox()
         self.combo_channel.addItems(['L', 'R'])
         self.combo_channel.currentIndexChanged.connect(self.module.set_channel)
-        row1_layout.addWidget(self.combo_channel)
+        settings_layout.addWidget(self.combo_channel)
         
         # Freq Weight
-        row1_layout.addWidget(QLabel(tr("Freq Weight:")))
+        settings_layout.addWidget(QLabel(tr("Freq Weight:")))
         self.combo_freq = QComboBox()
         self.combo_freq.addItems(['A', 'C', 'Z'])
         self.combo_freq.currentTextChanged.connect(self.module.set_freq_weighting)
-        row1_layout.addWidget(self.combo_freq)
-        
-        # Bandwidth
-        row1_layout.addWidget(QLabel(tr("Bandwidth:")))
-        self.combo_bw = QComboBox()
-        self.combo_bw.addItems(['20Hz - 20kHz', '20Hz - 12.5kHz', '20Hz - 8kHz'])
-        self.combo_bw.currentTextChanged.connect(self.module.set_bandwidth_mode)
-        row1_layout.addWidget(self.combo_bw)
-        
-        row1_layout.addStretch()
+        settings_layout.addWidget(self.combo_freq)
         
         # Time Weight
-        row2_layout.addWidget(QLabel(tr("Time Weight:")))
+        settings_layout.addWidget(QLabel(tr("Time Weight:")))
         self.combo_time = QComboBox()
         self.combo_time.addItems(['FAST', 'SLOW', 'IMPULSE', '10ms'])
         self.combo_time.currentTextChanged.connect(self.module.set_time_weighting)
-        row2_layout.addWidget(self.combo_time)
+        settings_layout.addWidget(self.combo_time)
+        
+        # Bandwidth
+        settings_layout.addWidget(QLabel(tr("Bandwidth:")))
+        self.combo_bw = QComboBox()
+        self.combo_bw.addItems(['20Hz - 20kHz', '20Hz - 12.5kHz', '20Hz - 8kHz'])
+        self.combo_bw.currentTextChanged.connect(self.module.set_bandwidth_mode)
+        settings_layout.addWidget(self.combo_bw)
         
         # Duration
-        row2_layout.addWidget(QLabel(tr("Duration:")))
+        settings_layout.addWidget(QLabel(tr("Duration:")))
         self.combo_duration = QComboBox()
         self.combo_duration.addItems(['Continuous', '1s', '3s', '5s', '10s', '20s', '30s', '1min'])
         self.combo_duration.currentTextChanged.connect(self.module.set_target_duration)
-        row2_layout.addWidget(self.combo_duration)
+        settings_layout.addWidget(self.combo_duration)
         
         # Sampling Period
-        row2_layout.addWidget(QLabel(tr("Lp Interval:")))
+        settings_layout.addWidget(QLabel(tr("Lp Interval:")))
         self.spin_interval = QDoubleSpinBox()
         self.spin_interval.setRange(0.01, 10.0)
         self.spin_interval.setSingleStep(0.1)
         self.spin_interval.setValue(0.1)
         self.spin_interval.setSuffix(" s")
         self.spin_interval.valueChanged.connect(self.module.set_sampling_period)
-        row2_layout.addWidget(self.spin_interval)
+        settings_layout.addWidget(self.spin_interval)
         
-        row2_layout.addStretch()
-
-        settings_layout.addLayout(row1_layout)
-        settings_layout.addLayout(row2_layout)
         settings_group.setLayout(settings_layout)
-        layout.addWidget(settings_group)
+        sidebar_layout.addWidget(settings_group)
         
-        # --- Tabs ---
+        sidebar_layout.addStretch()
+        self.sidebar.setLayout(sidebar_layout)
+        
+        # --- Main Content Area ---
+        content_area = QWidget()
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(10, 10, 10, 10)
+        
+        # 1. Main Display (Big Numbers)
+        display_frame = QWidget()
+        display_frame.setStyleSheet("background-color: #000; border-radius: 8px; margin-bottom: 10px;")
+        display_layout = QHBoxLayout()
+        
+        # Lp Display
+        self.disp_lp = self._create_big_display(tr("Instantaneous (Lp)"), "#00ff00")
+        display_layout.addWidget(self.disp_lp['container'])
+        
+        # Leq Display
+        self.disp_leq = self._create_big_display(tr("Equivalent (Leq)"), "#00ccff")
+        display_layout.addWidget(self.disp_leq['container'])
+        
+        display_frame.setLayout(display_layout)
+        content_layout.addWidget(display_frame)
+        
+        # 2. Tabs for Graphs and Stats
         self.tabs = QTabWidget()
         
-        # Tab 1: Measurements (Main)
-        tab_measure = QWidget()
-        measure_layout = QVBoxLayout()
+        # Tab 1: Histogram (Graph)
+        self.tab_hist = QWidget()
+        hist_layout = QVBoxLayout()
         
-        # Measurement Grid
-        grid_layout = QGridLayout()
-        self.labels = {}
-        metrics = [
-            ('Lp', tr("Sound Pressure Level"), 0, 0),
-            ('Leq', tr("Equivalent Continuous Level"), 0, 1),
-            ('Lmax', tr("Maximum Level"), 1, 0),
-            ('Lmin', tr("Minimum Level"), 1, 1),
-            ('Lpeak', tr("Peak Level"), 2, 0),
-            ('LE', tr("Sound Exposure Level"), 2, 1)
-        ]
+        self.plot_widget = pg.PlotWidget()
+        self.plot_widget.setBackground('#111')
+        self.plot_widget.showGrid(x=True, y=True)
+        self.plot_widget.setLabel('bottom', "Level", units='dB')
+        self.plot_widget.setLabel('left', "Probability", units='%')
         
-        font_style = "font-size: 24px; font-weight: bold; color: #00ff00;"
+        self.hist_item = pg.BarGraphItem(x=[0], height=[0], width=0.4, brush='g')
+        self.plot_widget.addItem(self.hist_item)
         
-        for key, desc, r, c in metrics:
-            container = QWidget()
-            v_box = QVBoxLayout()
-            
-            title = QLabel(key)
-            title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            title.setStyleSheet("font-weight: bold; font-size: 14pt;")
-            
-            desc_lbl = QLabel(desc)
-            desc_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            desc_lbl.setStyleSheet("font-size: 10pt; color: #aaa;")
-            
-            value_lbl = QLabel("--.-")
-            value_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            value_lbl.setStyleSheet(font_style)
-            
-            v_box.addWidget(title)
-            v_box.addWidget(desc_lbl)
-            v_box.addWidget(value_lbl)
-            container.setLayout(v_box)
-            container.setStyleSheet("background-color: #111; border-radius: 5px; margin: 5px;")
-            
-            grid_layout.addWidget(container, r, c)
-            self.labels[key] = value_lbl
-            
-        measure_layout.addLayout(grid_layout)
-        measure_layout.addStretch()
-        tab_measure.setLayout(measure_layout)
-        self.tabs.addTab(tab_measure, tr("Measurements"))
+        hist_layout.addWidget(self.plot_widget)
+        self.tab_hist.setLayout(hist_layout)
+        self.tabs.addTab(self.tab_hist, tr("Histogram (LN)"))
         
-        # Tab 2: Statistics (LN)
-        tab_stats = QWidget()
+        # Tab 2: Statistics (LN Table)
+        self.tab_stats = QWidget()
         stats_layout = QVBoxLayout()
-        
         ln_grid = QGridLayout()
         self.ln_labels = {}
         ln_metrics = [
-            ('L5', 'L5', 0, 0), ('L10', 'L10', 0, 1), ('L50', 'L50', 0, 2), ('L90', 'L90', 0, 3), ('L95', 'L95', 0, 4),
-            ('Lhigh', 'Lhigh', 1, 0), ('Llow', 'Llow', 1, 1), ('Lave', 'Lave', 1, 2)
+            ('L5', 'L5', 0, 0), ('L10', 'L10', 0, 1), ('L50', 'L50', 0, 2), ('L90', 'L90', 0, 3), 
+            ('L95', 'L95', 1, 0), ('Lhigh', 'Lhigh', 1, 1), ('Llow', 'Llow', 1, 2), ('Lave', 'Lave', 1, 3)
         ]
-        
-        ln_font_style = "font-size: 18px; font-weight: bold; color: #00ffff;"
+        ln_font_style = "font-size: 24px; font-weight: bold; color: #00ffff;"
         
         for key, title_text, r, c in ln_metrics:
             container = QWidget()
             v_box = QVBoxLayout()
-            
             title = QLabel(title_text)
             title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            title.setStyleSheet("font-weight: bold; font-size: 12pt; color: #eee;")
-
+            title.setStyleSheet("font-weight: bold; font-size: 14pt; color: #eee;")
             val_lbl = QLabel("--.-")
             val_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             val_lbl.setStyleSheet(ln_font_style)
-            
             v_box.addWidget(title)
             v_box.addWidget(val_lbl)
             container.setLayout(v_box)
-            container.setStyleSheet("background-color: #222; border-radius: 4px; margin: 2px;")
-            
+            container.setStyleSheet("background-color: #222; border-radius: 6px; margin: 4px;")
             ln_grid.addWidget(container, r, c)
             self.ln_labels[key] = val_lbl
             
         stats_layout.addLayout(ln_grid)
         stats_layout.addStretch()
-        tab_stats.setLayout(stats_layout)
-        self.tabs.addTab(tab_stats, tr("Statistics"))
+        self.tab_stats.setLayout(stats_layout)
+        self.tabs.addTab(self.tab_stats, tr("Statistics"))
         
+        # Tab 3: Detailed Metrics
+        self.tab_metrics = QWidget()
+        metrics_layout = QVBoxLayout()
+        m_grid = QGridLayout()
+        self.metric_labels = {}
+        metrics_list = [
+            ('Lmax', tr("Maximum Level"), 0, 0),
+            ('Lmin', tr("Minimum Level"), 0, 1),
+            ('Lpeak', tr("Peak Level"), 1, 0),
+            ('LE', tr("Sound Exposure Level"), 1, 1)
+        ]
+        
+        for key, desc, r, c in metrics_list:
+            container = QWidget()
+            v_box = QVBoxLayout()
+            lbl_title = QLabel(key)
+            lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl_title.setStyleSheet("font-weight: bold; font-size: 16pt;")
+            
+            lbl_desc = QLabel(desc)
+            lbl_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl_desc.setStyleSheet("font-size: 11pt; color: #aaa;")
+            
+            lbl_val = QLabel("--.-")
+            lbl_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl_val.setStyleSheet("font-size: 28px; font-weight: bold; color: #ffaa00;")
+            
+            v_box.addWidget(lbl_title)
+            v_box.addWidget(lbl_desc)
+            v_box.addWidget(lbl_val)
+            container.setLayout(v_box)
+            container.setStyleSheet("background-color: #1a1a1a; border-radius: 6px; margin: 5px;")
+            m_grid.addWidget(container, r, c)
+            self.metric_labels[key] = lbl_val
+            
+        metrics_layout.addLayout(m_grid)
+        metrics_layout.addStretch()
+        self.tab_metrics.setLayout(metrics_layout)
+        self.tabs.addTab(self.tab_metrics, tr("Details"))
+        
+        content_layout.addWidget(self.tabs)
+        content_area.setLayout(content_layout)
+        
+        # Assemble
+        main_layout.addWidget(self.sidebar)
+        main_layout.addWidget(content_area)
+        self.setLayout(main_layout)
 
+    def _create_big_display(self, title, color):
+        container = QWidget()
+        layout = QVBoxLayout()
         
-        layout.addWidget(self.tabs)
-        self.setLayout(layout)
+        lbl_title = QLabel(title)
+        lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_title.setStyleSheet("color: #aaa; font-size: 14pt; margin-top: 10px;")
+        
+        lbl_val = QLabel("--.-")
+        lbl_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_val.setStyleSheet(f"color: {color}; font-size: 64px; font-weight: bold;")
+        
+        lbl_unit = QLabel("dB")
+        lbl_unit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_unit.setStyleSheet(f"color: {color}; font-size: 18pt; margin-bottom: 15px;")
+        
+        layout.addWidget(lbl_title)
+        layout.addWidget(lbl_val)
+        layout.addWidget(lbl_unit)
+        container.setLayout(layout)
+        return {'container': container, 'label': lbl_val}
 
     def on_start_toggle(self, checked):
         if checked:
             self.btn_start.setText(tr("Stop"))
+            self.btn_start.setStyleSheet("background-color: #aa3333; font-weight: bold; font-size: 14px;")
             self.module.start_analysis()
         else:
             self.btn_start.setText(tr("Start"))
+            self.btn_start.setStyleSheet("font-weight: bold; font-size: 14px;")
             self.module.stop_analysis()
 
     def update_display(self):
         # Check if stopped automatically
         if not self.module.is_running and self.btn_start.isChecked():
             self.btn_start.setChecked(False)
-            self.btn_start.setText(tr("Start"))
-            self.module.stop_analysis()
+            self.on_start_toggle(False)
 
         if not self.module.is_running:
             return
             
-        # Get calibration offset from AudioEngine
+        # Get calibration offset
         cal_db = 0.0
         if hasattr(self.module.audio_engine, 'calibration'):
              cal_ptr = self.module.audio_engine.calibration
@@ -741,28 +844,46 @@ class SoundLevelMeterWidget(QWidget):
         
         vals = self.module.results
         
-        for key, lbl in self.labels.items():
-            val = vals.get(key, -np.inf)
-            if np.isinf(val):
-                lbl.setText("--.-")
-            else:
-                # Apply calibration
-                display_val = val + cal_db
-                lbl.setText(f"{display_val:.1f} dB")
-                
-        # Update LN Stats
-        # For efficiency, maybe don't calculate on every 50ms GUI update if history is huge?
-        # But let's try.
-        if self.module.ln_history:
-            ln_stats = self.module.calculate_ln_statistics()
-            for key, lbl in self.ln_labels.items():
-                val = ln_stats.get(key, -np.inf)
-                if np.isinf(val) or np.isnan(val):
-                    lbl.setText("--.-")
-                else:
-                    display_val = val + cal_db
-                    lbl.setText(f"{display_val:.1f} dB")
-        else:
-            for lbl in self.ln_labels.values():
-                lbl.setText("--.-")
+        # Helper formatter
+        def fmt(v):
+            return f"{v + cal_db:.1f}" if not np.isinf(v) and not np.isnan(v) else "--.-"
+        
+        # Update Big Displays
+        self.disp_lp['label'].setText(fmt(vals.get('Lp', -np.inf)))
+        self.disp_leq['label'].setText(fmt(vals.get('Leq', -np.inf)))
+        
+        # Update Details
+        for key, lbl in self.metric_labels.items():
+            lbl.setText(fmt(vals.get(key, -np.inf)) + " dB")
+            
+        # Update Stats (LN)
+        # Always calculate? It might be heavy if history is huge.
+        # But user wants to see it 'live' usually.
+        # Only calculate if tab is visible?
+        # Optimization: Only calculate if current tab is Histogram or Stats
+        current_idx = self.tabs.currentIndex()
+        is_hist_tab = (self.tabs.widget(current_idx) == self.tab_hist)
+        is_stats_tab = (self.tabs.widget(current_idx) == self.tab_stats)
+        
+        if (is_hist_tab or is_stats_tab) and self.module.ln_history:
+            # We can optimize by not calculating every GUI frame (50ms), maybe every 250ms?
+            # But let's try direct first.
+            
+            # For Stats tab
+            if is_stats_tab:
+                ln_stats = self.module.calculate_ln_statistics()
+                for key, lbl in self.ln_labels.items():
+                    val = ln_stats.get(key, -np.inf)
+                    lbl.setText(fmt(val) + " dB")
+            
+            # For Histogram tab
+            if is_hist_tab:
+                centers, probs = self.module.get_ln_histogram(bin_size=0.5)
+                if len(centers) > 0:
+                    # Update bar graph
+                    # BarGraphItem needs x, height, width
+                    self.hist_item.setOpts(x=centers, height=probs, width=0.4)
+                    
+                    # Auto range y?
+                    # self.plot_widget.setYRange(0, np.max(probs)*1.1)
 
