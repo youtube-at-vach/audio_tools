@@ -653,7 +653,7 @@ class SoundLevelMeterWidget(QWidget):
         # Duration
         settings_layout.addWidget(QLabel(tr("Duration:")))
         self.combo_duration = QComboBox()
-        self.combo_duration.addItems(['Continuous', '1s', '3s', '5s', '10s', '20s', '30s', '1min'])
+        self.combo_duration.addItems(['Continuous', '1s', '3s', '5s', '10s', '20s', '30s', '1min', '2min', '5min', '10min', '15min', '30min'])
         self.combo_duration.currentTextChanged.connect(self.module.set_target_duration)
         settings_layout.addWidget(self.combo_duration)
         
