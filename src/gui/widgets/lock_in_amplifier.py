@@ -168,18 +168,11 @@ class LockInAmplifier(MeasurementModule):
             self.ref_freq = 0.0
             
         # Calculate Coherence (Spectral Purity)
-        # Coherence = Magnitude of component at Ref Freq / Total RMS
-        # We generate an ideal phasor at the estimated ref_freq for the TRIMMED duration
-        # Note: We need to align phase? No, magnitude of projection handles phase diff.
-        # But we need the time vector to be relative to the start of the trimmed block?
-        # Actually, just relative time 0 to T is fine, as the phase offset will be absorbed in the complex mean.
-        
+        # Coherence = magnitude of component at ref_freq / total peak level
+        # Use the same coherent projection used by the lock-in detector.
         t_coh = np.arange(len(ref_trimmed)) / self.audio_engine.sample_rate
-        ideal_phasor = np.exp(1j * 2 * np.pi * self.ref_freq * t_coh)
-        
-        # Project ref onto ideal phasor
-        # ref_component = mean(ref * conj(ideal_phasor)) * 2 (for peak)
-        ref_component = np.abs(np.mean(ref_trimmed * np.conj(ideal_phasor))) * 2
+        osc_coh = np.exp(-1j * 2 * np.pi * self.ref_freq * t_coh)
+        ref_component = np.abs(2 * np.mean(ref_trimmed * osc_coh))
         ref_rms_val = np.sqrt(np.mean(ref_trimmed**2))
         ref_peak_val = ref_rms_val * np.sqrt(2)
         
@@ -195,32 +188,35 @@ class LockInAmplifier(MeasurementModule):
             self.ref_coherence = 1.0
         
         # 2. Lock-in Detection
-        # Hilbert Transform to get analytic signal of Reference
-        # This gives us a complex phasor rotating at the reference frequency
-        # We already computed ref_analytic above
-        # ref_analytic = hilbert(ref)
-        
-        # Normalize to unit magnitude to extract just the phase information
-        # Avoid divide by zero
-        ref_phasor = ref_analytic / (np.abs(ref_analytic) + 1e-12)
-        
-        # Apply Harmonic Order
-        # If we want to measure the n-th harmonic, we need a reference at n * freq.
-        # The phase of the n-th harmonic is n * theta.
-        # Since ref_phasor = exp(j * theta), ref_phasor^n = exp(j * n * theta).
-        if self.harmonic_order > 1:
-            ref_phasor = ref_phasor ** self.harmonic_order
-        
-        # Demodulate: Multiply Signal by Conjugate of Reference Phasor
-        # Product = Sig * exp(-j*theta_ref)
-        # If Sig = A * cos(w*t + phi) = (A/2)*(exp(j(wt+phi)) + exp(-j(wt+phi)))
-        # Ref = exp(j*wt)
-        # Product = (A/2) * (exp(j*phi) + exp(-j(2wt+phi)))
-        # Lowpass filtering removes the 2wt term, leaving (A/2)*exp(j*phi)
-        product = sig * np.conj(ref_phasor)
-        
-        # Low-pass filter (Mean over buffer)
-        result = np.mean(product)
+        # Coherent demodulation (single-bin DFT) of both channels, then remove reference phase.
+        # This avoids Hilbert edge artifacts and stabilizes low-frequency phase when only a
+        # few cycles fit in the buffer.
+        ref_freq = self.ref_freq
+        if not np.isfinite(ref_freq) or ref_freq <= 0:
+            self.current_magnitude = 0.0
+            self.current_phase = 0.0
+            self.current_x = 0.0
+            self.current_y = 0.0
+            return
+
+        demod_freq = ref_freq * max(int(self.harmonic_order), 1)
+        t = np.arange(len(sig)) / self.audio_engine.sample_rate
+        osc = np.exp(-1j * 2 * np.pi * demod_freq * t)
+
+        # Complex amplitudes (peak) at demod_freq
+        sig_c = 2 * np.mean(sig * osc)
+        ref_c = 2 * np.mean(ref * osc)
+
+        # Remove reference phase while keeping signal amplitude.
+        # Then correct scalloping loss using the reference channel's time-domain peak estimate.
+        # For a near-sinusoidal reference, ref_rms*sqrt(2) ≈ A_ref (peak), while |ref_c| = A_ref*|H|.
+        # correction ≈ 1/|H| and applies equally to the signal projection at the same frequency.
+        ref_amp_est = ref_rms * np.sqrt(2)
+        ref_proj_mag = np.abs(ref_c)
+        correction = ref_amp_est / (ref_proj_mag + 1e-12)
+
+        # rel = A_sig * exp(j*(phi_sig - phi_ref))
+        result = (sig_c * np.conj(ref_c) / (ref_proj_mag + 1e-12)) * correction
         
         # Averaging
         self.history.append(result)
@@ -229,8 +225,8 @@ class LockInAmplifier(MeasurementModule):
             
         avg_result = np.mean(self.history)
         
-        # Magnitude is 2 * abs(result)
-        self.current_magnitude = 2 * np.abs(avg_result)
+        # Magnitude is abs(result) (peak)
+        self.current_magnitude = np.abs(avg_result)
         
         # Phase
         self.current_phase = np.degrees(np.angle(avg_result))
