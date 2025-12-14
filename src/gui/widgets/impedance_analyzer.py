@@ -142,30 +142,46 @@ class ImpedanceAnalyzer(MeasurementModule):
         # (e.g. the first sample of the buffer is t=0).
         # As long as V and I are from the same buffer, the relative phase is preserved.
         
-        # Create a local reference sine/cosine for demodulation
-        # We assume the buffer contains integer number of cycles or we use windowing/long buffer.
-        # Lock-in usually multiplies by cos(wt) and sin(wt).
-        # Let's generate a reference vector for the buffer duration.
-        # We don't know the absolute time, so the absolute phase will be drifting if freq is not exact bin.
-        # BUT, we calculate V and I using the SAME reference vector.
-        # So Phase(V) will drift, Phase(I) will drift, but Phase(V) - Phase(I) will be constant.
+        # Coherent demodulation (single-bin DFT) at gen_frequency.
+        # Use the voltage channel as the phase reference to stabilize displayed phases and
+        # apply a scalloping-loss correction derived from the voltage channel's time-domain RMS.
+        n = len(sig_v)
+        sr = self.audio_engine.sample_rate
+        f0 = float(self.gen_frequency)
+
+        # Reference present check (avoid unstable division)
+        v_rms = float(np.sqrt(np.mean(sig_v ** 2)))
+        if v_rms < 0.001:
+            self.meas_v_complex = 0j
+            self.meas_i_complex = 0j
+            self.meas_z_complex = 0j
+            return
+
+        t = np.arange(n) / sr
+        osc = np.exp(-1j * 2 * np.pi * f0 * t)
+
+        # Complex amplitudes (peak) at f0
+        v_raw = 2 * np.mean(sig_v * osc)
+        i_raw = 2 * np.mean(sig_i * osc)
+
+        # Scalloping correction: for a near-sinusoidal V, v_rms*sqrt(2) ≈ V_peak.
+        # |v_raw| = V_peak*|H| when f0 is not an integer bin, so correction ≈ 1/|H|.
+        v_peak_est = v_rms * np.sqrt(2)
+        v_proj_mag = np.abs(v_raw)
+        correction = v_peak_est / (v_proj_mag + 1e-12)
+
+        v_corr = v_raw * correction
+        i_corr = i_raw * correction
+
+        # Rotate so that voltage phase is 0° (purely real positive), and current/impedance phases
+        # are displayed relative to voltage.
+        v_ref = v_corr / (np.abs(v_corr) + 1e-12)
+        v_rot = v_corr * np.conj(v_ref)
+        i_rot = i_corr * np.conj(v_ref)
         
-        t = np.arange(len(sig_v)) / self.audio_engine.sample_rate
-        ref_cos = np.cos(2 * np.pi * self.gen_frequency * t)
-        ref_sin = np.sin(2 * np.pi * self.gen_frequency * t)
-        ref_phasor = ref_cos - 1j * ref_sin # exp(-jwt)
-        
-        # Demodulate V
-        # V_complex = mean(sig_v * ref_phasor) * 2
-        v_raw = np.mean(sig_v * ref_phasor) * 2
-        
-        # Demodulate I
-        # I_complex = mean(sig_i * ref_phasor) * 2
-        i_raw = np.mean(sig_i * ref_phasor) * 2
-        
-        # Averaging
-        self.history_v.append(v_raw)
-        self.history_i.append(i_raw)
+        # Averaging (after phase normalization)
+        self.history_v.append(v_rot)
+        self.history_i.append(i_rot)
         
         while len(self.history_v) > self.averaging_count:
             self.history_v.popleft()
