@@ -45,6 +45,10 @@ class LockInAmplifier(MeasurementModule):
         self.ref_level = 0.0
         self.ref_coherence = 0.0
         
+        # Statistics
+        self.current_magnitude_std = 0.0
+        self.current_phase_std = 0.0
+        
         # Averaging
         self.averaging_count = 1
         self.history = deque(maxlen=300)
@@ -231,6 +235,37 @@ class LockInAmplifier(MeasurementModule):
         # Phase
         self.current_phase = np.degrees(np.angle(avg_result))
         
+        # Statistics
+        if len(self.history) > 1:
+            # Magnitude Std
+            self.current_magnitude_std = np.std(np.abs(self.history))
+            
+            # Phase Std (Account for wrapping)
+            phases = np.angle(self.history)
+            # Use circular standard deviation for phase? 
+            # Or just unwrap if spread is small. 
+            # Since lock-in phase is usually stable, standard std on unwrapped or complex phasor is fine.
+            # Using scipy.stats.circstd is better but we might not want to import it if not needed.
+            # Simple approximation: std of angle of unit vectors
+            # R = |sum(exp(i*theta))| / N
+            # std = sqrt(-2*ln(R))
+            # But let's stick to simple std on unwrapped phases for now, it's robust enough for "display precision"
+            # We assume the phase doesn't wrap around 180/-180 wildly within the averaging window if it's a stable signal.
+            # But to be safe, we can use the angular spread.
+            
+            # Just use numpy std on the complex result's angle? 
+            # No, that wraps.
+            # Let's use the std of the complex values relative to the mean, projected onto the perpendicular?
+            # Or just:
+            # phase_variance = E[phi^2] - E[phi]^2? No.
+            
+            # Let's simply compute std on unwrapped phases.
+            unwrapped_phases = np.unwrap(phases)
+            self.current_phase_std = np.degrees(np.std(unwrapped_phases))
+        else:
+            self.current_magnitude_std = 0.0
+            self.current_phase_std = 0.0
+        
         # Apply Calibration
         if self.apply_calibration:
             mag_corr, phase_corr = self.audio_engine.calibration.get_frequency_correction(self.gen_frequency)
@@ -337,6 +372,31 @@ class LockInAmplifierWidget(QWidget):
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_ui)
         self.timer.setInterval(100) # 10Hz update
+
+    def get_decimal_places(self, val_std, val_abs=None, is_db=False, default=3, max_places=6):
+        if val_std <= 0: return default
+        try:
+            if is_db:
+                if val_abs is None or val_abs <= 1e-12: return default
+                # 8.686 * (std / abs)
+                std_to_use = 8.686 * (val_std / val_abs)
+            else:
+                std_to_use = val_std
+            
+            if std_to_use <= 1e-9: return max_places
+            places = -int(np.floor(np.log10(std_to_use)))
+            
+            # Adjust strategy: 
+            # If std is 0.001, places=3 -> shows noise digit.
+            # If we want to hide noise, we might subtract 1?
+            # User wants "Display optimal". Usually means showing the stable digits + 1 noise digit.
+            # So places is correct.
+            
+            if places < 0: places = 0
+            if places > max_places: places = max_places
+            return places
+        except:
+            return default
 
     def init_ui(self):
         main_layout = QVBoxLayout()
@@ -829,6 +889,26 @@ class LockInAmplifierWidget(QWidget):
             
         self.module.process_data()
         
+        # Calculate Precision
+        prec_mag = 3
+        prec_db = 3
+        prec_phase = 3
+        prec_xy = 6
+        
+        if self.module.averaging_count > 1 and len(self.module.history) > 1:
+            mag_std = self.module.current_magnitude_std
+            mag_abs = self.module.current_magnitude
+            phase_std = self.module.current_phase_std
+            
+            prec_mag = self.get_decimal_places(mag_std, default=3)
+            prec_db = self.get_decimal_places(mag_std, val_abs=mag_abs, is_db=True, default=3)
+            # Phase is usually noisier, default 3 might be high if noisy
+            prec_phase = self.get_decimal_places(phase_std, default=3)
+            
+            # For XY, use linear mag precision (approx)
+            prec_xy = prec_mag + 1
+            if prec_xy > 6: prec_xy = 6
+        
         # Update Meters
         mag_fs = self.module.current_magnitude
         phase = self.module.current_phase
@@ -843,7 +923,8 @@ class LockInAmplifierWidget(QWidget):
         if unit == "dBFS":
             if mag_fs > 0:
                 val = 20 * np.log10(mag_fs + 1e-12)
-                self.mag_label.setText(tr("{0:.3f} dBFS").format(val))
+                fmt = "{0:." + str(prec_db) + "f} dBFS"
+                self.mag_label.setText(tr(fmt).format(val))
             else:
                 self.mag_label.setText(tr("-inf dBFS"))
             self.mag_db_label.setText("") # Clear secondary
@@ -851,7 +932,8 @@ class LockInAmplifierWidget(QWidget):
         elif unit == "dBV":
             if v_rms > 0:
                 val = 20 * np.log10(v_rms + 1e-12)
-                self.mag_label.setText(tr("{0:.3f} dBV").format(val))
+                fmt = "{0:." + str(prec_db) + "f} dBV"
+                self.mag_label.setText(tr(fmt).format(val))
             else:
                 self.mag_label.setText(tr("-inf dBV"))
             self.mag_db_label.setText("")
@@ -859,36 +941,62 @@ class LockInAmplifierWidget(QWidget):
         elif unit == "dBu":
             if v_rms > 0:
                 val = 20 * np.log10((v_rms + 1e-12) / 0.7746)
-                self.mag_label.setText(tr("{0:.3f} dBu").format(val))
+                fmt = "{0:." + str(prec_db) + "f} dBu"
+                self.mag_label.setText(tr(fmt).format(val))
             else:
                 self.mag_label.setText(tr("-inf dBu"))
             self.mag_db_label.setText("")
             
         elif unit == "V":
-            self.mag_label.setText(tr("{0:.6f} V").format(v_rms))
+            fmt = "{0:." + str(prec_mag + 3) + "f} V" # V usually needs more decimal places than raw linear if < 1
+            if v_rms < 1.0: fmt = "{0:." + str(prec_mag + 4) + "f} V" # e.g. 0.00123
+            
+            # If prec_mag is calculated from FS (0-1), 
+            # if std(FS) = 1e-6 (6 places), then std(V) ~ 1e-6 * sensitivity.
+            # So places should be roughly same or +sensitivity factor.
+            # Let's use simple logic: recalculate prec for V? 
+            # or just use prec_mag + 2 safe buffer?
+            # Re-calculating proper clean precision for V:
+            # std_v = mag_std * sensitivity / sqrt(2)
+            # prec_v = get_decimal_places(std_v)
+            if self.module.averaging_count > 1:
+                std_v = self.module.current_magnitude_std * sensitivity / np.sqrt(2)
+                prec_v_val = self.get_decimal_places(std_v, default=6)
+                fmt = "{0:." + str(prec_v_val) + "f} V"
+            else:
+                fmt = "{0:.6f} V"
+
+            self.mag_label.setText(tr(fmt).format(v_rms))
             # Show dBFS as secondary
             if mag_fs > 0:
                 db = 20 * np.log10(mag_fs + 1e-12)
-                self.mag_db_label.setText(tr("{0:.3f} dBFS").format(db))
+                fmt_db = "{0:." + str(prec_db) + "f} dBFS"
+                self.mag_db_label.setText(tr(fmt_db).format(db))
             else:
                 self.mag_db_label.setText(tr("-inf dBFS"))
                 
         elif unit == "mV":
-            self.mag_label.setText(tr("{0:.3f} mV").format(v_rms * 1000))
+            # std_mv = std_v * 1000
+            if self.module.averaging_count > 1:
+                std_mv = self.module.current_magnitude_std * sensitivity / np.sqrt(2) * 1000
+                prec_mv_val = self.get_decimal_places(std_mv, default=3)
+                fmt = "{0:." + str(prec_mv_val) + "f} mV"
+            else:
+                fmt = "{0:.3f} mV"
+                
+            self.mag_label.setText(tr(fmt).format(v_rms * 1000))
             # Show dBFS as secondary
             if mag_fs > 0:
                 db = 20 * np.log10(mag_fs + 1e-12)
-                self.mag_db_label.setText(tr("{0:.3f} dBFS").format(db))
+                fmt_db = "{0:." + str(prec_db) + "f} dBFS"
+                self.mag_db_label.setText(tr(fmt_db).format(db))
             else:
                 self.mag_db_label.setText(tr("-inf dBFS"))
             
-        self.phase_label.setText(tr("{0:.3f} deg").format(phase))
+        fmt_phase = "{0:." + str(prec_phase) + "f} deg"
+        self.phase_label.setText(tr(fmt_phase).format(phase))
         
-        # Update X/Y (Always in Voltage for now, or follow unit?)
-        # Let's follow unit logic for X/Y roughly, but X/Y are signed.
-        # dB is not good for signed X/Y.
-        # So we stick to V or mV if V/mV/dBV/dBu is selected, and FS if dBFS.
-        
+        # Update X/Y
         x_fs = self.module.current_x
         y_fs = self.module.current_y
         
@@ -896,14 +1004,30 @@ class LockInAmplifierWidget(QWidget):
         y_v = y_fs * sensitivity / np.sqrt(2) # RMS
         
         if unit == "dBFS":
-            self.x_label.setText(tr("{0:.6f} FS").format(x_fs))
-            self.y_label.setText(tr("{0:.6f} FS").format(y_fs))
+            # For X/Y in FS, use prec_xy
+            fmt_xy = "{0:." + str(prec_xy) + "f} FS"
+            self.x_label.setText(tr(fmt_xy).format(x_fs))
+            self.y_label.setText(tr(fmt_xy).format(y_fs))
         elif unit == "mV":
-            self.x_label.setText(tr("{0:.3f} mV").format(x_v * 1000))
-            self.y_label.setText(tr("{0:.3f} mV").format(y_v * 1000))
+             # Use prec_mv from above logic or similar
+            if self.module.averaging_count > 1:
+                std_mv = self.module.current_magnitude_std * sensitivity / np.sqrt(2) * 1000
+                prec_mv_val = self.get_decimal_places(std_mv, default=3)
+                fmt_xy = "{0:." + str(prec_mv_val) + "f} mV"
+            else:
+                fmt_xy = "{0:.3f} mV"
+            self.x_label.setText(tr(fmt_xy).format(x_v * 1000))
+            self.y_label.setText(tr(fmt_xy).format(y_v * 1000))
         else: # V, dBV, dBu -> Show V
-            self.x_label.setText(tr("{0:.6f} V").format(x_v))
-            self.y_label.setText(tr("{0:.6f} V").format(y_v))
+            # Use prec_v
+            if self.module.averaging_count > 1:
+                std_v = self.module.current_magnitude_std * sensitivity / np.sqrt(2)
+                prec_v_val = self.get_decimal_places(std_v, default=6)
+                fmt_xy = "{0:." + str(prec_v_val) + "f} V"
+            else:
+                fmt_xy = "{0:.6f} V"
+            self.x_label.setText(tr(fmt_xy).format(x_v))
+            self.y_label.setText(tr(fmt_xy).format(y_v))
         
         # Update Ref Status
         ref_level = self.module.ref_level
