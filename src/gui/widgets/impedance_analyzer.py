@@ -12,6 +12,7 @@ import time
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 from src.core.localization import tr
+from src.core.utils import format_si
 
 class ImpedanceAnalyzer(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -568,9 +569,10 @@ class ImpedanceResultsWidget(QWidget):
         self.val_lp.setText(f"{lp*1e6:.4g} µH" if abs(lp) < 1 else f"{lp:.4g} H")
         self.val_cp.setText(f"{cp*1e9:.4g} nF" if abs(cp) < 1e-6 else f"{cp*1e6:.4g} µF")
         
-        self.val_y_mag.setText(f"{abs(y):.4g} S")
-        self.val_g.setText(f"{g:.4g} S")
-        self.val_b.setText(f"{b:.4g} S")
+        # Admittance display: use SI prefixes (nS/µS/mS/...) with significant figures.
+        self.val_y_mag.setText(format_si(abs(y), "S", sig_figs=4))
+        self.val_g.setText(format_si(g, "S", sig_figs=4))
+        self.val_b.setText(format_si(b, "S", sig_figs=4))
         
         self.val_q.setText(f"{q:.4g}")
         self.val_d.setText(f"{d:.4g}")
