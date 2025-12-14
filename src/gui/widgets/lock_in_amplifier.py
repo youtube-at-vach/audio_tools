@@ -461,7 +461,7 @@ class LockInAmplifierWidget(QWidget):
         
         # Phase
         meters_layout.addWidget(QLabel(tr("Phase")))
-        self.phase_label = QLabel(tr("0.00 deg"))
+        self.phase_label = QLabel(tr("0.000 deg"))
         self.phase_label.setStyleSheet("font-size: 36px; font-weight: bold; color: #00ffff;")
         self.phase_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         meters_layout.addWidget(self.phase_label)
@@ -843,7 +843,7 @@ class LockInAmplifierWidget(QWidget):
         if unit == "dBFS":
             if mag_fs > 0:
                 val = 20 * np.log10(mag_fs + 1e-12)
-                self.mag_label.setText(tr("{0:.2f} dBFS").format(val))
+                self.mag_label.setText(tr("{0:.3f} dBFS").format(val))
             else:
                 self.mag_label.setText(tr("-inf dBFS"))
             self.mag_db_label.setText("") # Clear secondary
@@ -851,7 +851,7 @@ class LockInAmplifierWidget(QWidget):
         elif unit == "dBV":
             if v_rms > 0:
                 val = 20 * np.log10(v_rms + 1e-12)
-                self.mag_label.setText(tr("{0:.2f} dBV").format(val))
+                self.mag_label.setText(tr("{0:.3f} dBV").format(val))
             else:
                 self.mag_label.setText(tr("-inf dBV"))
             self.mag_db_label.setText("")
@@ -859,7 +859,7 @@ class LockInAmplifierWidget(QWidget):
         elif unit == "dBu":
             if v_rms > 0:
                 val = 20 * np.log10((v_rms + 1e-12) / 0.7746)
-                self.mag_label.setText(tr("{0:.2f} dBu").format(val))
+                self.mag_label.setText(tr("{0:.3f} dBu").format(val))
             else:
                 self.mag_label.setText(tr("-inf dBu"))
             self.mag_db_label.setText("")
@@ -869,7 +869,7 @@ class LockInAmplifierWidget(QWidget):
             # Show dBFS as secondary
             if mag_fs > 0:
                 db = 20 * np.log10(mag_fs + 1e-12)
-                self.mag_db_label.setText(tr("{0:.2f} dBFS").format(db))
+                self.mag_db_label.setText(tr("{0:.3f} dBFS").format(db))
             else:
                 self.mag_db_label.setText(tr("-inf dBFS"))
                 
@@ -878,11 +878,11 @@ class LockInAmplifierWidget(QWidget):
             # Show dBFS as secondary
             if mag_fs > 0:
                 db = 20 * np.log10(mag_fs + 1e-12)
-                self.mag_db_label.setText(tr("{0:.2f} dBFS").format(db))
+                self.mag_db_label.setText(tr("{0:.3f} dBFS").format(db))
             else:
                 self.mag_db_label.setText(tr("-inf dBFS"))
             
-        self.phase_label.setText(tr("{0:.2f} deg").format(phase))
+        self.phase_label.setText(tr("{0:.3f} deg").format(phase))
         
         # Update X/Y (Always in Voltage for now, or follow unit?)
         # Let's follow unit logic for X/Y roughly, but X/Y are signed.
