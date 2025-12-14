@@ -119,6 +119,11 @@
     "Minimum Level": "最小レベル",
     "Peak Level": "ピークレベル",
     "Sound Exposure Level": "音響暴露レベル",
+    "Instantaneous (Lp)": "瞬時値 (Lp)",
+    "Equivalent (Leq)": "等価騒音レベル (Leq)",
+    "Histogram (LN)": "ヒストグラム (LN)",
+    "Statistics": "統計",
+    "Details": "詳細",
     "Testing Output Channel {}": "出力チャンネル {} をテスト中...",
     "This tool plays a test tone on each output channel and checks all input channels for the signal.": "このツールは各出力チャンネルでテストトーンを再生し、全ての入力チャンネルで信号をチェックします。",
     "Note:": "注意:",
@@ -570,12 +575,10 @@
     "Open Wav File": "WAVファイルを開く",
     "Wav Files (*.wav)": "WAVファイル (*.wav)",
     "Save Wav File": "WAVファイルを保存",
-
     "General": "一般",
     "Audio": "オーディオ",
     "None": "なし",
     "Latency: {0:.1f} ms": "レイテンシ: {0:.1f} ms",
-
     "SPL Calibration Wizard": "SPLキャリブレーションウィザード",
     "Prepare a speaker and measurement microphone.": "スピーカーと測定用マイクを準備してください。",
     "Play band-limited pink noise, measure SPL with an external meter.": "帯域制限ピンクノイズを再生し、外部メーターでSPLを測定してください。",
@@ -596,11 +599,9 @@
     "Invalid output level": "無効な出力レベル",
     "Output calibration is required for voltage units.": "電圧単位には出力キャリブレーションが必要です。",
     "Invalid level unit": "無効なレベル単位",
-
     "Current Level: -- dBFS": "現在のレベル: -- dBFS",
     "Current Level: {0:.1f} dBFS": "現在のレベル: {0:.1f} dBFS",
     "No signal detected. Please check connections.": "信号が検出されません。接続を確認してください。",
-
     "Step 1:": "手順 1:",
     "Step 2:": "手順 2:",
     "Step 3:": "手順 3:",
