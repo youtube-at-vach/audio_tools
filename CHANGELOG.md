@@ -1,5 +1,34 @@
 # Changelog
 
+## [v0.2.3] - 2025-12-15
+
+### Added
+
+* モジュールウィジェットを新規 `DetachableWidgetWrapper` で包み、別ウィンドウへ切り離せる機能と対応する多言語翻訳を追加
+* LUFS Meter に統計／グラフのタブ構成、チャネル別 K-weighting、統合ラウドネスのゲーティングとスレッドセーフな更新を追加
+* Generator / Sweep 制御をタブ化した設定 UI を追加
+* Lock-in Amplifier に標準偏差ベースの自動表示桁調整とソフトウェアループバックを使った性能テストを追加
+* Impedance Analyzer にアドミタンスの SI 接頭辞フォーマットと単体テストを追加
+* Sound Level Meter に LN 統計計算／リセット、ヒストグラム表示、長時間測定プリセット、翻訳キーを追加
+* SPL キャリブレーションダイアログに測定帯域幅設定を追加
+* Recorder & Player に再生ゲイン調整を追加
+* pytest 設定を追加し、ハードウェア依存テストをスキップする統合を追加
+
+### Changed
+
+* Sound Level Meter の設定 UI をタブ分割し、レイアウトとアクセシビリティを改善
+* Lock-in Amplifier と Impedance Analyzer のコヒーレンス計算／復調処理をリファクタし、位相安定性とスカロッピング補正を改善
+* コードベース全体の未使用インポートと変数を整理
+* SPL キャリブレーションテストの不要パラメータを削除し、pytest 設定を整理
+
+### Fixed
+
+* リリースワークフローの権限設定を修正
+
+### Documentation
+
+* README タイトルを更新し、概要文をわかりやすく修正
+
 ## [v0.2.2] - 2025-12-13
 
 ### Added
