@@ -427,8 +427,8 @@ class DistortionAnalyzerWidget(QWidget):
         mode_group.setLayout(mode_layout)
         left_panel.addWidget(mode_group)
         
-        # 2. Generator/Sweep Controls (Stacked)
-        self.controls_stack = QStackedWidget()
+        # 2. Settings Tabs
+        self.settings_tabs = QTabWidget()
         
         # Page 1: Real-time Controls
         rt_widget = QWidget()
@@ -503,7 +503,7 @@ class DistortionAnalyzerWidget(QWidget):
         rt_layout.addRow(tr("Amplitude:"), amp_layout)
         
         rt_widget.setLayout(rt_layout)
-        self.controls_stack.addWidget(rt_widget)
+        self.settings_tabs.addTab(rt_widget, tr("Signal"))
         
         # Page 2: Sweep Controls
         sweep_widget = QWidget()
@@ -525,13 +525,10 @@ class DistortionAnalyzerWidget(QWidget):
         sweep_layout.addRow(tr("Steps:"), self.sweep_steps_spin)
         
         sweep_widget.setLayout(sweep_layout)
-        self.controls_stack.addWidget(sweep_widget)
+        self.settings_tabs.addTab(sweep_widget, tr("Sweep"))
         
-        
-        left_panel.addWidget(self.controls_stack)
-        
-        # Common Controls
-        common_group = QGroupBox(tr("Settings"))
+        # Settings Tab
+        common_widget = QWidget()
         common_layout = QFormLayout()
         
         self.in_channel_combo = QComboBox()
@@ -557,8 +554,10 @@ class DistortionAnalyzerWidget(QWidget):
         avg_row.addWidget(self.avg_slider)
         common_layout.addRow(tr("Averaging:"), avg_row)
         
-        common_group.setLayout(common_layout)
-        left_panel.addWidget(common_group)
+        common_widget.setLayout(common_layout)
+        self.settings_tabs.addTab(common_widget, tr("Settings"))
+        
+        left_panel.addWidget(self.settings_tabs)
         
         # Action Buttons
         btn_layout = QVBoxLayout()
@@ -705,12 +704,12 @@ class DistortionAnalyzerWidget(QWidget):
             self.module.mode = modes[idx]
         
         if idx == 0: # Real-time
-            self.controls_stack.setCurrentIndex(0)
+            self.settings_tabs.setCurrentIndex(0)
             self.meters_group.setVisible(True)
             self.set_meters_mode('thd')
             self.tabs.setCurrentIndex(0)
         else:
-            self.controls_stack.setCurrentIndex(1)
+            self.settings_tabs.setCurrentIndex(1)
             self.meters_group.setVisible(False)
             self.tabs.setCurrentIndex(2)
             
