@@ -5,7 +5,7 @@ import pyqtgraph as pg
 from scipy import signal
 import threading
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QProgressBar, QGroupBox, QGridLayout, QCheckBox)
+                             QProgressBar, QGroupBox, QGridLayout, QCheckBox, QTabWidget)
 from PyQt6.QtCore import QTimer, Qt
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
@@ -528,9 +528,11 @@ class LufsMeterWidget(QWidget):
         meters_group.setLayout(grid)
         layout.addWidget(meters_group)
 
-        # --- Statistics Area ---
-        stats_group = QGroupBox(tr("Statistics"))
-        stats_grid = QGridLayout()
+        # --- Statistics / Graph (Tabbed) ---
+        tabs = QTabWidget()
+
+        stats_tab = QWidget()
+        stats_grid = QGridLayout(stats_tab)
 
         # Headers
         stats_grid.addWidget(QLabel(tr("")), 0, 0)
@@ -569,9 +571,11 @@ class LufsMeterWidget(QWidget):
         self.stats_i_time = QLabel(tr("0.0 s"))
         stats_grid.addWidget(self.stats_i_time, 3, 3, 1, 2)
 
-        stats_group.setLayout(stats_grid)
-        layout.addWidget(stats_group)
-        
+        tabs.addTab(stats_tab, tr("Statistics"))
+
+        graph_tab = QWidget()
+        graph_layout = QVBoxLayout(graph_tab)
+
         # --- Time Series Plot ---
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setLabel('left', tr('LUFS'), units='dB')
@@ -595,8 +599,12 @@ class LufsMeterWidget(QWidget):
         self.target_band.setMovable(False)
         self.target_band.setZValue(-10)
         self.plot_widget.addItem(self.target_band)
-        
-        layout.addWidget(self.plot_widget)
+
+        graph_layout.addWidget(self.plot_widget)
+
+        tabs.addTab(graph_tab, tr("Graph"))
+
+        layout.addWidget(tabs)
         
         layout.addStretch()
         self.setLayout(layout)
