@@ -1,11 +1,17 @@
 import sys
 import os
+import pytest
 from PyQt6.QtWidgets import QApplication
 
 # Add src to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.gui.main_window import MainWindow
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("AUDIO_TOOLS_ENABLE_GUI_TESTS") != "1",
+    reason="Requires GUI environment; set AUDIO_TOOLS_ENABLE_GUI_TESTS=1 to run",
+)
 
 def test_welcome_screen():
     QApplication(sys.argv)

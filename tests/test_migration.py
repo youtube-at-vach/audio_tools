@@ -1,6 +1,7 @@
 import sys
 import os
 import time
+import pytest
 from PyQt6.QtWidgets import QApplication
 
 # Add src to path
@@ -9,6 +10,11 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.core.audio_engine import AudioEngine
 from src.gui.widgets.lock_in_amplifier import LockInAmplifier
 from src.gui.widgets.distortion_analyzer import DistortionAnalyzer
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("AUDIO_TOOLS_ENABLE_HARDWARE_TESTS") != "1",
+    reason="Requires audio hardware/loopback; set AUDIO_TOOLS_ENABLE_HARDWARE_TESTS=1 to run",
+)
 
 def test_simultaneous_usage():
     QApplication(sys.argv)

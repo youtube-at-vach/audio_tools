@@ -1,5 +1,6 @@
 import sys
 import os
+import pytest
 from PyQt6.QtWidgets import QApplication
 
 # Add src to path
@@ -7,6 +8,11 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.core.audio_engine import AudioEngine
 from src.gui.widgets.network_analyzer import NetworkAnalyzer
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("AUDIO_TOOLS_ENABLE_HARDWARE_TESTS") != "1",
+    reason="Requires audio hardware; set AUDIO_TOOLS_ENABLE_HARDWARE_TESTS=1 to run",
+)
 
 def test_network_analyzer_migration():
     QApplication(sys.argv)

@@ -1,12 +1,18 @@
 import sys
 import os
 import time
+import pytest
 import numpy as np
 
 # Add src to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.core.audio_engine import AudioEngine
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("AUDIO_TOOLS_ENABLE_HARDWARE_TESTS") != "1",
+    reason="Requires audio hardware; set AUDIO_TOOLS_ENABLE_HARDWARE_TESTS=1 to run",
+)
 
 def test_mixer():
     print("Initializing AudioEngine...")
