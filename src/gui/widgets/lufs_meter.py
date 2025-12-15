@@ -3,6 +3,7 @@ import time
 import numpy as np
 import pyqtgraph as pg
 from scipy import signal
+import threading
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
                              QProgressBar, QGroupBox, QGridLayout, QFrame, QCheckBox)
 from PyQt6.QtCore import QTimer, Qt
@@ -20,9 +21,11 @@ class LufsMeter(MeasurementModule):
         # This affects only dBFS-related meters (RMS/Peak and C-weighted variants).
         self._db_floor = -200.0
         
-        # Filter states
-        self.zi_shelf = None
-        self.zi_hp = None
+        # Filter states (per-channel for strict BS.1770 energy summation)
+        self.zi_shelf_l = None
+        self.zi_shelf_r = None
+        self.zi_hp_l = None
+        self.zi_hp_r = None
 
         # C-weighting (for SPL calibration compatibility)
         self.c_b = None
@@ -30,22 +33,36 @@ class LufsMeter(MeasurementModule):
         self.c_zi_l = None
         self.c_zi_r = None
         
-        # Buffers
+        # Buffers / windows
         self.momentary_window = 0.4 # 400ms
         self.short_term_window = 3.0 # 3s
         self.buffer_size_m = 0
         self.buffer_size_s = 0
-        self.audio_buffer = np.array([]) # K-weighted buffer for LUFS
+
+        # Ring-buffers of per-sample energy (Lk^2 + Rk^2)
+        self._p_ring_m = None
+        self._p_ring_s = None
+        self._p_pos_m = 0
+        self._p_pos_s = 0
+        self._p_filled_m = 0
+        self._p_filled_s = 0
+        self._p_sum_m = 0.0
+        self._p_sum_s = 0.0
         
         # Values
         self.momentary_lufs = -100.0
         self.short_term_lufs = -100.0
         self.integrated_lufs = -100.0
 
-        # Integrated loudness accumulation (simple running mean square of K-weighted samples)
-        self._i_sumsq = 0.0
-        self._i_count = 0
+        # Integrated loudness (BS.1770-style gating, streaming)
         self._i_started_at = None
+        self._i_sample_count = 0
+        self._i_block_step = 0
+        self._i_since_last_block = 0
+        self._i_block_ms = []  # per-block mean-square (Lk^2+Rk^2), 400 ms blocks, 75% overlap
+        self._i_abs_gate_ms = float(10 ** ((-70.0 + 0.691) / 10.0))
+        self._i_dirty = False
+        self._i_lock = threading.Lock()
         
         # Stereo RMS & Peak
         self.rms_l = self._db_floor
@@ -85,18 +102,23 @@ class LufsMeter(MeasurementModule):
 
     def _init_filters(self):
         # K-weighting filter coefficients (ITU-R BS.1770-4)
-        self.b0_shelf = np.array([1.53512485958697, -2.69169618940638, 1.19839281085285])
-        self.a0_shelf = np.array([1.0, -1.69065929318241, 0.73248077421585])
-        self.b1_hp = np.array([1.0, -2.0, 1.0])
-        self.a1_hp = np.array([1.0, -1.99004745483398, 0.99007225036621])
+        # Keep float32 to avoid per-block float64 upcasts in the audio callback.
+        self.b0_shelf = np.array([1.53512485958697, -2.69169618940638, 1.19839281085285], dtype=np.float32)
+        self.a0_shelf = np.array([1.0, -1.69065929318241, 0.73248077421585], dtype=np.float32)
+        self.b1_hp = np.array([1.0, -2.0, 1.0], dtype=np.float32)
+        self.a1_hp = np.array([1.0, -1.99004745483398, 0.99007225036621], dtype=np.float32)
         
-        # Initial filter states
-        self.zi_shelf = signal.lfilter_zi(self.b0_shelf, self.a0_shelf)
-        self.zi_hp = signal.lfilter_zi(self.b1_hp, self.a1_hp)
+        # Initial filter states (per-channel)
+        zi_shelf = signal.lfilter_zi(self.b0_shelf, self.a0_shelf).astype(np.float32, copy=False)
+        zi_hp = signal.lfilter_zi(self.b1_hp, self.a1_hp).astype(np.float32, copy=False)
+        self.zi_shelf_l = zi_shelf.copy()
+        self.zi_shelf_r = zi_shelf.copy()
+        self.zi_hp_l = zi_hp.copy()
+        self.zi_hp_r = zi_hp.copy()
 
         # C-weighting (IEC 61672) for SPL calibration compatibility
         self.c_b, self.c_a = self._design_c_weighting(self.sample_rate)
-        zi = signal.lfilter_zi(self.c_b, self.c_a)
+        zi = signal.lfilter_zi(self.c_b, self.c_a).astype(np.float32, copy=False)
         self.c_zi_l = zi.copy()
         self.c_zi_r = zi.copy()
 
@@ -124,7 +146,8 @@ class LufsMeter(MeasurementModule):
 
         z, p, k = signal.bilinear_zpk(zeros, poles, gain, fs=sr)
         b, a = signal.zpk2tf(z, p, k)
-        return b.astype(np.float64), a.astype(np.float64)
+        # Use float32 for callback efficiency; response accuracy remains sufficient for metering.
+        return b.astype(np.float32), a.astype(np.float32)
 
     def reset_peaks(self):
         self.peak_hold_l = self._db_floor
@@ -133,10 +156,43 @@ class LufsMeter(MeasurementModule):
         self.peak_hold_c_r = self._db_floor
 
     def reset_integration(self):
-        self._i_sumsq = 0.0
-        self._i_count = 0
         self.integrated_lufs = -100.0
         self._i_started_at = time.perf_counter()
+        self._i_sample_count = 0
+        self._i_since_last_block = 0
+        # 400 ms block with 75% overlap -> 100 ms step
+        self._i_block_step = int(round(0.1 * float(self.sample_rate)))
+        with self._i_lock:
+            self._i_block_ms = []
+            self._i_dirty = False
+
+    def update_integrated_lufs_if_dirty(self):
+        """Recompute gated integrated loudness (BS.1770) when new blocks arrive.
+
+        Intended to be called from the GUI thread to keep the audio callback lean.
+        """
+        with self._i_lock:
+            if not self._i_dirty:
+                return
+            blocks = np.asarray(self._i_block_ms, dtype=np.float64)
+            self._i_dirty = False
+
+        if blocks.size == 0:
+            self.integrated_lufs = -100.0
+            return
+
+        mean_ms_ungated = float(blocks.mean())
+        l_ungated = self._to_lufs(mean_ms_ungated)
+        rel_gate_l = l_ungated - 10.0
+        rel_gate_ms = float(10 ** ((rel_gate_l + 0.691) / 10.0))
+        gate_ms = max(self._i_abs_gate_ms, rel_gate_ms)
+
+        gated = blocks[blocks > gate_ms]
+        if gated.size == 0:
+            self.integrated_lufs = -100.0
+            return
+
+        self.integrated_lufs = self._to_lufs(float(gated.mean()))
 
     def reset_all_stats(self):
         self.reset_peaks()
@@ -153,10 +209,48 @@ class LufsMeter(MeasurementModule):
         # Reset session accumulators
         self.reset_integration()
         
-        # Initialize buffers
-        self.buffer_size_m = int(self.momentary_window * self.sample_rate)
-        self.buffer_size_s = int(self.short_term_window * self.sample_rate)
-        self.audio_buffer = np.zeros(self.buffer_size_s)
+        # Initialize buffers (ring of per-sample power)
+        self.buffer_size_m = int(round(self.momentary_window * float(self.sample_rate)))
+        self.buffer_size_s = int(round(self.short_term_window * float(self.sample_rate)))
+        self._p_ring_m = np.zeros(self.buffer_size_m, dtype=np.float32)
+        self._p_ring_s = np.zeros(self.buffer_size_s, dtype=np.float32)
+        self._p_pos_m = 0
+        self._p_pos_s = 0
+        self._p_filled_m = 0
+        self._p_filled_s = 0
+        self._p_sum_m = 0.0
+        self._p_sum_s = 0.0
+
+        abs_gate_ms = self._i_abs_gate_ms
+
+        def ring_update_power(ring: np.ndarray, pos: int, filled: int, sum_p: float, p_chunk: np.ndarray):
+            """Write p_chunk into ring (overwrite) and update running sum in O(len(p_chunk))."""
+            n = int(ring.shape[0])
+            m = int(p_chunk.shape[0])
+            if m <= 0:
+                return pos, filled, sum_p
+
+            end = pos + m
+            if end <= n:
+                old = ring[pos:end]
+                sum_p -= float(np.sum(old, dtype=np.float64))
+                ring[pos:end] = p_chunk
+                sum_p += float(np.sum(p_chunk, dtype=np.float64))
+            else:
+                first = n - pos
+                old1 = ring[pos:]
+                old2 = ring[:(end - n)]
+                sum_p -= float(np.sum(old1, dtype=np.float64))
+                sum_p -= float(np.sum(old2, dtype=np.float64))
+
+                ring[pos:] = p_chunk[:first]
+                ring[:(end - n)] = p_chunk[first:]
+                sum_p += float(np.sum(p_chunk[:first], dtype=np.float64))
+                sum_p += float(np.sum(p_chunk[first:], dtype=np.float64))
+
+            pos = end % n
+            filled = min(n, filled + m)
+            return pos, filled, sum_p
         
         def callback(indata, outdata, frames, time, status):
             if status:
@@ -178,8 +272,13 @@ class LufsMeter(MeasurementModule):
                 r_channel = np.zeros(frames)
             
             # RMS (Instantaneous for this block)
-            rms_l_linear = np.sqrt(np.mean(l_channel**2))
-            rms_r_linear = np.sqrt(np.mean(r_channel**2))
+            # Use dot for low-allocation sumsq
+            if frames > 0:
+                rms_l_linear = float(np.sqrt(np.dot(l_channel, l_channel) / float(frames)))
+                rms_r_linear = float(np.sqrt(np.dot(r_channel, r_channel) / float(frames)))
+            else:
+                rms_l_linear = 0.0
+                rms_r_linear = 0.0
             self.rms_l = self._to_db(rms_l_linear)
             self.rms_r = self._to_db(rms_r_linear)
 
@@ -187,11 +286,16 @@ class LufsMeter(MeasurementModule):
             # Calibration wizard measures dBFS_C using a C-weighting IIR filter and RMS.
             # We compute the same here so that SPL = dBFS_C + offset is consistent.
             if self.c_b is not None and self.c_a is not None and self.c_zi_l is not None and self.c_zi_r is not None:
-                l_c, self.c_zi_l = signal.lfilter(self.c_b, self.c_a, l_channel.astype(np.float64), zi=self.c_zi_l)
-                r_c, self.c_zi_r = signal.lfilter(self.c_b, self.c_a, r_channel.astype(np.float64), zi=self.c_zi_r)
+                # Keep float32 throughout; input stream is float32.
+                l_c, self.c_zi_l = signal.lfilter(self.c_b, self.c_a, l_channel, zi=self.c_zi_l)
+                r_c, self.c_zi_r = signal.lfilter(self.c_b, self.c_a, r_channel, zi=self.c_zi_r)
 
-                rms_c_l_linear = float(np.sqrt(np.mean(l_c * l_c) + 1e-24))
-                rms_c_r_linear = float(np.sqrt(np.mean(r_c * r_c) + 1e-24))
+                if frames > 0:
+                    rms_c_l_linear = float(np.sqrt(np.dot(l_c, l_c) / float(frames) + 1e-24))
+                    rms_c_r_linear = float(np.sqrt(np.dot(r_c, r_c) / float(frames) + 1e-24))
+                else:
+                    rms_c_l_linear = 0.0
+                    rms_c_r_linear = 0.0
                 self.rms_c_l = self._to_db(rms_c_l_linear)
                 self.rms_c_r = self._to_db(rms_c_r_linear)
 
@@ -217,43 +321,61 @@ class LufsMeter(MeasurementModule):
             self.peak_hold_r = max(self.peak_hold_r, self.peak_r)
             
             # Crest Factor (Peak dB - RMS dB)
-            
-            # Crest Factor (Peak dB - RMS dB)
             # Ensure we don't subtract -100 from -100 resulting in 0 if both are silence, which is fine.
             # But if RMS is -100 and Peak is -90, CF is 10.
             self.crest_l = self.peak_l - self.rms_l
             self.crest_r = self.peak_r - self.rms_r
             
-            # --- LUFS Calculation (Mono K-weighted) ---
-            # Average channels for mono K-weighting input (Simplified)
-            mono_input = (l_channel + r_channel) / 2
-            
-            # Apply K-weighting
-            filtered_shelf, self.zi_shelf = signal.lfilter(self.b0_shelf, self.a0_shelf, mono_input, zi=self.zi_shelf)
-            k_weighted, self.zi_hp = signal.lfilter(self.b1_hp, self.a1_hp, filtered_shelf, zi=self.zi_hp)
-            
-            # Update buffer
-            self.audio_buffer = np.roll(self.audio_buffer, -len(k_weighted))
-            self.audio_buffer[-len(k_weighted):] = k_weighted
+            # --- LUFS Calculation (Strict stereo: per-channel K-weighting, sum energies) ---
+            # For true mono input, avoid double-counting energy (would read +3 dB too hot).
+            if num_channels == 1:
+                l_lufs = l_channel
+                r_lufs = np.zeros_like(l_channel)
+            else:
+                l_lufs = l_channel
+                r_lufs = r_channel
 
-            # Integrated (simple running average over all K-weighted samples)
-            # Note: This is not full BS.1770 gating; it is a useful session statistic.
-            self._i_sumsq += float(np.sum(k_weighted**2))
-            self._i_count += int(len(k_weighted))
-            if self._i_count > 0:
-                self.integrated_lufs = self._to_lufs(self._i_sumsq / self._i_count)
-            
-            # Momentary (last 400ms)
-            m_data = self.audio_buffer[-self.buffer_size_m:]
-            ms_m = np.mean(m_data**2)
+            # Apply K-weighting per channel
+            l_shelf, self.zi_shelf_l = signal.lfilter(self.b0_shelf, self.a0_shelf, l_lufs, zi=self.zi_shelf_l)
+            r_shelf, self.zi_shelf_r = signal.lfilter(self.b0_shelf, self.a0_shelf, r_lufs, zi=self.zi_shelf_r)
+            l_k, self.zi_hp_l = signal.lfilter(self.b1_hp, self.a1_hp, l_shelf, zi=self.zi_hp_l)
+            r_k, self.zi_hp_r = signal.lfilter(self.b1_hp, self.a1_hp, r_shelf, zi=self.zi_hp_r)
+
+            # Per-sample power (avoid rolling full windows)
+            p_chunk = (l_k * l_k) + (r_k * r_k)
+            self._p_pos_m, self._p_filled_m, self._p_sum_m = ring_update_power(
+                self._p_ring_m, self._p_pos_m, self._p_filled_m, self._p_sum_m, p_chunk
+            )
+            self._p_pos_s, self._p_filled_s, self._p_sum_s = ring_update_power(
+                self._p_ring_s, self._p_pos_s, self._p_filled_s, self._p_sum_s, p_chunk
+            )
+
+            # Track session time
+            self._i_sample_count += int(frames)
+
+            # Momentary (400 ms) and Short-term (3 s)
+            n_m = float(max(1, self._p_filled_m))
+            n_s = float(max(1, self._p_filled_s))
+            ms_m = float(self._p_sum_m / n_m) if self._p_filled_m > 0 else 0.0
+            ms_s = float(self._p_sum_s / n_s) if self._p_filled_s > 0 else 0.0
             self.momentary_lufs = self._to_lufs(ms_m)
-            
-            # Short-term (last 3s)
-            s_data = self.audio_buffer
-            ms_s = np.mean(s_data**2)
             self.short_term_lufs = self._to_lufs(ms_s)
+
+            # Integrated loudness with gating (400 ms blocks, 75% overlap)
+            # Start once we have a full 400 ms window.
+            if self._p_filled_m >= self.buffer_size_m and self._i_block_step > 0:
+                self._i_since_last_block += int(frames)
+                while self._i_since_last_block >= self._i_block_step:
+                    self._i_since_last_block -= self._i_block_step
+                    block_ms = float(self._p_sum_m / float(self.buffer_size_m))
+                    if block_ms > abs_gate_ms:
+                        with self._i_lock:
+                            self._i_block_ms.append(block_ms)
+                            self._i_dirty = True
+            else:
+                self._i_since_last_block += int(frames)
             
-            outdata.fill(0)
+            # No output (meter is analysis-only). AudioEngine provides a fresh zeroed buffer.
 
         self.callback_id = self.audio_engine.register_callback(callback)
 
@@ -277,9 +399,9 @@ class LufsMeter(MeasurementModule):
         return -0.691 + 10 * np.log10(mean_square)
 
     def get_integrated_seconds(self) -> float:
-        if self._i_count <= 0 or self.sample_rate <= 0:
+        if self._i_sample_count <= 0 or self.sample_rate <= 0:
             return 0.0
-        return self._i_count / float(self.sample_rate)
+        return self._i_sample_count / float(self.sample_rate)
 
 class LufsMeterWidget(QWidget):
     def __init__(self, module: LufsMeter):
@@ -533,6 +655,9 @@ class LufsMeterWidget(QWidget):
     def update_display(self):
         if not self.module.is_running:
             return
+
+        # Keep integrated LUFS computation off the audio callback.
+        self.module.update_integrated_lufs_if_dirty()
 
         # Allow calibration to appear/disappear without recreating the widget
         self._sync_spl_checkbox()
