@@ -1,14 +1,12 @@
 import sys
 import os
-import numpy as np
 
 # Add project root to path
 sys.path.insert(0, os.getcwd())
 
-from PyQt6.QtWidgets import QApplication, QVBoxLayout, QTableWidget
+from PyQt6.QtWidgets import QApplication, QTableWidget
 import pyqtgraph as pg
 from src.gui.widgets.distortion_analyzer import DistortionAnalyzer, DistortionAnalyzerWidget
-from src.core.audio_engine import AudioEngine
 
 def test_harmonics_tab_structure():
     # Mock AudioEngine
@@ -19,7 +17,7 @@ def test_harmonics_tab_structure():
         def register_callback(self, cb): return 1
         def unregister_callback(self, id): pass
 
-    app = QApplication(sys.argv)
+    QApplication(sys.argv)
     engine = MockAudioEngine()
     module = DistortionAnalyzer(engine)
     widget = DistortionAnalyzerWidget(module)

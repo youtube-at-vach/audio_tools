@@ -1,5 +1,4 @@
 from src.gui.widgets.distortion_analyzer import DistortionAnalyzer
-from src.core.audio_engine import AudioEngine
 
 class MockAudioEngine:
     def __init__(self):

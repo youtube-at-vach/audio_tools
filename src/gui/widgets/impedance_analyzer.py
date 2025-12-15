@@ -2,7 +2,6 @@ import argparse
 import json
 import numpy as np
 import pyqtgraph as pg
-from scipy.signal import hilbert
 from collections import deque
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
                              QComboBox, QCheckBox, QGroupBox, QFormLayout, 

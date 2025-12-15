@@ -2,8 +2,8 @@ import numpy as np
 import scipy.signal
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, QPushButton, 
                              QFormLayout, QGroupBox, QMessageBox, QLineEdit, QDialog,
-                             QDialogButtonBox, QDoubleSpinBox, QHBoxLayout, QTabWidget)
-from PyQt6.QtCore import QTimer, Qt
+                             QDoubleSpinBox, QHBoxLayout, QTabWidget)
+from PyQt6.QtCore import QTimer
 from src.core.audio_engine import AudioEngine
 from src.core.config_manager import ConfigManager
 from src.core.localization import tr, get_manager
@@ -414,7 +414,7 @@ class SplCalibrationDialog(QDialog):
             self._on_measure_bw_mode_changed()
 
     def start_measurement(self):
-        band = self._prepare_filters()
+        self._prepare_filters()
 
         self._target_fs_rms = self._get_target_fs_rms()
         if not np.isfinite(self._target_fs_rms) or self._target_fs_rms <= 0:
@@ -487,9 +487,9 @@ class SplCalibrationDialog(QDialog):
             spl = float(self.spl_spin.value())
             profile = self.profile_combo.currentData()
             if profile == "speaker":
-                band = (500.0, 2000.0)
+                pass
             else:
-                band = (30.0, 80.0)
+                pass
 
             self.audio_engine.calibration.set_spl_calibration(
                 measured_dbfs_c=float(self.current_dbfs_c),

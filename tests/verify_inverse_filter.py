@@ -2,7 +2,6 @@
 import sys
 import os
 import numpy as np
-import scipy.signal as signal
 import soundfile as sf
 from PyQt6.QtCore import QCoreApplication
 
@@ -12,7 +11,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.gui.widgets.inverse_filter import ProcessingWorker
 
 def test_inverse_filter():
-    app = QCoreApplication([])
+    QCoreApplication([])
     
     print("Testing Inverse Filter Logic...")
     
@@ -67,7 +66,7 @@ def test_inverse_filter():
     # Expected: Amplitude ~0.5
     # Skip start/end (filter warm up / transient)
     mid_data = data[int(sr*0.4):int(sr*0.6)]
-    rms = np.sqrt(np.mean(mid_data**2))
+    np.sqrt(np.mean(mid_data**2))
     peak = np.max(np.abs(mid_data))
     
     print(f"Input Peak: 1.0")

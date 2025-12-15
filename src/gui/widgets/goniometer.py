@@ -256,7 +256,7 @@ class GoniometerWidget(QWidget):
     def update_palette(self):
         # Define colormaps
         # 256 colors
-        pos = np.linspace(0, 1, 256)
+        np.linspace(0, 1, 256)
         colors = np.zeros((256, 4), dtype=np.ubyte)
         
         name = self.module.color_palette

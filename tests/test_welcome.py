@@ -1,7 +1,6 @@
 import sys
 import os
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QTimer
 
 # Add src to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -9,7 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.gui.main_window import MainWindow
 
 def test_welcome_screen():
-    app = QApplication(sys.argv)
+    QApplication(sys.argv)
     
     print("Initializing MainWindow...")
     window = MainWindow()

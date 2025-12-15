@@ -2,8 +2,7 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
                              QComboBox, QGroupBox, QFormLayout, QSpinBox, QDoubleSpinBox, 
-                             QTabWidget, QStackedWidget, QTableWidget, QTableWidgetItem, 
-                             QHeaderView)
+                             QStackedWidget)
 from PyQt6.QtCore import QTimer, Qt
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine

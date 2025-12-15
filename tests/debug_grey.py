@@ -1,5 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
 
 def analyze_grey_scaling():
     sample_rate = 48000
@@ -9,7 +8,7 @@ def analyze_grey_scaling():
     freqs = np.fft.rfftfreq(num_samples, d=1/sample_rate)
     
     f = freqs
-    f2 = f**2
+    f**2
     c1 = 12194.217**2
     c2 = 20.6**2
     c3 = 107.7**2

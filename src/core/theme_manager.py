@@ -9,7 +9,7 @@ Provides theme detection and switching functionality with support for:
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QPalette, QColor
-from PyQt6.QtCore import Qt, QObject, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSignal
 import logging
 
 

@@ -739,7 +739,6 @@ class NoiseProfilerWidget(QWidget):
             #   If Display Unit is dBu, it IS Input Referred dBu (linearized).
             #   If Display Unit is dBFS, it IS Input Referred FS.
             
-            pass
             
         # Recalculate Input Referred Density based on current state
         if self.apply_gain_chk.isChecked():
@@ -766,7 +765,7 @@ class NoiseProfilerWidget(QWidget):
                 white_volts = results['white_density'] * 10**(cal_offset/20)
             
             white_density_in = white_volts / gain_linear
-        white_density_in_db = 20 * np.log10(white_density_in + 1e-15)
+        20 * np.log10(white_density_in + 1e-15)
         
         # Report Values (Display Units)
         hum_rms = results['hum_rms']

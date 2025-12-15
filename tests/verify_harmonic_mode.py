@@ -6,7 +6,6 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../')))
 
 from src.gui.widgets.lock_in_amplifier import LockInAmplifier
-from src.core.audio_engine import AudioEngine
 
 class MockAudioEngine:
     def __init__(self):

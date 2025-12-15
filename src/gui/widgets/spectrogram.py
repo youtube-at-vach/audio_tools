@@ -2,10 +2,10 @@ import argparse
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-                             QComboBox, QCheckBox, QGroupBox, QSlider, QApplication, QSpinBox)
+                             QComboBox, QGroupBox, QApplication, QSpinBox)
 from PyQt6.QtGui import QTransform
-from PyQt6.QtCore import QTimer, Qt
-from scipy.signal import get_window, lfilter
+from PyQt6.QtCore import QTimer
+from scipy.signal import get_window
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 from src.core.localization import tr

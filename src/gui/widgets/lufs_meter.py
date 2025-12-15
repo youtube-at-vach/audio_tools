@@ -5,7 +5,7 @@ import pyqtgraph as pg
 from scipy import signal
 import threading
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QProgressBar, QGroupBox, QGridLayout, QFrame, QCheckBox)
+                             QProgressBar, QGroupBox, QGridLayout, QCheckBox)
 from PyQt6.QtCore import QTimer, Qt
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine

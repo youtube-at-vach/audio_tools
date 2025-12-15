@@ -16,10 +16,8 @@ class SessionManager:
         if self.current_module:
             self.is_running = True
             # Logic to start module
-            pass
 
     def stop_measurement(self):
         """Stops the measurement process."""
         self.is_running = False
         # Logic to stop module
-        pass

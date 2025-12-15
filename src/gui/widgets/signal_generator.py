@@ -1,11 +1,11 @@
 import argparse
 import numpy as np
-from dataclasses import dataclass, field
-from typing import Literal, Optional
+from dataclasses import dataclass
+from typing import Optional
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QDoubleSpinBox, QPushButton, 
                              QComboBox, QHBoxLayout, QGroupBox, QFormLayout, QCheckBox, QSlider,
-                             QRadioButton, QButtonGroup, QStackedWidget, QFrame)
-from PyQt6.QtCore import Qt, pyqtSignal
+                             QRadioButton, QButtonGroup, QFrame)
+from PyQt6.QtCore import Qt
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 from src.core.localization import tr
@@ -106,7 +106,7 @@ class SignalGenerator(MeasurementModule):
         elif params.noise_color == 'grey':
             # Simplified inverted A-weighting
             f = freqs
-            f2 = f**2
+            f**2
             c1 = 12194.217**2
             c2 = 20.6**2
             c3 = 107.7**2

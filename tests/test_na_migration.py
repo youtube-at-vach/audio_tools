@@ -1,7 +1,5 @@
 import sys
 import os
-import time
-import numpy as np
 from PyQt6.QtWidgets import QApplication
 
 # Add src to path
@@ -11,7 +9,7 @@ from src.core.audio_engine import AudioEngine
 from src.gui.widgets.network_analyzer import NetworkAnalyzer
 
 def test_network_analyzer_migration():
-    app = QApplication(sys.argv)
+    QApplication(sys.argv)
     
     print("Initializing AudioEngine...")
     engine = AudioEngine()

@@ -11,7 +11,7 @@ from src.gui.widgets.lock_in_amplifier import LockInAmplifier
 from src.gui.widgets.distortion_analyzer import DistortionAnalyzer
 
 def test_simultaneous_usage():
-    app = QApplication(sys.argv)
+    QApplication(sys.argv)
     
     print("Initializing AudioEngine...")
     engine = AudioEngine()

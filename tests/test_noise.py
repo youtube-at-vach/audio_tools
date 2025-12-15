@@ -1,13 +1,11 @@
 import sys
 import os
 import numpy as np
-import matplotlib.pyplot as plt
 
 # Add src to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.gui.widgets.signal_generator import SignalGenerator
-from src.core.audio_engine import AudioEngine
 
 def test_noise_generation():
     print("Initializing SignalGenerator...")

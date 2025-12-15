@@ -2,10 +2,9 @@ import numpy as np
 import soundfile as sf
 import scipy.signal
 import os
-import time
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
                              QFileDialog, QComboBox, QCheckBox, QGroupBox, QProgressBar,
-                             QStyle, QMessageBox, QProgressDialog, QSlider)
+                             QMessageBox, QProgressDialog, QSlider)
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine

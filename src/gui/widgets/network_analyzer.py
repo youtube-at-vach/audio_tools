@@ -1,10 +1,9 @@
 import argparse
 import numpy as np
 import scipy.signal
-import time
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, 
                              QPushButton, QComboBox, QGroupBox, QFormLayout, QProgressBar, QCheckBox, QTabWidget)
-from PyQt6.QtCore import Qt, pyqtSignal, QObject, QThread
+from PyQt6.QtCore import pyqtSignal, QObject, QThread
 import pyqtgraph as pg
 import threading
 
@@ -250,7 +249,7 @@ class NetworkAnalyzer(MeasurementModule):
         t = np.linspace(0, self.chirp_duration, num_samples, endpoint=False)
         
         w1 = 2 * np.pi * self.start_freq
-        w2 = 2 * np.pi * self.end_freq
+        2 * np.pi * self.end_freq
         T = self.chirp_duration
         L = np.log(self.end_freq / self.start_freq)
         

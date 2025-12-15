@@ -36,7 +36,7 @@ def test_boxcar_ref_sync():
     # Sig: Sine wave, period 200 samples, aligned
     
     frames = 1000
-    t = np.arange(frames)
+    np.arange(frames)
     
     # Ref: Rising edge at 50, 250, 450...
     ref = np.zeros(frames)

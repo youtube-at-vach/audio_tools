@@ -1,5 +1,5 @@
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QStackedWidget, QStatusBar, QApplication, QComboBox
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QLabel, QListWidget, QStackedWidget, QStatusBar, QApplication, QComboBox
+from PyQt6.QtCore import QTimer
 from src.core.audio_engine import AudioEngine
 from src.core.config_manager import ConfigManager
 from src.gui.widgets.settings import SettingsWidget

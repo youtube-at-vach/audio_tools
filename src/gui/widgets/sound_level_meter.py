@@ -185,9 +185,8 @@ class SoundLevelMeter(MeasurementModule):
         f2 = 107.65265
         f3 = 737.86223
         f4 = 12194.217
-        A1000 = 1.9997
         
-        numer = np.poly([0, 0, 0, 0])
+        np.poly([0, 0, 0, 0])
         denom = np.convolve(np.poly([-2*np.pi*f4, -2*np.pi*f4]),
                              np.convolve(np.poly([-2*np.pi*f1, -2*np.pi*f1]),
                                          np.poly([-2*np.pi*f2, -2*np.pi*f3])))
@@ -358,7 +357,7 @@ class SoundLevelMeter(MeasurementModule):
             # but that's not 'IMPULSE'.
             # Let's stick to 'FAST', 'SLOW', '10ms' using lfilter for now.
             # 'IMPULSE' logic:
-            current_val = self.current_sq_val
+            self.current_sq_val
             
             # Simple Python loop - optimizing by minimizing lookups
             # This is risky for performance.
@@ -368,7 +367,6 @@ class SoundLevelMeter(MeasurementModule):
             
             # Actually, let's implement the block filter with constant time constant for F/S/10ms
             # and only do special logic for Impulse.
-            pass
         
         alpha = 1.0 - np.exp(-1.0 / (sr * tau))
         

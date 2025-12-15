@@ -1,5 +1,4 @@
 import numpy as np
-import time
 
 class MockAudio:
     def __init__(self, sample_rate=48000):
@@ -76,7 +75,7 @@ class MockAudio:
             indata[:, 1] = dut_sig
 
         # Simulate blocking time
-        duration = n_samples / samplerate
+        n_samples / samplerate
         # time.sleep(duration) 
         
         return indata

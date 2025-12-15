@@ -2,7 +2,6 @@ import sys
 import os
 import time
 import numpy as np
-import sounddevice as sd
 
 # Add src to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))

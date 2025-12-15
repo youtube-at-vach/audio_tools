@@ -2,8 +2,8 @@ import argparse
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QComboBox, QCheckBox, QSlider, QGroupBox, QDoubleSpinBox, QSpinBox)
-from PyQt6.QtCore import QTimer, Qt
+                             QComboBox, QGroupBox, QDoubleSpinBox)
+from PyQt6.QtCore import QTimer
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 from src.core.localization import tr

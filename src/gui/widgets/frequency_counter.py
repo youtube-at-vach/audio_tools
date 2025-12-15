@@ -3,8 +3,8 @@ import time
 import pyqtgraph as pg
 from collections import deque
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, 
-                             QComboBox, QGroupBox, QFormLayout, QFrame, QPushButton, QTabWidget,
-                             QDialog, QMessageBox, QLineEdit)
+                             QComboBox, QFormLayout, QFrame, QPushButton, QTabWidget,
+                             QDialog, QMessageBox)
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QFont
 

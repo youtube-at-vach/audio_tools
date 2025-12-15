@@ -4,10 +4,10 @@ import pyqtgraph as pg
 from scipy.signal import hilbert
 from collections import deque
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QComboBox, QCheckBox, QSlider, QGroupBox, QFormLayout, 
+                             QComboBox, QCheckBox, QGroupBox, QFormLayout, 
                              QDoubleSpinBox, QProgressBar, QSpinBox)
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QComboBox, QCheckBox, QSlider, QGroupBox, QFormLayout, 
+                             QComboBox, QCheckBox, QGroupBox, QFormLayout, 
                              QDoubleSpinBox, QProgressBar, QSpinBox, QTabWidget, QApplication, QFileDialog, QMessageBox)
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 import time
@@ -1030,7 +1030,7 @@ class LockInAmplifierWidget(QWidget):
             self.y_label.setText(tr(fmt_xy).format(y_v))
         
         # Update Ref Status
-        ref_level = self.module.ref_level
+        self.module.ref_level
         ref_freq = self.module.ref_freq
         coherence = self.module.ref_coherence
         
@@ -1456,7 +1456,6 @@ class LockInAmplifierWidget(QWidget):
             # Ideally apply_theme just sets the current state's color if we track it, 
             # or we let update_ui handle it and just use theme-aware colors there.
             # But update_ui runs on timer.
-            pass
 
         else:
             # Light Theme

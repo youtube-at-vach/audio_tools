@@ -5,8 +5,8 @@ from scipy.signal import butter, sosfiltfilt
 from collections import deque
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
                              QComboBox, QCheckBox, QGroupBox, QFormLayout, 
-                             QDoubleSpinBox, QSpinBox, QTabWidget, QProgressBar)
-from PyQt6.QtCore import QTimer, Qt
+                             QDoubleSpinBox, QSpinBox, QTabWidget)
+from PyQt6.QtCore import QTimer
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 from src.core.localization import tr

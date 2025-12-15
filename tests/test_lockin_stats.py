@@ -1,6 +1,5 @@
 import sys
 import unittest
-from unittest.mock import MagicMock
 import numpy as np
 from PyQt6.QtWidgets import QApplication
 

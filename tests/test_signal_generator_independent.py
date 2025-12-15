@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 # Add src to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.gui.widgets.signal_generator import SignalGenerator, SignalParameters
+from src.gui.widgets.signal_generator import SignalGenerator
 
 def test_independent_channels():
     # Mock AudioEngine

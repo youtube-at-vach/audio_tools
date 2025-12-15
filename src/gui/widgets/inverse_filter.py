@@ -3,12 +3,11 @@ import numpy as np
 import pyqtgraph as pg
 import soundfile as sf
 import os
-import time
 from scipy.interpolate import interp1d
 from scipy import signal
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QComboBox, QCheckBox, QSlider, QGroupBox, QFormLayout, 
-                             QDoubleSpinBox, QProgressBar, QSpinBox, QFileDialog, QMessageBox)
+                             QComboBox, QCheckBox, QGroupBox, QFormLayout, 
+                             QDoubleSpinBox, QProgressBar, QFileDialog, QMessageBox)
 from PyQt6.QtCore import QThread, pyqtSignal, Qt
 
 from src.measurement_modules.base import MeasurementModule
@@ -140,7 +139,6 @@ class ProcessingWorker(QThread):
             
             # 2. Process Audio
             # Block processing
-            block_size = 65536
             
             with sf.SoundFile(self.input_path) as infile:
                 with sf.SoundFile(self.output_path, 'w', samplerate=sr, channels=infile.channels) as outfile:

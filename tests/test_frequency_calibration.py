@@ -3,7 +3,6 @@ from unittest.mock import MagicMock
 import numpy as np
 import unittest.mock
 from src.gui.widgets.frequency_counter import FrequencyCounter
-from src.core.audio_engine import AudioEngine
 
 class TestFrequencyCalibration(unittest.TestCase):
     def setUp(self):

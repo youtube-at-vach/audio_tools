@@ -33,7 +33,6 @@ def test_input_device(input_device_id):
             # However, we need to manage the buffer state.
             # For simplicity, let's just play silence to output in the callback if we run out of data
             # But wait, we want to play the sine wave.
-            pass
 
         # Let's use a simpler approach: start an output stream and an input stream separately?
         # No, sd.Stream with device=(in, out) is better.

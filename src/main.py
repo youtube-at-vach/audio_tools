@@ -2,7 +2,6 @@ import argparse
 import importlib
 import pkgutil
 import inquirer
-import sys
 
 from . import measurement_modules
 from .measurement_modules.base import MeasurementModule

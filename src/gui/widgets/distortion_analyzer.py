@@ -1,12 +1,11 @@
 import argparse
 import numpy as np
 import pyqtgraph as pg
-from scipy.signal import butter, sosfiltfilt, get_window, iirnotch, filtfilt
-from scipy.optimize import minimize_scalar
+from scipy.signal import get_window
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QComboBox, QCheckBox, QSlider, QGroupBox, QFormLayout, 
+                             QComboBox, QSlider, QGroupBox, QFormLayout, 
                              QSpinBox, QDoubleSpinBox, QTabWidget, QStackedWidget, 
-                             QTableWidget, QTableWidgetItem, QHeaderView, QProgressBar)
+                             QTableWidget, QTableWidgetItem, QHeaderView)
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 from src.measurement_modules.base import MeasurementModule
 from src.measurement_modules.base import MeasurementModule

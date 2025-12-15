@@ -1,4 +1,3 @@
-import sys
 import argparse
 import sounddevice as sd
 import numpy as np

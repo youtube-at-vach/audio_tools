@@ -5,7 +5,7 @@ import numpy as np
 # Add src to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.gui.widgets.signal_generator import SignalGenerator, SignalParameters
+from src.gui.widgets.signal_generator import SignalGenerator
 
 class MockAudioEngine:
     def __init__(self):
@@ -23,7 +23,7 @@ def test_phase_control():
     
     sample_rate = 48000
     frames = 100
-    t = np.arange(frames) / sample_rate
+    np.arange(frames) / sample_rate
     
     # 1. Sine Wave Phase Offset
     gen.params_L.waveform = 'sine'
@@ -46,7 +46,7 @@ def test_phase_control():
     # No, it's inside a closure.
     
     # Let's run the callback and capture output.
-    outdata = np.zeros((frames, 2))
+    np.zeros((frames, 2))
     
     # 0 deg
     gen.params_L.phase_offset = 0.0
@@ -59,7 +59,6 @@ def test_phase_control():
     # The engine mock mock just returns 1. It doesn't store the callback.
     
     # Let's modify the MockAudioEngine to store the callback.
-    pass
 
 class BetterMockAudioEngine:
     def __init__(self):

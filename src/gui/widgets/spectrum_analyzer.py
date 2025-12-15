@@ -2,7 +2,7 @@ import argparse
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QComboBox, QCheckBox, QSlider, QGroupBox, QFormLayout, QApplication)
+                             QComboBox, QCheckBox, QSlider, QGroupBox, QApplication)
 from PyQt6.QtCore import QTimer, Qt
 from scipy.signal.windows import dpss
 from src.measurement_modules.base import MeasurementModule
@@ -554,7 +554,6 @@ class SpectrumAnalyzerWidget(QWidget):
             # Convert to dBV
             offset = self.module.audio_engine.calibration.get_input_offset_db()
             overall_db += offset
-            unit = "dBV"
         elif self.module.display_unit == 'dB SPL':
              # Convert to SPL
              # We need to use the method from calibration that includes offset
@@ -570,9 +569,8 @@ class SpectrumAnalyzerWidget(QWidget):
              spl_offset = self.module.audio_engine.calibration.get_spl_offset_db()
              if spl_offset is not None:
                  overall_db += spl_offset
-             unit = "dB SPL"
         else:
-            unit = "dBFS"
+            pass
             
         # Frequency axis
         sample_rate = self.module.audio_engine.sample_rate
