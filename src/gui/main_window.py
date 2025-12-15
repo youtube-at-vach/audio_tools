@@ -23,6 +23,7 @@ from src.gui.widgets.noise_profiler import NoiseProfiler
 from src.gui.widgets.recorder_player import RecorderPlayer
 from src.gui.widgets.inverse_filter import InverseFilter
 from src.gui.widgets.sound_level_meter import SoundLevelMeter
+from src.gui.widgets.detachable_wrapper import DetachableWidgetWrapper
 from src.core.localization import get_manager, tr
 
 class MainWindow(QMainWindow):
@@ -156,10 +157,12 @@ class MainWindow(QMainWindow):
         self.module_widgets = []
         for module in self.modules:
             widget = module.get_widget()
-            self.module_widgets.append(widget)
             if widget:
-                self.content_area.addWidget(widget)
+                wrapper = DetachableWidgetWrapper(widget, tr(module.name))
+                self.module_widgets.append(wrapper)
+                self.content_area.addWidget(wrapper)
             else:
+                self.module_widgets.append(None)
                 self.content_area.addWidget(QLabel(f"No GUI for {module.name}"))
         
         # Status Bar
@@ -254,11 +257,15 @@ class MainWindow(QMainWindow):
 
     def _propagate_output_destination(self, mode: str):
         for widget in self.module_widgets:
-            if widget and hasattr(widget, 'set_output_destination'):
-                try:
-                    widget.set_output_destination(mode)
-                except Exception as e:
-                    print(f"Failed to sync output destination: {e}")
+            if widget:
+                # If wrapped, get the inner content
+                target = widget.content_widget if isinstance(widget, DetachableWidgetWrapper) else widget
+                
+                if hasattr(target, 'set_output_destination'):
+                    try:
+                        target.set_output_destination(mode)
+                    except Exception as e:
+                        print(f"Failed to sync output destination: {e}")
 
     def on_output_destination_changed(self, index):
         data = self.output_dest_combo.currentData()
