@@ -55,6 +55,33 @@ A collection of DIY audio measurement and analysis tools, grown organically as n
 *   **チャンネルルーティング**: 入力・出力チャンネルの個別割り当てに対応。
 *   **テーマ設定**: ライト/ダーク/システムテーマの切り替えが可能。
 
+## 🧩 ウィジット一覧 (Widgets)
+サイドバーに並ぶ各ウィジットの現況をまとめました。名称はUIの表記に合わせています。
+
+- **Welcome**: 起動時のウェルカム画面。主要機能のショート概要を表示。
+- **Signal Generator**: 多波形/ノイズ/スイープ発生と位相・振幅制御。
+- **Spectrum Analyzer**: リアルタイムFFTでPSD/RMS表示、カーソル測定、周波数制限。
+- **Sound Level Meter / LUFS Meter**: Lp/Leq/LE/Lmax/Lmin/Lpeak と LUFS/LKFS をモニタ。
+- **Loopback Finder**: インターフェースのレイテンシー測定。
+- **Distortion Analyzer**: THD/THD+N/SINAD/IMD を内蔵発振器とスイープで解析。
+- **Advanced Distortion Meter**: MIM/SPDR/PIM など高度な歪み指標を評価。
+- **Network Analyzer**: 伝達関数のゲイン/位相/群遅延をスイープ測定。
+- **Oscilloscope**: 2ch トリガ・カーソル・演算・フィルタ付きオシロ。
+- **Lock-in Amplifier**: PSD/FRA モード、ハーモニクス復調、キャリブレーション付きロックイン。
+- **Lock-in THD+N Analyzer**: ロックイン検波で歪みを高SNR測定し、残差・高調波を可視化。
+- **Impedance Analyzer**: OSL キャリブレーション済みのインピーダンス測定と多プロット表示。
+- **Inverse Filter**: キャリブレーションマップから逆特性FIRを設計し、音声ファイルへバッチ適用。
+- **Frequency Counter**: 周波数/周期測定とアラン分散プロット、キャリブレーション対応。
+- **Spectrogram**: 時間-周波数分布のリアルタイム表示、カラーマップ選択付き。
+- **Boxcar Averager**: 内部パルス/ステップや外部リファレンス同期によるボックスカー平均。
+- **Goniometer**: ステレオ位相相関とリサージュ表示、フォスファーモード対応。
+- **Noise Profiler**: 1/f・ハム・ホワイトノイズの自動検出、LNAゲイン補正、等価抵抗表示。
+- **Recorder & Player**: WAV/MP3/FLAC/OGG 録再、リサンプリング、ソフトウェアループバック。
+- **Raw Time Series**: 長時間スパンをリングバッファで保持する2chスクロール波形モニタ。
+- **Transient Analyzer**: トリガ収録＋CWT で過渡解析、解析帯域/スケールを柔軟に指定。
+- **Detachable Wrapper**: 任意ウィジットを独立ウィンドウとして切り離し・再接続するUIユーティリティ。
+- **Settings**: デバイス/入出力/キャリブレーション/テーマ/言語など全般設定。
+
 ---
 
 ## 🚀 インストールと実行 (Installation & Usage)
