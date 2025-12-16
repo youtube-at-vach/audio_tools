@@ -30,6 +30,11 @@ class BoxcarAverager(MeasurementModule):
         self.gate_enabled = False
         self.gate_start_samples = 0  # can be negative; will be mod period
         self.gate_length_samples = int(round(0.010 * self.audio_engine.sample_rate))  # default 10ms
+
+        # Internal PRBS/MLS generator cache
+        self._mls_cache = None
+        self._mls_cache_period = None
+        self._mls_seed = 0xACE1
         
         # State
         self.accumulator = None
@@ -129,6 +134,27 @@ class BoxcarAverager(MeasurementModule):
             return [(gate_start_mod, gate_end)]
         return [(gate_start_mod, period), (0, gate_end - period)]
 
+    def _ensure_mls_cache(self, period: int) -> np.ndarray:
+        """Return MLS/PRBS sequence of length == period (values in {-1, +1})."""
+        if self._mls_cache is not None and self._mls_cache_period == period:
+            return self._mls_cache
+
+        # 16-bit maximal-length LFSR (polynomial taps 16,14,13,11 => 0xB400)
+        reg = int(self._mls_seed) & 0xFFFF
+        if reg == 0:
+            reg = 1
+        seq = np.empty((period,), dtype=np.float64)
+        for i in range(period):
+            lsb = reg & 1
+            seq[i] = 1.0 if lsb else -1.0
+            reg >>= 1
+            if lsb:
+                reg ^= 0xB400
+
+        self._mls_cache = seq
+        self._mls_cache_period = period
+        return seq
+
     def _callback(self, indata, outdata, frames, time, status):
         if status: print(status)
 
@@ -183,6 +209,12 @@ class BoxcarAverager(MeasurementModule):
             elif self.mode == 'Internal Step':
                 # High for half period
                 signal = np.where(t_mod < (self.period_samples // 2), 1.0, -1.0)
+            elif self.mode == 'Internal Impulse':
+                # One-sample impulse at t_mod == 0
+                signal = np.where(t_mod == 0, 1.0, 0.0)
+            elif self.mode == 'Internal PRBS/MLS':
+                mls = self._ensure_mls_cache(int(self.period_samples))
+                signal = mls[t_mod.astype(np.intp, copy=False)]
                 
             # Output to both channels? Or just Left? Let's do Left.
             # Output to selected channel(s)
@@ -395,6 +427,8 @@ class BoxcarAveragerWidget(QWidget):
         self.mode_combo = QComboBox()
         self.mode_combo.addItem(tr("Internal Pulse"), "Internal Pulse")
         self.mode_combo.addItem(tr("Internal Step"), "Internal Step")
+        self.mode_combo.addItem(tr("Internal Impulse"), "Internal Impulse")
+        self.mode_combo.addItem(tr("Internal PRBS/MLS"), "Internal PRBS/MLS")
         self.mode_combo.addItem(tr("External Reference"), "External Reference")
         mode_idx = self.mode_combo.findData(self.module.mode)
         if mode_idx >= 0:
