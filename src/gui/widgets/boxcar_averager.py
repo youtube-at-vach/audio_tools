@@ -490,7 +490,10 @@ class BoxcarAveragerWidget(QWidget):
         self.ext_group.hide()
 
         # Gate controls visibility (only Internal Pulse)
-        self.gate_group.hide()
+        if self.module.mode == 'Internal Pulse':
+            self.gate_group.show()
+        else:
+            self.gate_group.hide()
         
         controls_group.setLayout(controls_layout)
         layout.addWidget(controls_group)
