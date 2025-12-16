@@ -338,8 +338,13 @@ class BoxcarAveragerWidget(QWidget):
         
         # Mode
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems([tr("Internal Pulse"), tr("Internal Step"), tr("External Reference")])
-        self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
+        self.mode_combo.addItem(tr("Internal Pulse"), "Internal Pulse")
+        self.mode_combo.addItem(tr("Internal Step"), "Internal Step")
+        self.mode_combo.addItem(tr("External Reference"), "External Reference")
+        mode_idx = self.mode_combo.findData(self.module.mode)
+        if mode_idx >= 0:
+            self.mode_combo.setCurrentIndex(mode_idx)
+        self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         controls_layout.addWidget(QLabel(tr("Mode:")))
         controls_layout.addWidget(self.mode_combo)
         
@@ -354,8 +359,13 @@ class BoxcarAveragerWidget(QWidget):
         
         # Channel
         self.channel_combo = QComboBox()
-        self.channel_combo.addItems([tr("Stereo"), tr("Left"), tr("Right")])
-        self.channel_combo.currentTextChanged.connect(self.on_channel_changed)
+        self.channel_combo.addItem(tr("Stereo"), "Stereo")
+        self.channel_combo.addItem(tr("Left"), "Left")
+        self.channel_combo.addItem(tr("Right"), "Right")
+        ch_idx = self.channel_combo.findData(self.module.input_channel)
+        if ch_idx >= 0:
+            self.channel_combo.setCurrentIndex(ch_idx)
+        self.channel_combo.currentIndexChanged.connect(self.on_channel_changed)
         controls_layout.addWidget(QLabel(tr("Channel:")))
         controls_layout.addWidget(self.channel_combo)
         
@@ -372,8 +382,12 @@ class BoxcarAveragerWidget(QWidget):
         ext_layout.addWidget(self.ref_combo)
         
         self.edge_combo = QComboBox()
-        self.edge_combo.addItems([tr("Rising"), tr("Falling")])
-        self.edge_combo.currentTextChanged.connect(self.on_edge_changed)
+        self.edge_combo.addItem(tr("Rising"), "Rising")
+        self.edge_combo.addItem(tr("Falling"), "Falling")
+        edge_idx = self.edge_combo.findData(self.module.trigger_edge)
+        if edge_idx >= 0:
+            self.edge_combo.setCurrentIndex(edge_idx)
+        self.edge_combo.currentIndexChanged.connect(self.on_edge_changed)
         ext_layout.addWidget(QLabel(tr("Edge:")))
         ext_layout.addWidget(self.edge_combo)
         
@@ -415,7 +429,10 @@ class BoxcarAveragerWidget(QWidget):
     def on_reset(self):
         self.module.reset_average()
         
-    def on_mode_changed(self, val):
+    def on_mode_changed(self, idx):
+        val = self.mode_combo.itemData(idx)
+        if val is None:
+            return
         self.module.mode = val
         self.module.reset_average()
         
@@ -430,7 +447,10 @@ class BoxcarAveragerWidget(QWidget):
         self.module.period_samples = int(val / 1000 * sr)
         self.module.reset_average()
         
-    def on_channel_changed(self, val):
+    def on_channel_changed(self, idx):
+        val = self.channel_combo.itemData(idx)
+        if val is None:
+            return
         self.module.input_channel = val
         self.module.reset_average()
 
@@ -438,7 +458,10 @@ class BoxcarAveragerWidget(QWidget):
         self.module.ref_channel = idx
         self.module.reset_average()
 
-    def on_edge_changed(self, val):
+    def on_edge_changed(self, idx):
+        val = self.edge_combo.itemData(idx)
+        if val is None:
+            return
         self.module.trigger_edge = val
         self.module.reset_average()
 
