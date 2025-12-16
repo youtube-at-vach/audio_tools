@@ -69,6 +69,15 @@ A collection of DIY audio measurement and analysis tools, grown organically as n
     ./Audio_Measurement_Tools-*.AppImage
     ```
 
+#### Linux（任意）: JACK / PipeWire を使う場合の注意
+
+Linux ではそのまま **PortAudio** バックエンドでも通常利用できますが、環境によっては **バッファ境界で位相が飛ぶ**（位相連続性が崩れる）ことがあります。
+位相の連続性が重要な測定（位相・群遅延・ロックイン等）を行う場合は、入出力先として **JACK** もしくは **PipeWire** を指定して使うことを推奨します。
+
+ただし JACK / PipeWire 経由にすると、起動後に音が出ない・入出力がつながらない場合があります。その際は **QJackCtl** などでルーティング（接続）を確認・設定してください。
+
+※この項目はあくまでオプションです。PortAudio のままでも普通に使えます。
+
 ### 🐍 ソースコードから実行する場合
 
 **必要条件**: Python 3.10 以上
