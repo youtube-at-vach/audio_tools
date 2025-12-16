@@ -38,7 +38,8 @@ class ConfigManager:
                 "sample_rate": 48000,
                 "block_size": 1024,
                 "input_channels": "stereo",
-                "output_channels": "stereo"
+                "output_channels": "stereo",
+                "pipewire_jack_resident": False
             }
         }
 
@@ -73,6 +74,18 @@ class ConfigManager:
         self.config["audio"]["block_size"] = block_size
         self.config["audio"]["input_channels"] = in_ch
         self.config["audio"]["output_channels"] = out_ch
+        self.save_config()
+
+    def get_pipewire_jack_resident(self) -> bool:
+        """Returns whether PipeWire/JACK resident mode is enabled."""
+        audio = self.get_audio_config()
+        return bool(audio.get("pipewire_jack_resident", False))
+
+    def set_pipewire_jack_resident(self, enabled: bool):
+        """Enables/disables PipeWire/JACK resident mode."""
+        if "audio" not in self.config:
+            self.config["audio"] = {}
+        self.config["audio"]["pipewire_jack_resident"] = bool(enabled)
         self.save_config()
 
     def get_language(self):

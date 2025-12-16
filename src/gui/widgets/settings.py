@@ -2,7 +2,7 @@ import numpy as np
 import scipy.signal
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, QPushButton, 
                              QFormLayout, QGroupBox, QMessageBox, QLineEdit, QDialog,
-                             QDoubleSpinBox, QHBoxLayout, QTabWidget)
+                             QDoubleSpinBox, QHBoxLayout, QTabWidget, QCheckBox)
 from PyQt6.QtCore import QTimer
 from src.core.audio_engine import AudioEngine
 from src.core.config_manager import ConfigManager
@@ -879,6 +879,12 @@ class SettingsWidget(QWidget):
         # Audio Configuration Group
         conf_group = QGroupBox(tr("Audio Configuration"))
         conf_layout = QFormLayout()
+
+        # PipeWire/JACK resident mode (keep PortAudio stream open)
+        self.pipewire_jack_resident_check = QCheckBox(tr("PipeWire / JACK Mode (Resident)"))
+        self.pipewire_jack_resident_check.setChecked(self.config_manager.get_pipewire_jack_resident())
+        self.pipewire_jack_resident_check.toggled.connect(self.on_pipewire_jack_resident_toggled)
+        conf_layout.addRow(self.pipewire_jack_resident_check)
         
         # Sample Rate
         self.sr_combo = QComboBox()
@@ -1005,6 +1011,10 @@ class SettingsWidget(QWidget):
         self.update_in_sens_display()
         self.update_out_gain_display()
         self.update_spl_display()
+
+    def on_pipewire_jack_resident_toggled(self, checked: bool):
+        self.config_manager.set_pipewire_jack_resident(bool(checked))
+        self.audio_engine.set_pipewire_jack_resident(bool(checked))
 
     def open_spl_calibration(self):
         dlg = SplCalibrationDialog(self.audio_engine, self)

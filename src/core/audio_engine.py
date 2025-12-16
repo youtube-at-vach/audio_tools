@@ -16,6 +16,10 @@ class AudioEngine:
         self.block_size = 1024
         self.stream = None
         self.logger = logging.getLogger(__name__)
+
+        # PipeWire/JACK resident mode: keep PortAudio stream open for the app lifetime.
+        self.pipewire_jack_resident = False
+        self.jack_client_name = "audio-tools"
         
         # Calibration
         self.calibration = CalibrationManager()
@@ -36,9 +40,25 @@ class AudioEngine:
         self.mute_output = False
         self.last_output_buffer = None
 
-        # Sorry, your quota is full, so I had no choice but to fix it in my naivety.
-        # If you find this, you can rework it into clean code. Please change the definition to be more appropriate
-        self.accumulated_status = None
+        # Accumulate callback status flags between UI polls.
+        self.accumulated_status = sd.CallbackFlags()
+
+    def set_pipewire_jack_resident(self, enabled: bool):
+        """Enable/disable resident stream mode (useful for PipeWire/JACK routing persistence)."""
+        enabled = bool(enabled)
+        self.pipewire_jack_resident = enabled
+        self.logger.info(f"Set PipeWire/JACK resident mode: {enabled}")
+
+        if enabled:
+            # Ensure master stream is open even with zero clients.
+            self._start_master_stream()
+            return
+
+        # Disabled: revert to legacy behavior (only keep stream open while clients exist).
+        with self.lock:
+            has_clients = bool(self.callbacks)
+        if not has_clients:
+            self.stop_stream()
 
     def set_loopback(self, enabled):
         self.loopback = enabled
@@ -107,7 +127,7 @@ class AudioEngine:
                 self.logger.info(f"Unregistered callback {callback_id}")
             
             # Check if we should stop the stream
-            if not self.callbacks and self.stream is not None:
+            if (not self.callbacks) and (self.stream is not None) and (not self.pipewire_jack_resident):
                 should_stop = True
         
         # Stop stream outside the lock to avoid deadlock with callback
@@ -219,6 +239,23 @@ class AudioEngine:
             # If muted, outdata is already 0 filled at start of callback
         
         try:
+            extra_settings = None
+            # If running on JACK (including PipeWire-JACK), attempt to fix the client/node name.
+            try:
+                hostapi_name = None
+                dev_id = self.output_device
+                if dev_id is None:
+                    # Fallback to default output device.
+                    dev_id = sd.default.device[1]
+                if dev_id is not None and dev_id != -1:
+                    hostapi_idx = sd.query_devices(dev_id).get('hostapi')
+                    if hostapi_idx is not None:
+                        hostapi_name = sd.query_hostapis(hostapi_idx).get('name')
+                if hostapi_name and 'jack' in str(hostapi_name).lower():
+                    extra_settings = sd.JackSettings(client_name=self.jack_client_name)
+            except Exception:
+                extra_settings = None
+
             self.stream = sd.Stream(
                 device=(self.input_device, self.output_device),
                 samplerate=self.sample_rate,
@@ -226,7 +263,8 @@ class AudioEngine:
                 callback=master_callback,
                 channels=(hw_in_ch, hw_out_ch),
                 dtype='float32',
-                latency='high'
+                latency='high',
+                extra_settings=extra_settings
             )
             self.stream.start()
             self.logger.info(f"Master audio stream started. SR={self.sample_rate}, HW_Ch=({hw_in_ch}, {hw_out_ch})")

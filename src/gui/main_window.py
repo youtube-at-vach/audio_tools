@@ -93,6 +93,9 @@ class MainWindow(QMainWindow):
             in_ch = audio_cfg.get('input_channels', 'stereo')
             out_ch = audio_cfg.get('output_channels', 'stereo')
             self.audio_engine.set_channel_mode(in_ch, out_ch)
+
+            # Apply PipeWire/JACK resident mode after devices + format are configured.
+            self.audio_engine.set_pipewire_jack_resident(self.config_manager.get_pipewire_jack_resident())
             
         except Exception as e:
             print(f"Failed to set devices/settings: {e}")
@@ -100,6 +103,12 @@ class MainWindow(QMainWindow):
             try:
                 self.audio_engine.set_devices(None, None)
             except:
+                pass
+
+            # Even if device selection failed, honor resident setting best-effort.
+            try:
+                self.audio_engine.set_pipewire_jack_resident(self.config_manager.get_pipewire_jack_resident())
+            except Exception:
                 pass
         
         # Initialize Modules
@@ -201,6 +210,14 @@ class MainWindow(QMainWindow):
 
         # Sync output destination control with engine state on startup
         self._sync_output_destination_ui(self._get_engine_output_destination(), propagate=True)
+
+    def closeEvent(self, event):
+        # Ensure PortAudio stream is closed (important in resident mode).
+        try:
+            self.audio_engine.stop_stream()
+        except Exception:
+            pass
+        super().closeEvent(event)
 
     def update_status(self):
         status = self.audio_engine.get_status()
