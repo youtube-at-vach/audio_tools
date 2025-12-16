@@ -1,4 +1,5 @@
 import argparse
+from typing import Tuple
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
@@ -20,6 +21,13 @@ class Goniometer(MeasurementModule):
         self.decay = 0.90 # Persistence factor (0-1)
         self.display_mode = 'Line' # 'Line', 'Phosphor'
         self.color_palette = 'Green' # 'Green', 'Fire', 'Ice', 'Rainbow'
+
+        # Plot mapping / orientation
+        # - 'ms': Mid/Side mapping (mono = vertical)
+        # - 'lr': Left/Right mapping (oscilloscope XY style)
+        self.mapping_mode = 'ms'
+        self.invert_x = False
+        self.invert_y = False
         
         # State
         self.audio_buffer = np.zeros((self.buffer_size, 2))
@@ -119,10 +127,12 @@ class GoniometerWidget(QWidget):
         self.plot_widget.hideAxis('left')
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
         self.plot_widget.setBackground('#111')
-        
-        # Add background lines for reference
-        self.plot_widget.addItem(pg.InfiniteLine(pos=(0,0), angle=45, pen=pg.mkPen('#444', style=Qt.PenStyle.DashLine)))
-        self.plot_widget.addItem(pg.InfiniteLine(pos=(0,0), angle=-45, pen=pg.mkPen('#444', style=Qt.PenStyle.DashLine)))
+
+        # Add background reference lines (updated based on mapping/inversion)
+        self.ref_line_a = pg.InfiniteLine(pos=(0, 0), angle=45, pen=pg.mkPen('#444', style=Qt.PenStyle.DashLine))
+        self.ref_line_b = pg.InfiniteLine(pos=(0, 0), angle=-45, pen=pg.mkPen('#444', style=Qt.PenStyle.DashLine))
+        self.plot_widget.addItem(self.ref_line_a)
+        self.plot_widget.addItem(self.ref_line_b)
         
         # Items
         # Line Trace
@@ -175,17 +185,33 @@ class GoniometerWidget(QWidget):
         # Display Mode
         controls_layout.addWidget(QLabel(tr("Display Mode:")))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(['Line', 'Phosphor'])
-        self.mode_combo.setCurrentText(self.module.display_mode)
-        self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
+        self.mode_combo.addItem(tr("Line"), 'Line')
+        self.mode_combo.addItem(tr("Phosphor"), 'Phosphor')
+        mode_index = self.mode_combo.findData(self.module.display_mode)
+        self.mode_combo.setCurrentIndex(mode_index if mode_index >= 0 else 0)
+        self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         controls_layout.addWidget(self.mode_combo)
+
+        # Mapping / orientation
+        controls_layout.addWidget(QLabel(tr("Mapping:")))
+        self.mapping_combo = QComboBox()
+        self.mapping_combo.addItem(tr("Mid/Side (M/S)"), 'ms')
+        self.mapping_combo.addItem(tr("Left/Right (L/R)"), 'lr')
+        self.mapping_combo.setCurrentIndex(0 if self.module.mapping_mode == 'ms' else 1)
+        self.mapping_combo.currentIndexChanged.connect(self.on_mapping_changed)
+        controls_layout.addWidget(self.mapping_combo)
         
         # Color Palette
         controls_layout.addWidget(QLabel(tr("Color Palette:")))
         self.palette_combo = QComboBox()
-        self.palette_combo.addItems(['Green', 'Fire', 'Ice', 'Rainbow'])
-        self.palette_combo.setCurrentText(self.module.color_palette)
-        self.palette_combo.currentTextChanged.connect(self.on_palette_changed)
+        self.palette_combo.addItem(tr("Green"), 'Green')
+        self.palette_combo.addItem(tr("Fire"), 'Fire')
+        self.palette_combo.addItem(tr("Ice"), 'Ice')
+        self.palette_combo.addItem(tr("Rainbow"), 'Rainbow')
+        palette_index = self.palette_combo.findData(self.module.color_palette)
+        if palette_index >= 0:
+            self.palette_combo.setCurrentIndex(palette_index)
+        self.palette_combo.currentIndexChanged.connect(self.on_palette_changed)
         controls_layout.addWidget(self.palette_combo)
         
         # Persistence (Decay)
@@ -211,6 +237,17 @@ class GoniometerWidget(QWidget):
         self.auto_gain_chk = QCheckBox(tr("Auto Gain"))
         self.auto_gain_chk.toggled.connect(lambda x: setattr(self.module, 'auto_gain', x))
         controls_layout.addWidget(self.auto_gain_chk)
+
+        # Axis inversion (useful for oscilloscope XY alignment)
+        self.invert_x_chk = QCheckBox(tr("Invert X"))
+        self.invert_x_chk.setChecked(bool(self.module.invert_x))
+        self.invert_x_chk.toggled.connect(self.on_invert_x_changed)
+        controls_layout.addWidget(self.invert_x_chk)
+
+        self.invert_y_chk = QCheckBox(tr("Invert Y"))
+        self.invert_y_chk.setChecked(bool(self.module.invert_y))
+        self.invert_y_chk.toggled.connect(self.on_invert_y_changed)
+        controls_layout.addWidget(self.invert_y_chk)
         
         controls_layout.addStretch()
         controls_group.setLayout(controls_layout)
@@ -220,7 +257,68 @@ class GoniometerWidget(QWidget):
         self.setLayout(layout)
         
         # Init visibility
-        self.on_mode_changed(self.module.display_mode)
+        self.on_mode_changed(self.mode_combo.currentIndex())
+        self._update_reference_lines()
+
+    def on_mapping_changed(self, _index: int):
+        mode = self.mapping_combo.currentData()
+        if mode not in ('ms', 'lr'):
+            mode = 'ms'
+        if self.module.mapping_mode != mode:
+            self.module.mapping_mode = mode
+            # Reset phosphor history to avoid mixing coordinate systems
+            self.module.heatmap = np.zeros((self.module.heatmap_size, self.module.heatmap_size))
+            self.img_item.setImage(self.module.heatmap.T, autoLevels=False)
+            self._update_reference_lines()
+
+    def on_invert_x_changed(self, checked: bool):
+        self.module.invert_x = bool(checked)
+        # Reset phosphor history so the image doesn't smear across reflections
+        self.module.heatmap = np.zeros((self.module.heatmap_size, self.module.heatmap_size))
+        self.img_item.setImage(self.module.heatmap.T, autoLevels=False)
+        self._update_reference_lines()
+
+    def on_invert_y_changed(self, checked: bool):
+        self.module.invert_y = bool(checked)
+        self.module.heatmap = np.zeros((self.module.heatmap_size, self.module.heatmap_size))
+        self.img_item.setImage(self.module.heatmap.T, autoLevels=False)
+        self._update_reference_lines()
+
+    def _update_reference_lines(self):
+        """Update background reference lines based on mapping and axis inversion.
+
+        - In L/R mode: show mono (L=R) and anti-phase (L=-R) diagonals.
+        - In M/S mode: show mono (Side=0) vertical and anti-phase (Mid=0) horizontal.
+        """
+        if self.module.mapping_mode == 'lr':
+            sx = -1 if self.module.invert_x else 1
+            sy = -1 if self.module.invert_y else 1
+            # Mono line: y = (sy/sx) * x
+            mono_angle = 45 if sy == sx else -45
+            anti_angle = -45 if sy == sx else 45
+            self.ref_line_a.setAngle(mono_angle)
+            self.ref_line_b.setAngle(anti_angle)
+        else:
+            # M/S mapping: mono is Side=0 (x=0) -> vertical, anti-phase is Mid=0 (y=0) -> horizontal
+            self.ref_line_a.setAngle(90)
+            self.ref_line_b.setAngle(0)
+
+    def _compute_xy(self, l: np.ndarray, r: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        if self.module.mapping_mode == 'lr':
+            x = l
+            y = r
+        else:
+            # Transform to M/S (Rotated 45 deg)
+            # X = (R - L) * 0.707 (Side, L on left)
+            # Y = (L + R) * 0.707 (Mid)
+            y = (l + r) * 0.707
+            x = (r - l) * 0.707
+
+        if self.module.invert_x:
+            x = -x
+        if self.module.invert_y:
+            y = -y
+        return x, y
 
     def on_toggle(self, checked):
         if checked:
@@ -237,17 +335,23 @@ class GoniometerWidget(QWidget):
         self.module.gain = gain
         self.gain_label.setText(f"{gain:.1f}x")
         
-    def on_mode_changed(self, text):
-        self.module.display_mode = text
-        if text == 'Line':
+    def on_mode_changed(self, _index):
+        mode = self.mode_combo.currentData()
+        if mode not in ('Line', 'Phosphor'):
+            mode = 'Line'
+        self.module.display_mode = mode
+        if mode == 'Line':
             self.trace.setVisible(True)
             self.img_item.setVisible(False)
         else:
             self.trace.setVisible(False)
             self.img_item.setVisible(True)
             
-    def on_palette_changed(self, text):
-        self.module.color_palette = text
+    def on_palette_changed(self, _index):
+        palette = self.palette_combo.currentData()
+        if palette not in ('Green', 'Fire', 'Ice', 'Rainbow'):
+            palette = 'Green'
+        self.module.color_palette = palette
         self.update_palette()
         
     def on_decay_changed(self, val):
@@ -350,15 +454,10 @@ class GoniometerWidget(QWidget):
         l = l * self.module.gain
         r = r * self.module.gain
         
-        # Transform to M/S (Rotated 45 deg)
-        # X = (R - L) * 0.707 (Side, L on left)
-        # Y = (L + R) * 0.707 (Mid)
-        
-        m = (l + r) * 0.707
-        s = (r - l) * 0.707
+        x, y = self._compute_xy(l, r)
         
         if self.module.display_mode == 'Line':
-            self.trace.setData(s, m)
+            self.trace.setData(x, y)
         else:
             # Phosphor Mode
             # Decay existing
@@ -386,7 +485,7 @@ class GoniometerWidget(QWidget):
             # Or Heatmap = Heatmap * Decay + Current_Histogram.
             # Let's try accumulation.
             
-            h, _, _ = np.histogram2d(s, m, bins=self.module.heatmap_size, range=rng)
+            h, _, _ = np.histogram2d(x, y, bins=self.module.heatmap_size, range=rng)
             
             # Log compression for better dynamic range?
             # h = np.log1p(h)
