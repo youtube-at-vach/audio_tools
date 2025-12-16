@@ -54,7 +54,6 @@ class FrequencyCounter(MeasurementModule):
                 freq = self.process()
                 if freq is not None:
                     print(f"Frequency: {freq:.4f} Hz")
-                import time
                 time.sleep(0.1)
         except KeyboardInterrupt:
             self.stop_analysis()

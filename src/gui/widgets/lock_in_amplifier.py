@@ -5,9 +5,6 @@ from scipy.signal import hilbert
 from collections import deque
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
                              QComboBox, QCheckBox, QGroupBox, QFormLayout, 
-                             QDoubleSpinBox, QProgressBar, QSpinBox)
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QComboBox, QCheckBox, QGroupBox, QFormLayout, 
                              QDoubleSpinBox, QProgressBar, QSpinBox, QTabWidget, QApplication, QFileDialog, QMessageBox)
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 import time

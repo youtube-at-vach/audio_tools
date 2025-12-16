@@ -8,7 +8,6 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLay
                              QTableWidget, QTableWidgetItem, QHeaderView)
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 from src.measurement_modules.base import MeasurementModule
-from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 from src.core.analysis import AudioCalc
 from src.core.localization import tr
