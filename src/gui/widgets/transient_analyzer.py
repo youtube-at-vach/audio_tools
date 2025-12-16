@@ -1,9 +1,10 @@
-
 import numpy as np
 import pyqtgraph as pg
 import pywt
+from typing import Optional
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
-                             QComboBox, QGroupBox, QSpinBox, QSplitter, QProgressBar, QMessageBox)
+                             QComboBox, QGroupBox, QSpinBox, QSplitter, QProgressBar, QMessageBox,
+                             QCheckBox, QDoubleSpinBox)
 from PyQt6.QtCore import QTimer, Qt, QRectF
 from PyQt6.QtGui import QTransform
 from src.measurement_modules.base import MeasurementModule
@@ -28,11 +29,19 @@ class TransientAnalyzer(MeasurementModule):
         self.scale_step = 1
         self.min_anal_freq = 20
         self.max_anal_freq = 20000
-        self.record_duration_s = 1
+        self.record_duration_s = 0.5
+
+        # Trigger (oscilloscope-like)
+        self.trigger_enabled = False
+        self.trigger_source = 'Left'  # 'Left' or 'Right'
+        self.trigger_slope = 'Rising'  # 'Rising' or 'Falling'
+        self.trigger_level = 0.0
 
         # Recording limit (enforced in audio callback for accuracy)
         self._target_samples = None
         self._recorded_samples = 0
+        self._triggered = False
+        self._prev_trigger_sample = None
         
         self.callback_id = None
         self.widget = None
@@ -58,8 +67,14 @@ class TransientAnalyzer(MeasurementModule):
         self.is_recording = True
         self.fs = self.audio_engine.sample_rate
         self._recorded_samples = 0
-        duration_s = max(1, int(self.record_duration_s))
-        self._target_samples = int(duration_s * self.fs)
+        duration_s = float(self.record_duration_s)
+        if duration_s <= 0:
+            duration_s = 0.01
+        if duration_s > 3.0:
+            duration_s = 3.0
+        self._target_samples = int(max(1, round(duration_s * self.fs)))
+        self._triggered = (not self.trigger_enabled)
+        self._prev_trigger_sample = None
         self.callback_id = self.audio_engine.register_callback(self._audio_callback)
 
     def stop_recording(self):
@@ -67,6 +82,10 @@ class TransientAnalyzer(MeasurementModule):
         if self.callback_id:
             self.audio_engine.unregister_callback(self.callback_id)
             self.callback_id = None
+
+        self._target_samples = None
+        self._triggered = False
+        self._prev_trigger_sample = None
         
         # Concatenate data
         if self.recorded_data:
@@ -85,17 +104,78 @@ class TransientAnalyzer(MeasurementModule):
         else:
             self.final_data = None
 
+    def _get_trigger_signal(self, indata: np.ndarray) -> np.ndarray:
+        """Return 1D signal used for trigger detection."""
+        if indata is None or indata.size == 0:
+            return np.asarray([], dtype=float)
+
+        if indata.ndim == 1:
+            return np.asarray(indata, dtype=float)
+
+        if self.trigger_source == 'Left':
+            return np.asarray(indata[:, 0], dtype=float)
+        if self.trigger_source == 'Right':
+            if indata.shape[1] > 1:
+                return np.asarray(indata[:, 1], dtype=float)
+            return np.asarray(indata[:, 0], dtype=float)
+
+        return np.asarray(indata[:, 0], dtype=float)
+
+    def _find_trigger_index(self, sig: np.ndarray) -> Optional[int]:
+        """Find the first index in sig where the trigger condition becomes true."""
+        if sig is None or sig.size == 0:
+            return None
+
+        level = float(self.trigger_level)
+        prev = self._prev_trigger_sample
+
+        if prev is not None:
+            if self.trigger_slope == 'Rising':
+                if prev <= level and sig[0] > level:
+                    return 0
+            else:
+                if prev >= level and sig[0] < level:
+                    return 0
+
+        if sig.size < 2:
+            return None
+
+        if self.trigger_slope == 'Rising':
+            crossings = np.where((sig[:-1] <= level) & (sig[1:] > level))[0]
+        else:
+            crossings = np.where((sig[:-1] >= level) & (sig[1:] < level))[0]
+        if crossings.size == 0:
+            return None
+        return int(crossings[0] + 1)
+
     def _audio_callback(self, indata, outdata, frames, time, status):
         if self.is_recording:
             target = self._target_samples
             if target is None:
                 self.recorded_data.append(indata.copy())
             else:
+                if not self._triggered:
+                    sig = self._get_trigger_signal(indata)
+                    trig_idx = self._find_trigger_index(sig)
+                    # Update prev sample for next block
+                    if sig.size > 0:
+                        self._prev_trigger_sample = float(sig[-1])
+
+                    if trig_idx is None:
+                        outdata.fill(0)
+                        return
+
+                    self._triggered = True
+                    start = int(trig_idx)
+                else:
+                    start = 0
+
                 remaining = target - self._recorded_samples
                 if remaining > 0:
-                    chunk = indata[:remaining].copy()
-                    self.recorded_data.append(chunk)
-                    self._recorded_samples += chunk.shape[0]
+                    chunk = indata[start:start + remaining].copy()
+                    if chunk.size > 0:
+                        self.recorded_data.append(chunk)
+                        self._recorded_samples += chunk.shape[0]
 
                 if self._recorded_samples >= target:
                     # Stop collecting immediately; UI will finalize/unregister shortly.
@@ -146,9 +226,6 @@ class TransientAnalyzerWidget(QWidget):
     def __init__(self, module: TransientAnalyzer):
         super().__init__()
         self.module = module
-        self.auto_stop_timer = QTimer(self)
-        self.auto_stop_timer.setSingleShot(True)
-        self.auto_stop_timer.timeout.connect(self._auto_stop_recording)
         self.init_ui()
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_status)
@@ -198,9 +275,11 @@ class TransientAnalyzerWidget(QWidget):
 
         # Record Duration
         param_layout.addWidget(QLabel(tr("Record Time:")))
-        self.rec_time_spin = QSpinBox()
-        self.rec_time_spin.setRange(1, 5)
-        self.rec_time_spin.setValue(int(self.module.record_duration_s))
+        self.rec_time_spin = QDoubleSpinBox()
+        self.rec_time_spin.setRange(0.1, 3.0)
+        self.rec_time_spin.setDecimals(2)
+        self.rec_time_spin.setSingleStep(0.1)
+        self.rec_time_spin.setValue(float(self.module.record_duration_s))
         self.rec_time_spin.setSuffix(" s")
         self.rec_time_spin.valueChanged.connect(self.on_record_time_changed)
         param_layout.addWidget(self.rec_time_spin)
@@ -221,6 +300,41 @@ class TransientAnalyzerWidget(QWidget):
         
         ctrl_group.setLayout(ctrl_layout)
         layout.addWidget(ctrl_group)
+
+        # --- Trigger ---
+        trig_group = QGroupBox(tr("Trigger"))
+        trig_layout = QHBoxLayout()
+
+        self.trig_enable = QCheckBox(tr("Enable"))
+        self.trig_enable.setChecked(bool(self.module.trigger_enabled))
+        self.trig_enable.toggled.connect(self.on_trigger_enabled_changed)
+        trig_layout.addWidget(self.trig_enable)
+
+        trig_layout.addWidget(QLabel(tr("Source:")))
+        self.trig_source_combo = QComboBox()
+        self.trig_source_combo.addItems(['Left', 'Right'])
+        self.trig_source_combo.setCurrentText(self.module.trigger_source)
+        self.trig_source_combo.currentTextChanged.connect(self.on_trigger_source_changed)
+        trig_layout.addWidget(self.trig_source_combo)
+
+        trig_layout.addWidget(QLabel(tr("Slope:")))
+        self.trig_slope_combo = QComboBox()
+        self.trig_slope_combo.addItems(['Rising', 'Falling'])
+        self.trig_slope_combo.setCurrentText(self.module.trigger_slope)
+        self.trig_slope_combo.currentTextChanged.connect(self.on_trigger_slope_changed)
+        trig_layout.addWidget(self.trig_slope_combo)
+
+        trig_layout.addWidget(QLabel(tr("Level:")))
+        self.trig_level_spin = QDoubleSpinBox()
+        self.trig_level_spin.setRange(-10.0, 10.0)
+        self.trig_level_spin.setDecimals(3)
+        self.trig_level_spin.setSingleStep(0.01)
+        self.trig_level_spin.setValue(float(self.module.trigger_level))
+        self.trig_level_spin.valueChanged.connect(self.on_trigger_level_changed)
+        trig_layout.addWidget(self.trig_level_spin)
+
+        trig_group.setLayout(trig_layout)
+        layout.addWidget(trig_group)
         
         # Complexity Note
         note_label = QLabel(tr("Note: CWT analysis is computationally intensive. Long recordings may take time."))
@@ -273,7 +387,19 @@ class TransientAnalyzerWidget(QWidget):
         self.module.max_anal_freq = val
 
     def on_record_time_changed(self, val):
-        self.module.record_duration_s = int(val)
+        self.module.record_duration_s = float(val)
+
+    def on_trigger_enabled_changed(self, enabled: bool):
+        self.module.trigger_enabled = bool(enabled)
+
+    def on_trigger_source_changed(self, val: str):
+        self.module.trigger_source = val
+
+    def on_trigger_slope_changed(self, val: str):
+        self.module.trigger_slope = val
+
+    def on_trigger_level_changed(self, val: float):
+        self.module.trigger_level = float(val)
 
     def _start_recording_ui(self):
         self.module.start_recording()
@@ -281,22 +407,12 @@ class TransientAnalyzerWidget(QWidget):
         self.rec_btn.setStyleSheet("background-color: #ffcccc; color: red;")
         self.analyze_btn.setEnabled(False)
 
-        self.auto_stop_timer.stop()
-        duration_ms = max(1, int(self.module.record_duration_s) * 1000)
-        self.auto_stop_timer.start(duration_ms)
-
     def _stop_recording_ui(self):
-        self.auto_stop_timer.stop()
         self.module.stop_recording()
         self.rec_btn.setText(tr("Record"))
         self.rec_btn.setStyleSheet("")
         self.analyze_btn.setEnabled(True)
         self.update_waveform_plot()
-
-    def _auto_stop_recording(self):
-        if self.rec_btn.isChecked() and self.module.is_recording:
-            self.rec_btn.setChecked(False)
-            self._stop_recording_ui()
 
     def on_record_toggle(self):
         if self.rec_btn.isChecked():
