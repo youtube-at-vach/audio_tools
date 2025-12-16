@@ -29,6 +29,7 @@
     "Active Input:": "활성 입력:",
     "Active Output:": "활성 출력:",
     "Audio Configuration": "오디오 구성",
+    "PipeWire / JACK Mode (Resident)": "PipeWire / JACK 모드(상주)",
     "Sample Rate:": "샘플링 레이트:",
     "Buffer Size:": "버퍼 크기:",
     "Input Channels:": "입력 채널:",

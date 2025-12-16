@@ -29,6 +29,7 @@
     "Active Input:": "Entrée Active :",
     "Active Output:": "Sortie Active :",
     "Audio Configuration": "Configuration Audio",
+    "PipeWire / JACK Mode (Resident)": "Mode PipeWire / JACK (Résident)",
     "Sample Rate:": "Taux d'Échantillonnage :",
     "Buffer Size:": "Taille du Tampon :",
     "Input Channels:": "Canaux d'Entrée :",

@@ -29,6 +29,7 @@
     "Active Input:": "当前输入:",
     "Active Output:": "当前输出:",
     "Audio Configuration": "音频配置",
+    "PipeWire / JACK Mode (Resident)": "PipeWire / JACK 模式（常驻）",
     "Sample Rate:": "采样率:",
     "Buffer Size:": "缓冲区大小:",
     "Input Channels:": "输入通道:",

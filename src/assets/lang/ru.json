@@ -29,6 +29,7 @@
     "Active Input:": "Активный вход:",
     "Active Output:": "Активный выход:",
     "Audio Configuration": "Конфигурация аудио",
+    "PipeWire / JACK Mode (Resident)": "Режим PipeWire / JACK (резидентный)",
     "Sample Rate:": "Частота дискретизации:",
     "Buffer Size:": "Размер буфера:",
     "Input Channels:": "Входные каналы:",
