@@ -10,6 +10,7 @@ from PyQt6.QtGui import QTransform
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 from src.core.localization import tr
+from src.core.utils import format_si
 
 class TransientAnalyzer(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -374,6 +375,42 @@ class TransientAnalyzerWidget(QWidget):
         
         self.setLayout(layout)
 
+    def _set_log_freq_axis(self, min_hz: float, max_hz: float):
+        # We render the image in log10(Hz) coordinates; this sets ticks as Hz labels.
+        try:
+            lo = float(min_hz)
+            hi = float(max_hz)
+        except (TypeError, ValueError):
+            return
+
+        if not np.isfinite(lo) or not np.isfinite(hi):
+            return
+        if lo <= 0:
+            lo = 1e-6
+        if hi <= lo:
+            hi = lo * 10.0
+
+        log_lo = float(np.log10(lo))
+        log_hi = float(np.log10(hi))
+
+        exp_min = int(np.floor(log_lo))
+        exp_max = int(np.ceil(log_hi))
+
+        major = []
+        minor = []
+        for exp in range(exp_min, exp_max + 1):
+            for mult in (1.0, 2.0, 5.0):
+                f = mult * (10.0 ** exp)
+                if f < lo or f > hi:
+                    continue
+                pos = float(np.log10(f))
+                if mult == 1.0:
+                    major.append((pos, format_si(f, unit="", sig_figs=3, space="")))
+                else:
+                    minor.append((pos, ""))
+
+        self.scalo_plot.getAxis('left').setTicks([major, minor])
+
     def on_channel_changed(self, val):
         self.module.input_channel = val
 
@@ -454,8 +491,14 @@ class TransientAnalyzerWidget(QWidget):
             min_f = np.min(freqs)
             max_f = np.max(freqs)
             duration = times[-1]
-            
-            self.img_item.setRect(QRectF(0, min_f, duration, max_f - min_f))
+
+            # Log-frequency Y axis: map Hz -> log10(Hz)
+            min_f = float(max(min_f, 1e-6))
+            max_f = float(max(max_f, min_f * 1.0001))
+            y0 = float(np.log10(min_f))
+            y1 = float(np.log10(max_f))
+            self.img_item.setRect(QRectF(0, y0, duration, y1 - y0))
+            self._set_log_freq_axis(min_f, max_f)
             
         except Exception as e:
             QMessageBox.critical(self, tr("Error"), str(e))
