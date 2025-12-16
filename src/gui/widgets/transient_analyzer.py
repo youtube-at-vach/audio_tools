@@ -242,8 +242,13 @@ class TransientAnalyzerWidget(QWidget):
         # Input Channel
         ctrl_layout.addWidget(QLabel(tr("Channel:")))
         self.chan_combo = QComboBox()
-        self.chan_combo.addItems(['Left', 'Right', 'Average'])
-        self.chan_combo.currentTextChanged.connect(self.on_channel_changed)
+        self.chan_combo.addItem(tr("Left"), "Left")
+        self.chan_combo.addItem(tr("Right"), "Right")
+        self.chan_combo.addItem(tr("Average"), "Average")
+        chan_idx = self.chan_combo.findData(self.module.input_channel)
+        if chan_idx >= 0:
+            self.chan_combo.setCurrentIndex(chan_idx)
+        self.chan_combo.currentIndexChanged.connect(self.on_channel_changed)
         ctrl_layout.addWidget(self.chan_combo)
         
         # Wavelet
@@ -313,16 +318,22 @@ class TransientAnalyzerWidget(QWidget):
 
         trig_layout.addWidget(QLabel(tr("Source:")))
         self.trig_source_combo = QComboBox()
-        self.trig_source_combo.addItems(['Left', 'Right'])
-        self.trig_source_combo.setCurrentText(self.module.trigger_source)
-        self.trig_source_combo.currentTextChanged.connect(self.on_trigger_source_changed)
+        self.trig_source_combo.addItem(tr("Left"), "Left")
+        self.trig_source_combo.addItem(tr("Right"), "Right")
+        trig_src_idx = self.trig_source_combo.findData(self.module.trigger_source)
+        if trig_src_idx >= 0:
+            self.trig_source_combo.setCurrentIndex(trig_src_idx)
+        self.trig_source_combo.currentIndexChanged.connect(self.on_trigger_source_changed)
         trig_layout.addWidget(self.trig_source_combo)
 
         trig_layout.addWidget(QLabel(tr("Slope:")))
         self.trig_slope_combo = QComboBox()
-        self.trig_slope_combo.addItems(['Rising', 'Falling'])
-        self.trig_slope_combo.setCurrentText(self.module.trigger_slope)
-        self.trig_slope_combo.currentTextChanged.connect(self.on_trigger_slope_changed)
+        self.trig_slope_combo.addItem(tr("Rising"), "Rising")
+        self.trig_slope_combo.addItem(tr("Falling"), "Falling")
+        trig_slope_idx = self.trig_slope_combo.findData(self.module.trigger_slope)
+        if trig_slope_idx >= 0:
+            self.trig_slope_combo.setCurrentIndex(trig_slope_idx)
+        self.trig_slope_combo.currentIndexChanged.connect(self.on_trigger_slope_changed)
         trig_layout.addWidget(self.trig_slope_combo)
 
         trig_layout.addWidget(QLabel(tr("Level:")))
@@ -411,8 +422,10 @@ class TransientAnalyzerWidget(QWidget):
 
         self.scalo_plot.getAxis('left').setTicks([major, minor])
 
-    def on_channel_changed(self, val):
-        self.module.input_channel = val
+    def on_channel_changed(self, _index):
+        value = self.chan_combo.currentData()
+        if value:
+            self.module.input_channel = value
 
     def on_wavelet_changed(self, val):
         self.module.wavelet_name = val
@@ -429,11 +442,15 @@ class TransientAnalyzerWidget(QWidget):
     def on_trigger_enabled_changed(self, enabled: bool):
         self.module.trigger_enabled = bool(enabled)
 
-    def on_trigger_source_changed(self, val: str):
-        self.module.trigger_source = val
+    def on_trigger_source_changed(self, _index: int):
+        value = self.trig_source_combo.currentData()
+        if value:
+            self.module.trigger_source = value
 
-    def on_trigger_slope_changed(self, val: str):
-        self.module.trigger_slope = val
+    def on_trigger_slope_changed(self, _index: int):
+        value = self.trig_slope_combo.currentData()
+        if value:
+            self.module.trigger_slope = value
 
     def on_trigger_level_changed(self, val: float):
         self.module.trigger_level = float(val)
