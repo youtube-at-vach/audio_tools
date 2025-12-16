@@ -24,6 +24,7 @@ from src.gui.widgets.recorder_player import RecorderPlayer
 from src.gui.widgets.inverse_filter import InverseFilter
 from src.gui.widgets.transient_analyzer import TransientAnalyzer
 from src.gui.widgets.sound_level_meter import SoundLevelMeter
+from src.gui.widgets.raw_time_series import RawTimeSeries
 from src.gui.widgets.detachable_wrapper import DetachableWidgetWrapper
 from src.core.localization import get_manager, tr
 
@@ -122,6 +123,7 @@ class MainWindow(QMainWindow):
             AdvancedDistortionMeter(self.audio_engine),
             NetworkAnalyzer(self.audio_engine),
             Oscilloscope(self.audio_engine),
+            RawTimeSeries(self.audio_engine),
             LockInAmplifier(self.audio_engine),
             LockInTHDAnalyzer(self.audio_engine),
             FrequencyCounter(self.audio_engine),
