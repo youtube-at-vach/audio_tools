@@ -28,6 +28,11 @@ class TransientAnalyzer(MeasurementModule):
         self.scale_step = 1
         self.min_anal_freq = 20
         self.max_anal_freq = 20000
+        self.record_duration_s = 1
+
+        # Recording limit (enforced in audio callback for accuracy)
+        self._target_samples = None
+        self._recorded_samples = 0
         
         self.callback_id = None
         self.widget = None
@@ -52,6 +57,9 @@ class TransientAnalyzer(MeasurementModule):
         self.recorded_data = []
         self.is_recording = True
         self.fs = self.audio_engine.sample_rate
+        self._recorded_samples = 0
+        duration_s = max(1, int(self.record_duration_s))
+        self._target_samples = int(duration_s * self.fs)
         self.callback_id = self.audio_engine.register_callback(self._audio_callback)
 
     def stop_recording(self):
@@ -79,7 +87,19 @@ class TransientAnalyzer(MeasurementModule):
 
     def _audio_callback(self, indata, outdata, frames, time, status):
         if self.is_recording:
-            self.recorded_data.append(indata.copy())
+            target = self._target_samples
+            if target is None:
+                self.recorded_data.append(indata.copy())
+            else:
+                remaining = target - self._recorded_samples
+                if remaining > 0:
+                    chunk = indata[:remaining].copy()
+                    self.recorded_data.append(chunk)
+                    self._recorded_samples += chunk.shape[0]
+
+                if self._recorded_samples >= target:
+                    # Stop collecting immediately; UI will finalize/unregister shortly.
+                    self.is_recording = False
         outdata.fill(0)
 
     def analyze(self):
@@ -126,6 +146,9 @@ class TransientAnalyzerWidget(QWidget):
     def __init__(self, module: TransientAnalyzer):
         super().__init__()
         self.module = module
+        self.auto_stop_timer = QTimer(self)
+        self.auto_stop_timer.setSingleShot(True)
+        self.auto_stop_timer.timeout.connect(self._auto_stop_recording)
         self.init_ui()
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_status)
@@ -172,6 +195,15 @@ class TransientAnalyzerWidget(QWidget):
         self.max_freq_spin.setSuffix(" Hz")
         self.max_freq_spin.valueChanged.connect(self.on_max_freq_changed)
         param_layout.addWidget(self.max_freq_spin)
+
+        # Record Duration
+        param_layout.addWidget(QLabel(tr("Record Time:")))
+        self.rec_time_spin = QSpinBox()
+        self.rec_time_spin.setRange(1, 5)
+        self.rec_time_spin.setValue(int(self.module.record_duration_s))
+        self.rec_time_spin.setSuffix(" s")
+        self.rec_time_spin.valueChanged.connect(self.on_record_time_changed)
+        param_layout.addWidget(self.rec_time_spin)
         
         ctrl_layout.addLayout(param_layout)
         
@@ -240,22 +272,43 @@ class TransientAnalyzerWidget(QWidget):
     def on_max_freq_changed(self, val):
         self.module.max_anal_freq = val
 
+    def on_record_time_changed(self, val):
+        self.module.record_duration_s = int(val)
+
+    def _start_recording_ui(self):
+        self.module.start_recording()
+        self.rec_btn.setText(tr("Stop"))
+        self.rec_btn.setStyleSheet("background-color: #ffcccc; color: red;")
+        self.analyze_btn.setEnabled(False)
+
+        self.auto_stop_timer.stop()
+        duration_ms = max(1, int(self.module.record_duration_s) * 1000)
+        self.auto_stop_timer.start(duration_ms)
+
+    def _stop_recording_ui(self):
+        self.auto_stop_timer.stop()
+        self.module.stop_recording()
+        self.rec_btn.setText(tr("Record"))
+        self.rec_btn.setStyleSheet("")
+        self.analyze_btn.setEnabled(True)
+        self.update_waveform_plot()
+
+    def _auto_stop_recording(self):
+        if self.rec_btn.isChecked() and self.module.is_recording:
+            self.rec_btn.setChecked(False)
+            self._stop_recording_ui()
+
     def on_record_toggle(self):
         if self.rec_btn.isChecked():
-            self.module.start_recording()
-            self.rec_btn.setText(tr("Stop"))
-            self.rec_btn.setStyleSheet("background-color: #ffcccc; color: red;")
-            self.analyze_btn.setEnabled(False)
+            self._start_recording_ui()
         else:
-            self.module.stop_recording()
-            self.rec_btn.setText(tr("Record"))
-            self.rec_btn.setStyleSheet("")
-            self.analyze_btn.setEnabled(True)
-            self.update_waveform_plot() 
+            self._stop_recording_ui()
 
     def update_status(self):
-        if self.module.is_recording:
-             pass
+        # If the module stopped itself (exact sample count reached), finalize UI/state.
+        if self.rec_btn.isChecked() and (not self.module.is_recording):
+            self.rec_btn.setChecked(False)
+            self._stop_recording_ui()
 
     def update_waveform_plot(self):
         if self.module.final_data is None: return
