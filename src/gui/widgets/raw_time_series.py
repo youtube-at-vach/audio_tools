@@ -188,6 +188,16 @@ class RawTimeSeriesWidget(QWidget):
         self.plot_ch1.setTitle(tr("CH1"))
         self.plot_ch2.setTitle(tr("CH2"))
 
+        # Make CH1/CH2 plot areas visually equal.
+        # CH2 has a bottom axis label, which otherwise shrinks its viewbox.
+        bottom_axis_h = int(
+            self.plot_ch2.getAxis("bottom").sizeHint(Qt.SizeHint.PreferredSize).height()
+        )
+        self.plot_ch1.getAxis("bottom").setHeight(bottom_axis_h)
+        self.plot_ch2.getAxis("bottom").setHeight(bottom_axis_h)
+        # Keep CH1 clean while reserving the same axis space.
+        self.plot_ch1.getAxis("bottom").setStyle(showValues=False)
+
         # Same time axis and same vertical scale
         self.plot_ch2.setXLink(self.plot_ch1)
         self.plot_ch2.setYLink(self.plot_ch1)
