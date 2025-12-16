@@ -648,5 +648,7 @@
     "Frequency": "주파수",
     "Average": "평균",
     "Stop": "중지",
-    "Analyzing...": "분석 중..."
+    "Analyzing...": "분석 중...",
+    "Glow:": "글로우:",
+    "Smooth Lines": "부드러운 선"
 }

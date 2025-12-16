@@ -682,5 +682,7 @@
     "Frequency": "Frequency",
     "Average": "Average",
     "Stop": "Stop",
-    "Analyzing...": "Analyzing..."
+    "Analyzing...": "Analyzing...",
+    "Glow:": "Glow:",
+    "Smooth Lines": "Smooth Lines"
 }

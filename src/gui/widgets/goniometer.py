@@ -1,6 +1,7 @@
 import argparse
 from typing import Tuple
 import numpy as np
+from scipy.ndimage import gaussian_filter
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
                              QComboBox, QGroupBox, QSlider, QProgressBar, QCheckBox, QApplication)
@@ -21,6 +22,8 @@ class Goniometer(MeasurementModule):
         self.decay = 0.90 # Persistence factor (0-1)
         self.display_mode = 'Line' # 'Line', 'Phosphor'
         self.color_palette = 'Green' # 'Green', 'Fire', 'Ice', 'Rainbow'
+        self.smooth_lines = False
+        self.glow_amount = 0.0
 
         # Plot mapping / orientation
         # - 'ms': Mid/Side mapping (mono = vertical)
@@ -222,6 +225,20 @@ class GoniometerWidget(QWidget):
         self.decay_slider.valueChanged.connect(self.on_decay_changed)
         controls_layout.addWidget(self.decay_slider)
         
+        # Glow
+        controls_layout.addWidget(QLabel(tr("Glow:")))
+        self.glow_slider = QSlider(Qt.Orientation.Horizontal)
+        self.glow_slider.setRange(0, 50) # 0.0 to 5.0 sigma
+        self.glow_slider.setValue(int(self.module.glow_amount * 10))
+        self.glow_slider.valueChanged.connect(self.on_glow_changed)
+        controls_layout.addWidget(self.glow_slider)
+
+        # Smooth Lines
+        self.smooth_chk = QCheckBox(tr("Smooth Lines"))
+        self.smooth_chk.setChecked(self.module.smooth_lines)
+        self.smooth_chk.toggled.connect(self.on_smooth_changed)
+        controls_layout.addWidget(self.smooth_chk)
+
         # Gain
         controls_layout.addWidget(QLabel(tr("Gain:")))
         self.gain_slider = QSlider(Qt.Orientation.Horizontal)
@@ -357,6 +374,12 @@ class GoniometerWidget(QWidget):
     def on_decay_changed(self, val):
         self.module.decay = val / 100.0
 
+    def on_glow_changed(self, val):
+        self.module.glow_amount = val / 10.0
+
+    def on_smooth_changed(self, checked):
+        self.module.smooth_lines = checked
+
     def update_palette(self):
         # Define colormaps
         # 256 colors
@@ -467,24 +490,17 @@ class GoniometerWidget(QWidget):
             # Map s, m (-1.1..1.1) to (0..size)
             # We use histogram2d
             
-            # Range
+            # Interpolation
+            if self.module.smooth_lines and len(x) > 1:
+                # Linear interpolation to fill gaps
+                # 4x oversampling is usually enough for typical audio buffers
+                t = np.arange(len(x))
+                t_new = np.linspace(0, len(x)-1, len(x)*4)
+                x = np.interp(t_new, t, x)
+                y = np.interp(t_new, t, y)
+
+            # Bin new data
             rng = [[-1.1, 1.1], [-1.1, 1.1]]
-            
-            # We only bin the NEWEST frames to avoid double counting if buffer overlaps?
-            # self.module.audio_buffer contains the last N frames.
-            # If we run at 30FPS, we get ~1600 frames per update (48k/30).
-            # Buffer is 4096. So we are re-binning some old data?
-            # Ideally we should only bin new data.
-            # But for simplicity, let's just bin the whole buffer but weight it?
-            # Or just bin the whole buffer and add to heatmap?
-            # If we add whole buffer every frame, the intensity will explode if decay is slow.
-            # Better approach:
-            # Heatmap represents "Energy density".
-            # We can just compute the histogram of the CURRENT buffer, and blend it with the previous heatmap.
-            # Heatmap = Heatmap * Decay + Current_Histogram * (1-Decay)?
-            # Or Heatmap = Heatmap * Decay + Current_Histogram.
-            # Let's try accumulation.
-            
             h, _, _ = np.histogram2d(x, y, bins=self.module.heatmap_size, range=rng)
             
             # Log compression for better dynamic range?
@@ -492,15 +508,15 @@ class GoniometerWidget(QWidget):
             
             self.module.heatmap += h * 0.5 # Scale factor
             
-            # Clamp?
-            # self.module.heatmap = np.clip(self.module.heatmap, 0, 100)
+            # Display
+            display_data = self.module.heatmap.T
             
-            # Normalize for display?
-            # ImageItem expects 0..1 or scaled values if LUT is used.
-            # Our LUT is 0..255 indices if we pass int, or 0..1 floats.
-            # Let's pass raw values and set levels.
+            # Apply Glow (Blur)
+            if self.module.glow_amount > 0:
+                # Apply blur to the display copy, not the accumulator
+                display_data = gaussian_filter(display_data, sigma=self.module.glow_amount)
             
-            self.img_item.setImage(self.module.heatmap.T, autoLevels=False)
+            self.img_item.setImage(display_data, autoLevels=False)
             self.img_item.setLevels([0, 50]) # Adjust max level for sensitivity
             
         

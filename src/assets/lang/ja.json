@@ -655,5 +655,7 @@
     "Frequency": "周波数",
     "Average": "平均",
     "Stop": "停止",
-    "Analyzing...": "解析中..."
+    "Analyzing...": "解析中...",
+    "Glow:": "グロー:",
+    "Smooth Lines": "滑らかな線"
 }
