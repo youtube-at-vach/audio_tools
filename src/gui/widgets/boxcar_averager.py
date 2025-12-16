@@ -2,7 +2,7 @@ import argparse
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QComboBox, QGroupBox, QDoubleSpinBox)
+                             QComboBox, QGroupBox, QDoubleSpinBox, QCheckBox)
 from PyQt6.QtCore import QTimer
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
@@ -24,6 +24,12 @@ class BoxcarAverager(MeasurementModule):
         # External Sync Parameters
         self.ref_channel = 1 # 0: Left, 1: Right
         self.trigger_edge = 'Rising' # 'Rising', 'Falling'
+
+        # Internal Pulse gate (reduces noise/compute by integrating only within window)
+        # Gate coordinates are in samples within the period, relative to window_origin_sample.
+        self.gate_enabled = False
+        self.gate_start_samples = 0  # can be negative; will be mod period
+        self.gate_length_samples = int(round(0.010 * self.audio_engine.sample_rate))  # default 10ms
         
         # State
         self.accumulator = None
@@ -104,6 +110,24 @@ class BoxcarAverager(MeasurementModule):
         self.last_ref_sample_index = None
         self.capture_active = False
         self.capture_idx = 0
+
+    def _gate_segments_in_period(self, period: int):
+        """Return list of (start,end) segments in [0,period) for the active gate.
+
+        If gate is disabled or invalid, returns empty list.
+        """
+        if not self.gate_enabled:
+            return []
+
+        gate_len = int(self.gate_length_samples)
+        if gate_len <= 0 or gate_len >= period:
+            return []
+
+        gate_start_mod = int(self.gate_start_samples) % period
+        gate_end = gate_start_mod + gate_len
+        if gate_end <= period:
+            return [(gate_start_mod, gate_end)]
+        return [(gate_start_mod, period), (0, gate_end - period)]
 
     def _callback(self, indata, outdata, frames, time, status):
         if status: print(status)
@@ -220,6 +244,8 @@ class BoxcarAverager(MeasurementModule):
             origin = int(self.window_origin_sample)
             period = int(self.period_samples)
 
+            gate_segments = self._gate_segments_in_period(period)
+
             if self.accumulator.shape[0] != period:
                 self.reset_average()
                 return
@@ -232,7 +258,20 @@ class BoxcarAverager(MeasurementModule):
                 remaining_in_period = period - fold_idx
                 chunk_size = min(num_samples - current_idx, remaining_in_period)
 
-                self.accumulator[fold_idx : fold_idx + chunk_size] += data[current_idx : current_idx + chunk_size]
+                if gate_segments:
+                    # Accumulate only where chunk overlaps the gate window.
+                    chunk_start = fold_idx
+                    chunk_end = fold_idx + chunk_size
+                    for seg_start, seg_end in gate_segments:
+                        inter_start = max(chunk_start, seg_start)
+                        inter_end = min(chunk_end, seg_end)
+                        if inter_end <= inter_start:
+                            continue
+                        data_off0 = current_idx + (inter_start - chunk_start)
+                        data_off1 = current_idx + (inter_end - chunk_start)
+                        self.accumulator[inter_start:inter_end] += data[data_off0:data_off1]
+                else:
+                    self.accumulator[fold_idx : fold_idx + chunk_size] += data[current_idx : current_idx + chunk_size]
                 fold_idx += chunk_size
                 current_idx += chunk_size
 
@@ -384,6 +423,38 @@ class BoxcarAveragerWidget(QWidget):
         self.channel_combo.currentIndexChanged.connect(self.on_channel_changed)
         controls_layout.addWidget(QLabel(tr("Channel:")))
         controls_layout.addWidget(self.channel_combo)
+
+        # Gate Controls (Internal Pulse)
+        self.gate_group = QWidget()
+        gate_layout = QHBoxLayout(self.gate_group)
+        gate_layout.setContentsMargins(0,0,0,0)
+
+        self.gate_enable_chk = QCheckBox(tr("Gate"))
+        self.gate_enable_chk.setChecked(bool(self.module.gate_enabled))
+        self.gate_enable_chk.toggled.connect(self.on_gate_enable_changed)
+        gate_layout.addWidget(self.gate_enable_chk)
+
+        self.gate_start_spin = QDoubleSpinBox()
+        self.gate_start_spin.setRange(-1000.0, 1000.0)
+        self.gate_start_spin.setDecimals(2)
+        self.gate_start_spin.setSingleStep(0.1)
+        self.gate_start_spin.setSuffix(" ms")
+        self.gate_start_spin.setValue(0.0)
+        self.gate_start_spin.valueChanged.connect(self.on_gate_start_changed)
+        gate_layout.addWidget(QLabel(tr("Start:")))
+        gate_layout.addWidget(self.gate_start_spin)
+
+        self.gate_width_spin = QDoubleSpinBox()
+        self.gate_width_spin.setRange(0.0, 1000.0)
+        self.gate_width_spin.setDecimals(2)
+        self.gate_width_spin.setSingleStep(0.1)
+        self.gate_width_spin.setSuffix(" ms")
+        self.gate_width_spin.setValue(10.0)
+        self.gate_width_spin.valueChanged.connect(self.on_gate_width_changed)
+        gate_layout.addWidget(QLabel(tr("Width:")))
+        gate_layout.addWidget(self.gate_width_spin)
+
+        controls_layout.addWidget(self.gate_group)
         
         # External Sync Controls (Hidden by default)
         self.ext_group = QWidget()
@@ -417,6 +488,9 @@ class BoxcarAveragerWidget(QWidget):
         
         controls_layout.addWidget(self.ext_group)
         self.ext_group.hide()
+
+        # Gate controls visibility (only Internal Pulse)
+        self.gate_group.hide()
         
         controls_group.setLayout(controls_layout)
         layout.addWidget(controls_group)
@@ -456,6 +530,11 @@ class BoxcarAveragerWidget(QWidget):
             self.ext_group.show()
         else:
             self.ext_group.hide()
+
+        if val == 'Internal Pulse':
+            self.gate_group.show()
+        else:
+            self.gate_group.hide()
         
     def on_period_changed(self, val):
         # val is ms
@@ -484,6 +563,20 @@ class BoxcarAveragerWidget(QWidget):
     def on_trig_changed(self, val):
         self.module.trigger_level = val
         self.module.reset_average()
+
+    def on_gate_enable_changed(self, checked: bool):
+        self.module.gate_enabled = bool(checked)
+        self.module.reset_average()
+
+    def on_gate_start_changed(self, start_ms: float):
+        sr = self.module.audio_engine.sample_rate
+        self.module.gate_start_samples = int(round(start_ms / 1000.0 * sr))
+        self.module.reset_average()
+
+    def on_gate_width_changed(self, width_ms: float):
+        sr = self.module.audio_engine.sample_rate
+        self.module.gate_length_samples = max(0, int(round(width_ms / 1000.0 * sr)))
+        self.module.reset_average()
         
     def update_plot(self):
         if not self.module.is_running: return
@@ -491,8 +584,34 @@ class BoxcarAveragerWidget(QWidget):
         self.module.process()
         
         if self.module.count > 0:
-            avg = self.module.accumulator / self.module.count
-            t = np.linspace(0, self.module.period_samples / self.module.audio_engine.sample_rate, len(avg))
+            avg_full = self.module.accumulator / self.module.count
+            sr = self.module.audio_engine.sample_rate
+            period = int(self.module.period_samples)
+
+            # If gate is enabled in Internal Pulse, show only the gated window.
+            if self.module.mode == 'Internal Pulse' and self.module.gate_enabled:
+                gate_len = int(self.module.gate_length_samples)
+                if 0 < gate_len < period:
+                    gate_start = int(self.module.gate_start_samples)
+                    start_mod = gate_start % period
+                    end_mod = start_mod + gate_len
+
+                    if end_mod <= period:
+                        avg = avg_full[start_mod:end_mod]
+                    else:
+                        tail = avg_full[start_mod:]
+                        head = avg_full[:(end_mod - period)]
+                        avg = np.vstack([tail, head])
+
+                    t0 = gate_start / sr
+                    t = (np.arange(len(avg), dtype=np.float64) / sr) + t0
+                else:
+                    avg = avg_full
+                    t = np.linspace(0, period / sr, len(avg_full))
+            else:
+                avg = avg_full
+                t = np.linspace(0, period / sr, len(avg_full))
+
             self.curve_l.setData(t, avg[:, 0])
             self.curve_r.setData(t, avg[:, 1])
             
