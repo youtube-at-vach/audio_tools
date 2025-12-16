@@ -22,6 +22,7 @@ from src.gui.widgets.impedance_analyzer import ImpedanceAnalyzer
 from src.gui.widgets.noise_profiler import NoiseProfiler
 from src.gui.widgets.recorder_player import RecorderPlayer
 from src.gui.widgets.inverse_filter import InverseFilter
+from src.gui.widgets.transient_analyzer import TransientAnalyzer
 from src.gui.widgets.sound_level_meter import SoundLevelMeter
 from src.gui.widgets.detachable_wrapper import DetachableWidgetWrapper
 from src.core.localization import get_manager, tr
@@ -121,7 +122,8 @@ class MainWindow(QMainWindow):
             ImpedanceAnalyzer(self.audio_engine),
             NoiseProfiler(self.audio_engine),
             RecorderPlayer(self.audio_engine),
-            InverseFilter(self.audio_engine)
+            InverseFilter(self.audio_engine),
+            TransientAnalyzer(self.audio_engine)
         ]
         
         # Main layout container
