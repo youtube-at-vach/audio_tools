@@ -2,7 +2,7 @@ import argparse
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QComboBox, QGroupBox, QDoubleSpinBox, QCheckBox)
+                             QComboBox, QGroupBox, QDoubleSpinBox, QCheckBox, QGridLayout)
 from PyQt6.QtCore import QTimer
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
@@ -412,16 +412,20 @@ class BoxcarAveragerWidget(QWidget):
         
         # Controls
         controls_group = QGroupBox(tr("Controls"))
-        controls_layout = QHBoxLayout()
+        # Use a grid to avoid an overly wide single-row toolbar.
+        controls_layout = QGridLayout()
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setHorizontalSpacing(8)
+        controls_layout.setVerticalSpacing(4)
         
         self.toggle_btn = QPushButton(tr("Start"))
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
-        controls_layout.addWidget(self.toggle_btn)
+        controls_layout.addWidget(self.toggle_btn, 0, 0)
         
         self.reset_btn = QPushButton(tr("Reset"))
         self.reset_btn.clicked.connect(self.on_reset)
-        controls_layout.addWidget(self.reset_btn)
+        controls_layout.addWidget(self.reset_btn, 0, 1)
         
         # Mode
         self.mode_combo = QComboBox()
@@ -434,8 +438,8 @@ class BoxcarAveragerWidget(QWidget):
         if mode_idx >= 0:
             self.mode_combo.setCurrentIndex(mode_idx)
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
-        controls_layout.addWidget(QLabel(tr("Mode:")))
-        controls_layout.addWidget(self.mode_combo)
+        controls_layout.addWidget(QLabel(tr("Mode:")), 0, 2)
+        controls_layout.addWidget(self.mode_combo, 0, 3)
         
         # Period
         self.period_spin = QDoubleSpinBox()
@@ -443,8 +447,8 @@ class BoxcarAveragerWidget(QWidget):
         self.period_spin.setValue(100)
         self.period_spin.setSuffix(" ms")
         self.period_spin.valueChanged.connect(self.on_period_changed)
-        controls_layout.addWidget(QLabel(tr("Period:")))
-        controls_layout.addWidget(self.period_spin)
+        controls_layout.addWidget(QLabel(tr("Period:")), 0, 4)
+        controls_layout.addWidget(self.period_spin, 0, 5)
         
         # Channel
         self.channel_combo = QComboBox()
@@ -455,10 +459,10 @@ class BoxcarAveragerWidget(QWidget):
         if ch_idx >= 0:
             self.channel_combo.setCurrentIndex(ch_idx)
         self.channel_combo.currentIndexChanged.connect(self.on_channel_changed)
-        controls_layout.addWidget(QLabel(tr("Channel:")))
-        controls_layout.addWidget(self.channel_combo)
+        controls_layout.addWidget(QLabel(tr("Channel:")), 0, 6)
+        controls_layout.addWidget(self.channel_combo, 0, 7)
 
-        # Gate Controls (Internal Pulse)
+        # Gate Controls
         self.gate_group = QWidget()
         gate_layout = QHBoxLayout(self.gate_group)
         gate_layout.setContentsMargins(0,0,0,0)
@@ -473,7 +477,7 @@ class BoxcarAveragerWidget(QWidget):
         self.gate_start_spin.setDecimals(2)
         self.gate_start_spin.setSingleStep(0.1)
         self.gate_start_spin.setSuffix(" ms")
-        self.gate_start_spin.setValue(0.0)
+        self.gate_start_spin.setValue(float(self.module.gate_start_samples) / float(self.module.audio_engine.sample_rate) * 1000.0)
         self.gate_start_spin.valueChanged.connect(self.on_gate_start_changed)
         gate_layout.addWidget(QLabel(tr("Start:")))
         gate_layout.addWidget(self.gate_start_spin)
@@ -483,12 +487,13 @@ class BoxcarAveragerWidget(QWidget):
         self.gate_width_spin.setDecimals(2)
         self.gate_width_spin.setSingleStep(0.1)
         self.gate_width_spin.setSuffix(" ms")
-        self.gate_width_spin.setValue(10.0)
+        self.gate_width_spin.setValue(float(self.module.gate_length_samples) / float(self.module.audio_engine.sample_rate) * 1000.0)
         self.gate_width_spin.valueChanged.connect(self.on_gate_width_changed)
         gate_layout.addWidget(QLabel(tr("Width:")))
         gate_layout.addWidget(self.gate_width_spin)
 
-        controls_layout.addWidget(self.gate_group)
+        # Gate controls on second row to keep width compact.
+        controls_layout.addWidget(self.gate_group, 1, 0, 1, 4)
         
         # External Sync Controls (Hidden by default)
         self.ext_group = QWidget()
@@ -520,14 +525,16 @@ class BoxcarAveragerWidget(QWidget):
         ext_layout.addWidget(QLabel(tr("Lvl:")))
         ext_layout.addWidget(self.trig_spin)
         
-        controls_layout.addWidget(self.ext_group)
+        # External sync controls on second row.
+        controls_layout.addWidget(self.ext_group, 1, 4, 1, 4)
         self.ext_group.hide()
+        # Gate controls are always visible (Pulse/Step/External).
+        self.gate_group.show()
 
-        # Gate controls visibility (only Internal Pulse)
-        if self.module.mode == 'Internal Pulse':
-            self.gate_group.show()
-        else:
-            self.gate_group.hide()
+        # Let combo/spin fields take remaining space when window is narrow.
+        controls_layout.setColumnStretch(3, 1)
+        controls_layout.setColumnStretch(5, 1)
+        controls_layout.setColumnStretch(7, 1)
         
         controls_group.setLayout(controls_layout)
         layout.addWidget(controls_group)
@@ -567,11 +574,8 @@ class BoxcarAveragerWidget(QWidget):
             self.ext_group.show()
         else:
             self.ext_group.hide()
-
-        if val == 'Internal Pulse':
-            self.gate_group.show()
-        else:
-            self.gate_group.hide()
+        # Gate controls are always visible; no per-mode toggling.
+        self.gate_group.show()
         
     def on_period_changed(self, val):
         # val is ms
@@ -625,8 +629,8 @@ class BoxcarAveragerWidget(QWidget):
             sr = self.module.audio_engine.sample_rate
             period = int(self.module.period_samples)
 
-            # If gate is enabled in Internal Pulse, show only the gated window.
-            if self.module.mode == 'Internal Pulse' and self.module.gate_enabled:
+            # If gate is enabled in Internal mode, show only the gated window.
+            if 'Internal' in self.module.mode and self.module.gate_enabled:
                 gate_len = int(self.module.gate_length_samples)
                 if 0 < gate_len < period:
                     gate_start = int(self.module.gate_start_samples)
