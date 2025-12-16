@@ -32,11 +32,24 @@ class BoxcarAverager(MeasurementModule):
         
         # Buffers
         self.input_ring_buffer = None
+        self.sample_index_ring = None
         self.input_write_pos = 0
         self.input_read_pos = 0
         
-        # Internal Gen State
-        self.phase = 0
+        # Absolute sample tracking
+        self.global_sample_counter = 0
+        # Defines the 0-phase reference for (sample % period) folding.
+        # Kept stable across resets to avoid integration-window drift.
+        self.window_origin_sample = 0
+
+        # Reset handling: when True, accumulation restarts at a stable boundary.
+        self.reset_pending = False
+
+        # External trigger state
+        self.last_ref_sample = None
+        self.last_ref_sample_index = None
+        self.capture_active = False
+        self.capture_idx = 0
         
         self.callback_id = None
         
@@ -58,15 +71,19 @@ class BoxcarAverager(MeasurementModule):
         if self.is_running: return
         self.is_running = True
         
-        # Initialize Buffers
-        self.reset_average()
-        
-        # Ring buffer for raw input (large enough to hold a few periods)
-        # 1 second buffer
-        self.input_ring_buffer = np.zeros((self.audio_engine.sample_rate * 2, 2))
+        # Ring buffers for raw input + absolute sample indices.
+        # 2 seconds buffer
+        self.input_ring_buffer = np.zeros((self.audio_engine.sample_rate * 2, 2), dtype=float)
+        self.sample_index_ring = np.zeros((len(self.input_ring_buffer),), dtype=np.int64)
         self.input_write_pos = 0
         self.input_read_pos = 0
-        self.phase = 0
+
+        # Absolute coordinate system for this run
+        self.global_sample_counter = 0
+        self.window_origin_sample = 0
+
+        # Reset accumulator (but keep origin stable)
+        self.reset_average()
         
         self.callback_id = self.audio_engine.register_callback(self._callback)
 
@@ -80,10 +97,18 @@ class BoxcarAverager(MeasurementModule):
     def reset_average(self):
         self.accumulator = np.zeros((self.period_samples, 2))
         self.count = 0
-        self.phase = 0 # Reset phase for internal gen sync
+        # Keep window_origin_sample stable so the integration window doesn't drift.
+        # We also restart accumulation at a stable boundary when possible.
+        self.reset_pending = True
+        self.last_ref_sample = None
+        self.last_ref_sample_index = None
+        self.capture_active = False
+        self.capture_idx = 0
 
     def _callback(self, indata, outdata, frames, time, status):
         if status: print(status)
+
+        abs_start = int(self.global_sample_counter)
         
         # 1. Store Input
         # Handle Ring Buffer Wrap
@@ -96,6 +121,8 @@ class BoxcarAverager(MeasurementModule):
             else:
                 self.input_ring_buffer[write_idx:write_idx+frames, 0] = indata[:, 0]
                 self.input_ring_buffer[write_idx:write_idx+frames, 1] = indata[:, 0]
+
+            self.sample_index_ring[write_idx:write_idx+frames] = np.arange(abs_start, abs_start + frames, dtype=np.int64)
         else:
             # Wrap around
             first_part = buf_len - write_idx
@@ -109,16 +136,20 @@ class BoxcarAverager(MeasurementModule):
                 self.input_ring_buffer[write_idx:, 1] = indata[:first_part, 0]
                 self.input_ring_buffer[:second_part, 0] = indata[first_part:, 0]
                 self.input_ring_buffer[:second_part, 1] = indata[first_part:, 0]
+
+            self.sample_index_ring[write_idx:] = np.arange(abs_start, abs_start + first_part, dtype=np.int64)
+            self.sample_index_ring[:second_part] = np.arange(abs_start + first_part, abs_start + frames, dtype=np.int64)
                 
         self.input_write_pos = (write_idx + frames) % buf_len
+        self.global_sample_counter += int(frames)
         
         # 2. Generate Output (Internal Mode)
         outdata.fill(0)
         if 'Internal' in self.mode:
             # Generate Pulse/Step
-            # Phase goes from 0 to period_samples
-            t = np.arange(frames) + self.phase
-            t_mod = t % self.period_samples
+            # Use absolute coordinates so resets / timer jitter don't shift the phase.
+            t = (np.arange(frames, dtype=np.int64) + abs_start) - int(self.window_origin_sample)
+            t_mod = t % int(self.period_samples)
             
             signal = np.zeros(frames)
             
@@ -129,8 +160,6 @@ class BoxcarAverager(MeasurementModule):
                 # High for half period
                 signal = np.where(t_mod < (self.period_samples // 2), 1.0, -1.0)
                 
-            self.phase = (self.phase + frames) % self.period_samples
-            
             # Output to both channels? Or just Left? Let's do Left.
             # Output to selected channel(s)
             if outdata.shape[1] >= 1 and self.input_channel in ['Left', 'Stereo']:
@@ -156,55 +185,59 @@ class BoxcarAverager(MeasurementModule):
             
         if available == 0: return
         
-        # Extract data (linearized)
+        # Extract data + absolute indices (linearized)
         if write_pos >= read_pos:
             data = self.input_ring_buffer[read_pos:write_pos]
+            idxs = self.sample_index_ring[read_pos:write_pos]
         else:
             data = np.concatenate((self.input_ring_buffer[read_pos:], self.input_ring_buffer[:write_pos]))
+            idxs = np.concatenate((self.sample_index_ring[read_pos:], self.sample_index_ring[:write_pos]))
             
         self.input_read_pos = write_pos
         
+        if len(data) == 0:
+            return
+
+        # Optional reset alignment: restart accumulation on a stable window boundary.
+        # This keeps the integration window position consistent in absolute coordinates.
+        if self.reset_pending and 'Internal' in self.mode:
+            origin = int(self.window_origin_sample)
+            period = int(self.period_samples)
+            start_mod = int((int(idxs[0]) - origin) % period)
+            skip = (period - start_mod) % period
+            if skip >= len(data):
+                return
+            if skip > 0:
+                data = data[skip:]
+                idxs = idxs[skip:]
+        if self.reset_pending:
+            # After we have aligned/skipped (if needed), start accumulating.
+            self.reset_pending = False
+
         # Process Data
         if 'Internal' in self.mode:
-            # Synchronous Folding
-            # We assume the input data corresponds to the generated output phase.
-            # BUT there is latency.
-            # However, for "Folding", we just wrap the input data by period.
-            # The "Trigger Point" (T=0 of pulse) will appear at T=Latency in the averaged buffer.
-            # We need to maintain the "Global Phase" of the INPUT data relative to the OUTPUT generation.
-            # Since we started generation at phase=0 when we started capture (roughly),
-            # we can track input_phase.
-            
-            # Actually, self.phase in callback tracks the NEXT sample to be generated.
-            # The data we just read corresponds to samples generated 'latency' ago?
-            # No, we just need to fold it continuously.
-            # We need a persistent 'current_fold_index' for the input processing.
-            
-            if not hasattr(self, 'fold_idx'):
-                self.fold_idx = 0
-                
+            # Synchronous folding based on absolute sample indices.
+            origin = int(self.window_origin_sample)
+            period = int(self.period_samples)
+
+            if self.accumulator.shape[0] != period:
+                self.reset_average()
+                return
+
+            fold_idx = int((int(idxs[0]) - origin) % period)
             num_samples = len(data)
             current_idx = 0
-            
+
             while current_idx < num_samples:
-                remaining_in_period = self.period_samples - self.fold_idx
+                remaining_in_period = period - fold_idx
                 chunk_size = min(num_samples - current_idx, remaining_in_period)
-                
-                # Add to accumulator
-                chunk = data[current_idx : current_idx + chunk_size]
-                
-                # Ensure accumulator size matches period (if changed)
-                if self.accumulator.shape[0] != self.period_samples:
-                    self.reset_average()
-                    self.fold_idx = 0
-                    return # Abort this cycle
-                
-                self.accumulator[self.fold_idx : self.fold_idx + chunk_size] += chunk
-                self.fold_idx += chunk_size
+
+                self.accumulator[fold_idx : fold_idx + chunk_size] += data[current_idx : current_idx + chunk_size]
+                fold_idx += chunk_size
                 current_idx += chunk_size
-                
-                if self.fold_idx >= self.period_samples:
-                    self.fold_idx = 0
+
+                if fold_idx >= period:
+                    fold_idx = 0
                     self.count += 1
                     
         else:
@@ -222,12 +255,14 @@ class BoxcarAverager(MeasurementModule):
             # For simplicity, we just look inside current chunk.
             # Ideally we should keep last sample.
             
-            if not hasattr(self, 'last_ref_sample'):
-                self.last_ref_sample = 0.0
-                
             # Create a shifted array including the last sample
+            if self.last_ref_sample is None:
+                # Prevent a false trigger right at the first sample after start/reset
+                self.last_ref_sample = float(ref_sig[0])
+                self.last_ref_sample_index = int(idxs[0]) - 1
             extended_ref = np.concatenate(([self.last_ref_sample], ref_sig))
-            self.last_ref_sample = ref_sig[-1]
+            self.last_ref_sample = float(ref_sig[-1])
+            self.last_ref_sample_index = int(idxs[-1])
             
             # Detect Crossings
             # Rising: prev < level <= curr
@@ -240,75 +275,56 @@ class BoxcarAverager(MeasurementModule):
                 triggers = (extended_ref[:-1] > level) & (extended_ref[1:] <= level)
                 
             trigger_indices = np.where(triggers)[0]
+            # Absolute trigger sample indices; trigger_indices maps directly to data indices.
+            trigger_samples_abs = idxs[trigger_indices] if len(trigger_indices) > 0 else np.array([], dtype=np.int64)
             
             # State Machine:
             # We might be currently capturing a window.
             # Or waiting for a trigger.
             
-            if not hasattr(self, 'capture_active'):
-                self.capture_active = False
-                self.capture_idx = 0
-                
-            # Iterate through data sample by sample? Too slow in Python.
-            # We process triggers.
-            
-            # If we are capturing, we continue capturing until window full.
-            # If we are waiting, we look for next trigger.
-            # Note: Boxcar usually averages *overlapping* windows if re-triggered?
-            # Or strictly one after another?
-            # Usually strict lock-in style implies continuous, but here we have a "Period" (Window).
-            # If triggers come faster than Period, we ignore them? Or restart?
-            # Let's assume "Retriggerable" or "Non-retriggerable"?
-            # Let's go with Non-retriggerable for now (finish current window).
-            
-            current_data_idx = 0
-            num_samples = len(data)
-            
-            while current_data_idx < num_samples:
+            # Non-retriggerable capture windows, pinned to absolute trigger samples.
+            period = int(self.period_samples)
+            if self.accumulator.shape[0] != period:
+                self.reset_average()
+                return
+
+            abs_start = int(idxs[0])
+            abs_end = int(idxs[-1]) + 1
+            abs_ptr = abs_start
+
+            # Helper: find next trigger >= abs_ptr
+            def _next_trigger(at_or_after: int):
+                if trigger_samples_abs.size == 0:
+                    return None
+                pos = np.searchsorted(trigger_samples_abs, at_or_after, side='left')
+                if pos >= trigger_samples_abs.size:
+                    return None
+                return int(trigger_samples_abs[pos])
+
+            while abs_ptr < abs_end:
                 if self.capture_active:
-                    # Continue capturing
-                    samples_needed = self.period_samples - self.capture_idx
-                    samples_available = num_samples - current_data_idx
-                    
-                    to_take = min(samples_needed, samples_available)
-                    
-                    chunk = data[current_data_idx : current_data_idx + to_take]
-                    
-                    # Add to accumulator
-                    # Ensure accumulator size
-                    if self.accumulator.shape[0] != self.period_samples:
-                        self.reset_average()
+                    # Continue capturing until window full.
+                    take = min(period - self.capture_idx, abs_end - abs_ptr)
+                    if take <= 0:
+                        break
+                    rel_start = abs_ptr - abs_start
+                    rel_end = rel_start + take
+                    self.accumulator[self.capture_idx : self.capture_idx + take] += data[rel_start:rel_end]
+                    self.capture_idx += take
+                    abs_ptr += take
+
+                    if self.capture_idx >= period:
                         self.capture_active = False
-                        return
-                        
-                    self.accumulator[self.capture_idx : self.capture_idx + to_take] += chunk
-                    
-                    self.capture_idx += to_take
-                    current_data_idx += to_take
-                    
-                    if self.capture_idx >= self.period_samples:
-                        # Window finished
-                        self.capture_active = False
+                        self.capture_idx = 0
                         self.count += 1
-                        self.capture_idx = 0
-                        # Continue loop to look for next trigger
                 else:
-                    # Waiting for trigger
-                    # Find first trigger after current_data_idx
-                    # trigger_indices contains indices relative to 'data' start (0)
-                    
-                    # Filter triggers that are >= current_data_idx
-                    valid_triggers = trigger_indices[trigger_indices >= current_data_idx]
-                    
-                    if len(valid_triggers) > 0:
-                        # Found trigger
-                        trig_idx = valid_triggers[0]
-                        self.capture_active = True
-                        self.capture_idx = 0
-                        current_data_idx = trig_idx # Start capturing from trigger point
-                    else:
-                        # No more triggers in this chunk
-                        current_data_idx = num_samples # Done
+                    next_trig = _next_trigger(abs_ptr)
+                    if next_trig is None or next_trig >= abs_end:
+                        break
+                    # Start capture exactly at the trigger sample.
+                    self.capture_active = True
+                    self.capture_idx = 0
+                    abs_ptr = next_trig
 
 class BoxcarAveragerWidget(QWidget):
     def __init__(self, module: BoxcarAverager):
