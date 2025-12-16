@@ -13,29 +13,33 @@ A collection of DIY audio measurement and analysis tools, grown organically as n
 
 ## ✨ 主な機能 (Features)
 
-### 🛠️ 測定モジュール
-以下の20種類のモジュールが統合されています:
+### 🛠️ ウィジット / 測定モジュール
+以下のモジュール/ウィジットが統合されています:
 
-1.  **Signal Generator**: 正弦波、矩形波、三角波、ノコギリ波(立ち上がり/立ち下がり)、ホワイト/ピンクノイズ、周波数スイープ信号を生成。位相制御、振幅制御、ステレオ出力に対応。
-2.  **Spectrum Analyzer**: 高速FFTによるリアルタイムスペクトル解析。PSD/RMS表示、SI単位表示、周波数範囲制限、メモリ機能、カーソル測定に対応。
-3.  **Sound Level Meter**: A/C/Z 周波数重み付け、FAST/SLOW/IMPULSE/10ms 時間重み付け、20Hz–20k/12.5k/8k 帯域選択に対応した高機能騒音計。Lp/Leq/LE/Lmax/Lmin/Lpeak表示、キャリブレーションオフセット適用に対応。
-4.  **LUFS Meter**: ラウドネス (LUFS/LKFS) のリアルタイム測定。クレストファクター、ダイナミックレンジ表示。
-5.  **Loopback Finder**: オーディオインターフェースのレイテンシー(遅延)測定ツール。
-6.  **Distortion Analyzer**: THD、THD+N、SINAD、IMD (SMPTE/CCIF) の測定。内蔵信号発生器、周波数スイープ、ハーモニクスバーグラフ、平均化機能搭載。
-7.  **Advanced Distortion Meter**: MIM (Multi-tone Intermodulation)、SPDR (Spurious-free Dynamic Range)、PIM (Passive Intermodulation) 測定を含む高度な歪み解析。
-8.  **Network Analyzer**: 周波数特性(ゲイン・位相・群遅延)の測定。スイープ測定、複数トレース表示、周波数範囲制限対応。
-9.  **Oscilloscope**: 2チャンネル波形表示、トリガー機能、カーソル測定、演算波形(A+B, A-B)、リアルタイムローパス/ハイパスフィルタリング対応。
-10. **Lock-in Amplifier**: 位相敏感検波 (PSD) による微小信号測定。周波数応答解析 (FRA) モード、ハーモニクス復調(2次〜10次)、キャリブレーション機能搭載。
-11. **Lock-in THD+N Analyzer**: ロックイン検波を用いた THD/THD+N 測定専用モジュール。整数周期ウィンドウと平均化、残差履歴・プロット表示、ハーモニクス/残差バーグラフで歪み成分を可視化。
-12. **Impedance Analyzer**: インピーダンス測定とOSL (Open/Short/Load) キャリブレーション。複数プロットモード(Z/θ、R/X、Q、C/L、Nyquist、Smith Chart)、スイープ測定、キャリブレーション補間対応。
-13. **Inverse Filter**: キャリブレーションマップから逆特性FIRを設計し、音声ファイルへ適用するデコンボリューションツール。ゲイン上限による正則化、タップ数/スムージング指定、応答プレビュー、出力ピーク正規化付きのバッチ処理に対応。
-14. **Frequency Counter**: 高精度な周波数・周期測定。アラン分散プロット、キャリブレーション機能搭載。
-15. **Spectrogram**: 時間-周波数表示のスペクトログラム。周波数範囲制限、カラーマップ選択対応。
-16. **Boxcar Averager**: ボックスカー平均によるノイズ低減と過渡応答解析。内部パルス/ステップ生成、外部リファレンス同期(立ち上がり/立ち下がりエッジ)対応。
-17. **Goniometer**: ステレオ信号の位相相関と空間分布の可視化。Lissajous表示、フォスファー表示モード(残光効果)、カスタムカラーパレット対応。
-18. **Noise Profiler**: ノイズ特性の詳細解析ツール。1/fノイズ、ハムノイズ、ホワイトノイズの自動検出と定量化。平均化モード、LNAゲイン補正、熱雑音限界表示、等価抵抗表示対応。
-19. **Recorder & Player**: オーディオファイル(WAV/MP3/FLAC/OGG等)の録音・再生。リサンプリング、ループ再生、ソフトウェアループバック機能搭載。
-20. **Settings**: デバイス設定、キャリブレーション、テーマ選択、多言語切り替えなど。
+1.  **Welcome**: 起動時のウェルカム画面で主要機能を案内。
+2.  **Signal Generator**: 正弦波、矩形波、三角波、ノコギリ波(立ち上がり/立ち下がり)、ホワイト/ピンクノイズ、周波数スイープ信号を生成。位相制御、振幅制御、ステレオ出力に対応。
+3.  **Spectrum Analyzer**: 高速FFTによるリアルタイムスペクトル解析。PSD/RMS表示、SI単位表示、周波数範囲制限、メモリ機能、カーソル測定に対応。
+4.  **Sound Level Meter**: A/C/Z 周波数重み付け、FAST/SLOW/IMPULSE/10ms 時間重み付け、20Hz–20k/12.5k/8k 帯域選択に対応した高機能騒音計。Lp/Leq/LE/Lmax/Lmin/Lpeak表示、キャリブレーションオフセット適用に対応。
+5.  **LUFS Meter**: ラウドネス (LUFS/LKFS) のリアルタイム測定。クレストファクター、ダイナミックレンジ表示。
+6.  **Loopback Finder**: オーディオインターフェースのレイテンシー(遅延)測定ツール。
+7.  **Distortion Analyzer**: THD、THD+N、SINAD、IMD (SMPTE/CCIF) の測定。内蔵信号発生器、周波数スイープ、ハーモニクスバーグラフ、平均化機能搭載。
+8.  **Advanced Distortion Meter**: MIM (Multi-tone Intermodulation)、SPDR (Spurious-free Dynamic Range)、PIM (Passive Intermodulation) 測定を含む高度な歪み解析。
+9.  **Network Analyzer**: 周波数特性(ゲイン・位相・群遅延)の測定。スイープ測定、複数トレース表示、周波数範囲制限対応。
+10. **Oscilloscope**: 2チャンネル波形表示、トリガー機能、カーソル測定、演算波形(A+B, A-B)、リアルタイムローパス/ハイパスフィルタリング対応。
+11. **Raw Time Series**: 長時間スパンをリングバッファで保持する2chスクロール波形モニタ。
+12. **Transient Analyzer**: トリガ収録＋CWT で過渡解析、解析帯域/スケールを柔軟に指定。
+13. **Lock-in Amplifier**: 位相敏感検波 (PSD) による微小信号測定。周波数応答解析 (FRA) モード、ハーモニクス復調(2次〜10次)、キャリブレーション機能搭載。
+14. **Lock-in THD+N Analyzer**: ロックイン検波を用いた THD/THD+N 測定専用モジュール。整数周期ウィンドウと平均化、残差履歴・プロット表示、ハーモニクス/残差バーグラフで歪み成分を可視化。
+15. **Impedance Analyzer**: インピーダンス測定とOSL (Open/Short/Load) キャリブレーション。複数プロットモード(Z/θ、R/X、Q、C/L、Nyquist、Smith Chart)、スイープ測定、キャリブレーション補間対応。
+16. **Inverse Filter**: キャリブレーションマップから逆特性FIRを設計し、音声ファイルへ適用するデコンボリューションツール。ゲイン上限による正則化、タップ数/スムージング指定、応答プレビュー、出力ピーク正規化付きのバッチ処理に対応。
+17. **Frequency Counter**: 高精度な周波数・周期測定。アラン分散プロット、キャリブレーション機能搭載。
+18. **Spectrogram**: 時間-周波数表示のスペクトログラム。周波数範囲制限、カラーマップ選択対応。
+19. **Boxcar Averager**: ボックスカー平均によるノイズ低減と過渡応答解析。内部パルス/ステップ生成、外部リファレンス同期(立ち上がり/立ち下がりエッジ)対応。
+20. **Goniometer**: ステレオ信号の位相相関と空間分布の可視化。Lissajous表示、フォスファー表示モード(残光効果)、カスタムカラーパレット対応。
+21. **Noise Profiler**: ノイズ特性の詳細解析ツール。1/fノイズ、ハムノイズ、ホワイトノイズの自動検出と定量化。平均化モード、LNAゲイン補正、熱雑音限界表示、等価抵抗表示対応。
+22. **Recorder & Player**: オーディオファイル(WAV/MP3/FLAC/OGG等)の録音・再生。リサンプリング、ループ再生、ソフトウェアループバック機能搭載。
+23. **Detachable Wrapper**: 任意ウィジットを独立ウィンドウとして切り離し・再接続できるUIユーティリティ。
+24. **Settings**: デバイス設定、キャリブレーション、テーマ選択、多言語切り替えなど。
 
 ### 🌍 多言語対応 (Localization)
 世界中の主要な言語をサポートしています。設定画面から切り替え可能です。
@@ -54,33 +58,6 @@ A collection of DIY audio measurement and analysis tools, grown organically as n
 *   **キャリブレーション**: 入力感度と出力ゲインの補正ウィザードを搭載し、電圧 (Vrms, Vpeak, dBu, dBV) での正確な読み取りが可能。
 *   **チャンネルルーティング**: 入力・出力チャンネルの個別割り当てに対応。
 *   **テーマ設定**: ライト/ダーク/システムテーマの切り替えが可能。
-
-## 🧩 ウィジット一覧 (Widgets)
-サイドバーに並ぶ各ウィジットの現況をまとめました。名称はUIの表記に合わせています。
-
-- **Welcome**: 起動時のウェルカム画面。主要機能のショート概要を表示。
-- **Signal Generator**: 多波形/ノイズ/スイープ発生と位相・振幅制御。
-- **Spectrum Analyzer**: リアルタイムFFTでPSD/RMS表示、カーソル測定、周波数制限。
-- **Sound Level Meter / LUFS Meter**: Lp/Leq/LE/Lmax/Lmin/Lpeak と LUFS/LKFS をモニタ。
-- **Loopback Finder**: インターフェースのレイテンシー測定。
-- **Distortion Analyzer**: THD/THD+N/SINAD/IMD を内蔵発振器とスイープで解析。
-- **Advanced Distortion Meter**: MIM/SPDR/PIM など高度な歪み指標を評価。
-- **Network Analyzer**: 伝達関数のゲイン/位相/群遅延をスイープ測定。
-- **Oscilloscope**: 2ch トリガ・カーソル・演算・フィルタ付きオシロ。
-- **Lock-in Amplifier**: PSD/FRA モード、ハーモニクス復調、キャリブレーション付きロックイン。
-- **Lock-in THD+N Analyzer**: ロックイン検波で歪みを高SNR測定し、残差・高調波を可視化。
-- **Impedance Analyzer**: OSL キャリブレーション済みのインピーダンス測定と多プロット表示。
-- **Inverse Filter**: キャリブレーションマップから逆特性FIRを設計し、音声ファイルへバッチ適用。
-- **Frequency Counter**: 周波数/周期測定とアラン分散プロット、キャリブレーション対応。
-- **Spectrogram**: 時間-周波数分布のリアルタイム表示、カラーマップ選択付き。
-- **Boxcar Averager**: 内部パルス/ステップや外部リファレンス同期によるボックスカー平均。
-- **Goniometer**: ステレオ位相相関とリサージュ表示、フォスファーモード対応。
-- **Noise Profiler**: 1/f・ハム・ホワイトノイズの自動検出、LNAゲイン補正、等価抵抗表示。
-- **Recorder & Player**: WAV/MP3/FLAC/OGG 録再、リサンプリング、ソフトウェアループバック。
-- **Raw Time Series**: 長時間スパンをリングバッファで保持する2chスクロール波形モニタ。
-- **Transient Analyzer**: トリガ収録＋CWT で過渡解析、解析帯域/スケールを柔軟に指定。
-- **Detachable Wrapper**: 任意ウィジットを独立ウィンドウとして切り離し・再接続するUIユーティリティ。
-- **Settings**: デバイス/入出力/キャリブレーション/テーマ/言語など全般設定。
 
 ---
 
