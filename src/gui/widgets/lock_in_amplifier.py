@@ -470,7 +470,12 @@ class LockInAmplifierWidget(QWidget):
         
         # Integration Time (Buffer Size)
         self.time_combo = QComboBox()
-        self.time_combo.addItems([tr("Fast (2048 samples)"), tr("Medium (4096 samples)"), tr("Slow (16384 samples)")])
+        self.time_combo.addItems([
+            tr("Fast (2048 samples)"),
+            tr("Medium (4096 samples)"),
+            tr("Slow (16384 samples)"),
+            tr("Very Slow (65536 samples)"),
+        ])
         self.time_combo.setCurrentIndex(1)
         self.time_combo.currentIndexChanged.connect(self.on_time_changed)
         settings_layout.addRow(tr("Integration:"), self.time_combo)
@@ -876,6 +881,7 @@ class LockInAmplifierWidget(QWidget):
         if idx == 0: self.module.buffer_size = 2048
         elif idx == 1: self.module.buffer_size = 4096
         elif idx == 2: self.module.buffer_size = 16384
+        elif idx == 3: self.module.buffer_size = 65536
         
         # Re-allocate buffer
         self.module.input_data = np.zeros((self.module.buffer_size, 2))
