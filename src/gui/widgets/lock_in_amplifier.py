@@ -26,7 +26,7 @@ class LockInAmplifier(MeasurementModule):
         self.output_channel = 0 # 0: Left, 1: Right
         self.external_mode = False
 
-        self.harmonic_order = 1
+        self._harmonic_order = 1
         self.apply_calibration = False
         
         self.signal_channel = 0 # 0: Left, 1: Right
@@ -60,6 +60,28 @@ class LockInAmplifier(MeasurementModule):
         self._postmix_lpf_initialized = False
         
         self.callback_id = None
+
+    @property
+    def harmonic_order(self) -> int:
+        return int(getattr(self, '_harmonic_order', 1) or 1)
+
+    @harmonic_order.setter
+    def harmonic_order(self, value: int):
+        new_value = max(int(value or 1), 1)
+        old_value = int(getattr(self, '_harmonic_order', 1) or 1)
+        self._harmonic_order = new_value
+
+        # Changing the harmonic changes the demodulation frequency and phase reference.
+        # Reset stateful filters/averaging so the displayed result doesn't include stale data.
+        if new_value != old_value:
+            try:
+                self.reset_postmix_lpf()
+            except Exception:
+                pass
+            try:
+                self.history.clear()
+            except Exception:
+                pass
 
     def reset_postmix_lpf(self):
         self._postmix_lpf_state = [0j] * 8
@@ -215,24 +237,43 @@ class LockInAmplifier(MeasurementModule):
             self.current_y = 0.0
             return
 
-        demod_freq = ref_freq * max(int(self.harmonic_order), 1)
-        t = np.arange(len(sig)) / self.audio_engine.sample_rate
-        osc = np.exp(-1j * 2 * np.pi * demod_freq * t)
+        harmonic_order = max(int(getattr(self, 'harmonic_order', 1) or 1), 1)
+        demod_freq = ref_freq * harmonic_order
+        n = len(sig)
+        t = np.arange(n) / self.audio_engine.sample_rate
+        # Window the projections to reduce spectral leakage (important for harmonic demodulation
+        # when the buffer does not contain an integer number of cycles).
+        w = np.hanning(n)
+        w_mean = float(np.mean(w))
+        if not np.isfinite(w_mean) or w_mean <= 0.0:
+            w_mean = 1.0
 
-        # Complex amplitudes (peak) at demod_freq
-        sig_c = 2 * np.mean(sig * osc)
-        ref_c = 2 * np.mean(ref * osc)
+        # Build a reference phasor from the FUNDAMENTAL component of the reference channel.
+        # For harmonic measurements, the reference channel often contains only the fundamental.
+        # Using the reference projection at the harmonic frequency would therefore be ~0 and
+        # destabilize both phase removal and any amplitude correction.
+        osc_ref = np.exp(-1j * 2 * np.pi * ref_freq * t)
+        ref_c_fund = 2 * np.mean(ref * w * osc_ref) / w_mean
+        ref_unit = ref_c_fund / (np.abs(ref_c_fund) + 1e-12)  # unit phasor
+        ref_unit_h = ref_unit ** harmonic_order
 
-        # Remove reference phase while keeping signal amplitude.
-        # Then correct scalloping loss using the reference channel's time-domain peak estimate.
-        # For a near-sinusoidal reference, ref_rms*sqrt(2) ≈ A_ref (peak), while |ref_c| = A_ref*|H|.
-        # correction ≈ 1/|H| and applies equally to the signal projection at the same frequency.
-        ref_amp_est = ref_rms * np.sqrt(2)
-        ref_proj_mag = np.abs(ref_c)
-        correction = ref_amp_est / (ref_proj_mag + 1e-12)
+        # Complex signal amplitude (peak) at the DEMOD frequency (fundamental or harmonic)
+        osc_demod = np.exp(-1j * 2 * np.pi * demod_freq * t)
+        sig_c = 2 * np.mean(sig * w * osc_demod) / w_mean
 
-        # rel = A_sig * exp(j*(phi_sig - phi_ref))
-        result = (sig_c * np.conj(ref_c) / (ref_proj_mag + 1e-12)) * correction
+        # Remove reference phase at the requested harmonic.
+        # For harmonic_order>1, we deliberately do NOT attempt a scalloping correction based on
+        # the reference channel, since it does not generally contain that harmonic.
+        correction = 1.0
+        if harmonic_order == 1:
+            # Correct scalloping loss using the reference channel's time-domain peak estimate.
+            # For a near-sinusoidal reference, ref_rms*sqrt(2) ≈ A_ref (peak), while |ref_c_fund| = A_ref*|H|.
+            ref_amp_est = ref_rms * np.sqrt(2)
+            ref_proj_mag = np.abs(ref_c_fund)
+            correction = ref_amp_est / (ref_proj_mag + 1e-12)
+
+        # rel = A_sig * exp(j*(phi_sig - harmonic_order*phi_ref))
+        result = sig_c * np.conj(ref_unit_h) * correction
 
         # 2.5. Post-mix IIR LPF (optional)
         # This is applied to the complex baseband result to improve out-of-band rejection
