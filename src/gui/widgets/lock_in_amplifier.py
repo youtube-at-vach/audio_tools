@@ -49,8 +49,21 @@ class LockInAmplifier(MeasurementModule):
         # Averaging
         self.averaging_count = 1
         self.history = deque(maxlen=300)
+
+        # Post-mix IIR LPF (dynamic reserve)
+        # Implemented as a cascade of up to 8 one-pole IIR sections on the complex baseband result.
+        # 0 = Off, 1..8 = number of poles.
+        self.postmix_lpf_order = 4
+        # Time constant (seconds). If <= 0, defaults to the current integration time (buffer duration).
+        self.postmix_lpf_tau_s = 0.0
+        self._postmix_lpf_state = [0j] * 8
+        self._postmix_lpf_initialized = False
         
         self.callback_id = None
+
+    def reset_postmix_lpf(self):
+        self._postmix_lpf_state = [0j] * 8
+        self._postmix_lpf_initialized = False
         
     @property
     def name(self) -> str:
@@ -72,6 +85,7 @@ class LockInAmplifier(MeasurementModule):
 
         self.is_running = True
         self.input_data = np.zeros((self.buffer_size, 2))
+        self.reset_postmix_lpf()
         
         # Generator State
         self._phase = 0
@@ -119,6 +133,7 @@ class LockInAmplifier(MeasurementModule):
                 self.audio_engine.unregister_callback(self.callback_id)
                 self.callback_id = None
             self.is_running = False
+            self.reset_postmix_lpf()
 
     def process_data(self):
         """
@@ -218,6 +233,38 @@ class LockInAmplifier(MeasurementModule):
 
         # rel = A_sig * exp(j*(phi_sig - phi_ref))
         result = (sig_c * np.conj(ref_c) / (ref_proj_mag + 1e-12)) * correction
+
+        # 2.5. Post-mix IIR LPF (optional)
+        # This is applied to the complex baseband result to improve out-of-band rejection
+        # (dynamic reserve) without changing the demodulation scheme.
+        order = int(getattr(self, 'postmix_lpf_order', 0) or 0)
+        if order > 0:
+            order = min(max(order, 1), 8)
+            dt = self.buffer_size / self.audio_engine.sample_rate
+
+            tau = float(getattr(self, 'postmix_lpf_tau_s', 0.0) or 0.0)
+            if tau <= 0.0:
+                # Default behavior: couple to integration time.
+                tau = dt
+            tau = max(tau, 1e-6)
+            alpha = dt / (tau + dt)
+            if alpha < 0.0: alpha = 0.0
+            if alpha > 1.0: alpha = 1.0
+
+            # Initialize to the first value after a reset to avoid a long transient
+            # when using higher-order cascades (important since default order can be >0).
+            if not self._postmix_lpf_initialized:
+                for stage in range(order):
+                    self._postmix_lpf_state[stage] = result
+                self._postmix_lpf_initialized = True
+            else:
+                x = result
+                for stage in range(order):
+                    y_prev = self._postmix_lpf_state[stage]
+                    y = y_prev + alpha * (x - y_prev)
+                    self._postmix_lpf_state[stage] = y
+                    x = y
+                result = x
         
         # Averaging
         self.history.append(result)
@@ -314,6 +361,7 @@ class FRASweepWorker(QThread):
             if self.is_cancelled: break
             
             self.module.gen_frequency = f
+            self.module.reset_postmix_lpf()
             
             # Wait for settling
             time.sleep(self.settle_time)
@@ -321,6 +369,7 @@ class FRASweepWorker(QThread):
             # Measurement Loop
             # We need to capture 'averaging_count' buffers
             self.module.history.clear()
+            self.module.reset_postmix_lpf()
             
             # Calculate buffer duration
             sample_rate = self.module.audio_engine.sample_rate
@@ -485,6 +534,58 @@ class LockInAmplifierWidget(QWidget):
         self.avg_spin.setValue(1)
         self.avg_spin.valueChanged.connect(lambda v: setattr(self.module, 'averaging_count', v))
         settings_layout.addRow(tr("Averaging:"), self.avg_spin)
+
+        # Post-mix IIR LPF order (dynamic reserve)
+        self.postmix_lpf_combo = QComboBox()
+        self.postmix_lpf_combo.addItems([
+            tr("Off"),
+            tr("1-pole"),
+            tr("2-pole"),
+            tr("3-pole"),
+            tr("4-pole"),
+            tr("5-pole"),
+            tr("6-pole"),
+            tr("7-pole"),
+            tr("8-pole"),
+        ])
+        self.postmix_lpf_combo.setCurrentIndex(int(getattr(self.module, 'postmix_lpf_order', 0) or 0))
+        self.postmix_lpf_combo.currentIndexChanged.connect(self.on_postmix_lpf_changed)
+        settings_layout.addRow(tr("Post-mix LPF:"), self.postmix_lpf_combo)
+
+        # Post-mix LPF time constant (seconds)
+        self.postmix_lpf_tau_combo = QComboBox()
+        # Value mapping: store tau in seconds, with 0.0 meaning "Auto (integration time)".
+        self._postmix_lpf_tau_options = [
+            (tr("Auto (Integration Time)"), 0.0),
+            (tr("0.01 s"), 0.01),
+            (tr("0.03 s"), 0.03),
+            (tr("0.1 s"), 0.1),
+            (tr("0.3 s"), 0.3),
+            (tr("1 s"), 1.0),
+            (tr("3 s"), 3.0),
+            (tr("10 s"), 10.0),
+            (tr("30 s"), 30.0),
+        ]
+
+        tau_current = float(getattr(self.module, 'postmix_lpf_tau_s', 0.0) or 0.0)
+        # Preserve an existing non-preset value as a "Custom" entry.
+        if tau_current > 0.0:
+            is_preset = any(abs(tau_current - v) <= 1e-12 for _, v in self._postmix_lpf_tau_options)
+            if not is_preset:
+                self._postmix_lpf_tau_options.insert(1, (tr("Custom ({0:.6g} s)").format(tau_current), tau_current))
+
+        for label, value in self._postmix_lpf_tau_options:
+            self.postmix_lpf_tau_combo.addItem(label, value)
+
+        # Select current value if possible.
+        idx_to_select = 0
+        for i, (_, value) in enumerate(self._postmix_lpf_tau_options):
+            if abs(tau_current - float(value)) <= 1e-12:
+                idx_to_select = i
+                break
+        self.postmix_lpf_tau_combo.setCurrentIndex(idx_to_select)
+        self.postmix_lpf_tau_combo.currentIndexChanged.connect(self.on_postmix_lpf_tau_changed)
+        settings_layout.addRow(tr("LPF Time Constant:"), self.postmix_lpf_tau_combo)
         
         self.harmonic_spin = QSpinBox()
         self.harmonic_spin.setRange(1, 10)
@@ -885,6 +986,21 @@ class LockInAmplifierWidget(QWidget):
         
         # Re-allocate buffer
         self.module.input_data = np.zeros((self.module.buffer_size, 2))
+        self.module.reset_postmix_lpf()
+
+    def on_postmix_lpf_changed(self, idx):
+        # idx: 0=Off, 1..8 => order
+        self.module.postmix_lpf_order = int(idx)
+        self.module.reset_postmix_lpf()
+
+    def on_postmix_lpf_tau_changed(self, idx):
+        val = self.postmix_lpf_tau_combo.currentData()
+        try:
+            tau = float(val)
+        except Exception:
+            tau = 0.0
+        self.module.postmix_lpf_tau_s = tau
+        self.module.reset_postmix_lpf()
 
     def update_ui(self):
         if not self.module.is_running:
