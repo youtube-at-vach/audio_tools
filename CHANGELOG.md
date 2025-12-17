@@ -1,5 +1,30 @@
 # Changelog
 
+## [v0.2.4] - 2025-12-17
+
+### Added
+
+* Transient Analyzer モジュールを追加し、メインウィンドウ統合、録音時間の自動停止、トリガ、対数周波数軸、ローカライズされたコントロールを実装
+* PipeWire/JACK 常駐モードを AudioEngine / ConfigManager に追加し、関連する翻訳と使用ノートを追加
+* Boxcar Averager に内部インパルス／PRBS/MLS／パルスゲートを追加し、絶対サンプル追跡とリセット、モード別ゲート表示切替、関連テストを追加
+* GoniometerWidget にグロー／スムーズライン、マッピングオプション、軸反転を追加
+* Raw Time Series ウィジェットを追加し、多言語化と CH1/CH2 プロット領域の均一化を実装
+* Lock-in Amplifier に動的リザーブ後段 IIR LPF と Very Slow バッファ設定を追加し、動的リザーブテストと run_sweep のバッファ指定を追加
+* Impedance Analyzer に動的バッファリングとスレッドセーフ入力処理、動的有効桁／位相表示を追加
+* バッファ関連や LPF 設定、常駐モードなどの翻訳キーを追加
+
+### Changed
+
+* Lock-in Amplifier の harmonic_order プロパティと復調ロジックをリファクタし、バッファ指定時の出力整形を改善
+* Boxcar Averager ウィジェットをグリッドレイアウト化し、コンボボックスの itemData 利用と初期選択、ゲート操作の視認性を改善
+* Distortion Analyzer / Lock-in 周辺の不要インポートを削除
+* .gitignore を更新し、ログファイル除外を追加
+
+### Documentation
+
+* README に Transient Analyzer と Detachable Wrapper を追記し、ウィジェット概要セクションを拡充
+* Linux で PortAudio と JACK/PipeWire を併用する際のノートを追加
+
 ## [v0.2.3] - 2025-12-15
 
 ### Added
