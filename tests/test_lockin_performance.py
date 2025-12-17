@@ -10,7 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.core.audio_engine import AudioEngine
 from src.gui.widgets.lock_in_amplifier import LockInAmplifier
 
-def run_sweep(start_freq, end_freq, steps, duration_per_step, use_software_loopback=False):
+def run_sweep(start_freq, end_freq, steps, duration_per_step, use_software_loopback=False, buffer_size=4096):
     print("Initializing Audio Engine...")
     engine = AudioEngine()
     
@@ -29,7 +29,7 @@ def run_sweep(start_freq, end_freq, steps, duration_per_step, use_software_loopb
     # Configure Lock-in
     lockin.gen_amplitude = 0.5
     lockin.averaging_count = 10 # Average over 10 buffers
-    lockin.buffer_size = 4096
+    lockin.buffer_size = int(buffer_size)
     lockin.output_channel = 2 # Stereo output (Signal on both L and R)
     
     # Start Analysis
@@ -42,8 +42,9 @@ def run_sweep(start_freq, end_freq, steps, duration_per_step, use_software_loopb
     
     results = []
     
-    print(f"{'Freq (Hz)':<12} | {'Mag (Linear)':<12} | {'Phase (Deg)':<12} | {'Gain Err(dB)':<12}")
-    print("-" * 60)
+    # widen columns a bit because we print more decimals
+    print(f"{'Freq (Hz)':<12} | {'Mag (Linear)':<12} | {'Phase (Deg)':<16} | {'Gain Err(dB)':<16}")
+    print("-" * 70)
     
     try:
         for f in freqs:
@@ -78,7 +79,8 @@ def run_sweep(start_freq, end_freq, steps, duration_per_step, use_software_loopb
             else:
                 gain_err_db = -999.0
             
-            print(f"{f:<12.2f} | {mag:<12.4f} | {phase:<12.2f} | {gain_err_db:<12.3f}")
+            # phase / gain: show ~7 decimals
+            print(f"{f:<12.2f} | {mag:<12.4f} | {phase:<16.7f} | {gain_err_db:<16.7f}")
             
             results.append({
                 'freq': f,
@@ -102,7 +104,8 @@ if __name__ == "__main__":
     parser.add_argument("--steps", type=int, default=20, help="Number of steps")
     parser.add_argument("--time", type=float, default=0.5, help="Time per step (s)")
     parser.add_argument("--software-loopback", action="store_true", help="Use internal software loopback")
-    
+    parser.add_argument("--buffer-size", type=int, default=4096, help="Lock-in buffer size (frames)")
+
     args = parser.parse_args()
     
-    run_sweep(args.start, args.end, args.steps, args.time, args.software_loopback)
+    run_sweep(args.start, args.end, args.steps, args.time, args.software_loopback, buffer_size=args.buffer_size)
