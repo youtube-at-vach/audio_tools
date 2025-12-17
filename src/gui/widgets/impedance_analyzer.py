@@ -567,6 +567,61 @@ class ImpedanceResultsWidget(QWidget):
         self.circuit_mode = tr("Series") # "Series" or "Parallel"
         self.init_ui()
 
+        # Display precision defaults
+        # Previously we used ".4g" for impedance-related readouts; increase by one digit.
+        self._default_z_sig_figs = 5
+        self._default_phase_places = 2
+
+    def _sig_figs_from_std(self, val_std: float | None, val_abs: float | None, default: int, max_figs: int = 7, min_figs: int = 3) -> int:
+        """Choose significant figures based on measurement dispersion.
+
+        Strategy: show stable digits + ~1 noise digit.
+        For a value with decade p=floor(log10(|x|)) and std decade s=floor(log10(std)),
+        sig_figs ≈ p - s + 1.
+        """
+        try:
+            if val_std is None or val_abs is None:
+                return int(default)
+            std = float(val_std)
+            x = float(val_abs)
+            if not np.isfinite(std) or std <= 0.0:
+                return int(default)
+            if not np.isfinite(x) or x == 0.0:
+                return int(default)
+
+            p = int(np.floor(np.log10(abs(x))))
+            s = int(np.floor(np.log10(std)))
+            sig = p - s + 1
+            sig = max(int(min_figs), min(int(max_figs), int(sig)))
+            return sig
+        except Exception:
+            return int(default)
+
+    def _phase_places_from_std(self, phase_std_deg: float | None, default: int, max_places: int = 4) -> int:
+        """Choose decimal places for degrees based on phase std-dev (degrees)."""
+        try:
+            if phase_std_deg is None:
+                return int(default)
+            std = float(phase_std_deg)
+            if not np.isfinite(std) or std <= 0.0:
+                return int(default)
+            if std <= 1e-9:
+                return int(max_places)
+            places = -int(np.floor(np.log10(std)))
+            places = max(0, min(int(max_places), int(places)))
+            return places
+        except Exception:
+            return int(default)
+
+    def _fmt_dimless(self, value: float, sig_figs: int = 5) -> str:
+        try:
+            x = float(value)
+            if not np.isfinite(x):
+                return "-"
+            return f"{x:.{int(sig_figs)}g}"
+        except Exception:
+            return "-"
+
     def init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -694,7 +749,17 @@ class ImpedanceResultsWidget(QWidget):
         self.detail_widget.setVisible(checked)
         self.detail_btn.setText(tr("Hide Details") if checked else tr("Show Details"))
 
-    def update_data(self, z: complex, v: complex, i: complex, freq: float, buffer_size: int | None = None, sample_rate: float | None = None):
+    def update_data(
+        self,
+        z: complex,
+        v: complex,
+        i: complex,
+        freq: float,
+        buffer_size: int | None = None,
+        sample_rate: float | None = None,
+        z_mag_std: float | None = None,
+        z_phase_std_deg: float | None = None,
+    ):
         if freq <= 0: return
         w = 2 * np.pi * freq
         # Buffer display (shown in the Details panel)
@@ -709,11 +774,25 @@ class ImpedanceResultsWidget(QWidget):
             pass
         
         # Basic Z
-        z_mag = abs(z)
-        z_phase = np.degrees(np.angle(z))
-        
-        self.lbl_z_mag.setText(f"{z_mag:.4g} Ω")
-        self.lbl_z_phase.setText(f"{z_phase:.2f}°")
+        z_mag = float(abs(z))
+        z_phase = float(np.degrees(np.angle(z)))
+
+        # Precision
+        z_sig_figs = self._sig_figs_from_std(
+            z_mag_std,
+            z_mag,
+            default=int(getattr(self, '_default_z_sig_figs', 5) or 5),
+            max_figs=7,
+            min_figs=3,
+        )
+        phase_places = self._phase_places_from_std(
+            z_phase_std_deg,
+            default=int(getattr(self, '_default_phase_places', 2) or 2),
+            max_places=4,
+        )
+
+        self.lbl_z_mag.setText(format_si(z_mag, "Ω", sig_figs=z_sig_figs))
+        self.lbl_z_phase.setText(f"{z_phase:.{phase_places}f}°")
         
         # Series
         rs = z.real
@@ -741,25 +820,27 @@ class ImpedanceResultsWidget(QWidget):
         d = 1.0 / q if q > 1e-12 else float('inf')
         
         # --- Update Detailed View ---
-        self.val_rs.setText(f"{rs:.4g} Ω")
-        self.val_xs.setText(f"{xs:.4g} Ω")
-        self.val_ls.setText(f"{ls*1e6:.4g} µH" if abs(ls) < 1 else f"{ls:.4g} H")
-        self.val_cs.setText(f"{cs*1e9:.4g} nF" if abs(cs) < 1e-6 else f"{cs*1e6:.4g} µF")
-        
-        self.val_rp.setText(f"{rp:.4g} Ω")
-        self.val_xp.setText(f"{xp:.4g} Ω")
-        self.val_lp.setText(f"{lp*1e6:.4g} µH" if abs(lp) < 1 else f"{lp:.4g} H")
-        self.val_cp.setText(f"{cp*1e9:.4g} nF" if abs(cp) < 1e-6 else f"{cp*1e6:.4g} µF")
+        self.val_rs.setText(format_si(rs, "Ω", sig_figs=z_sig_figs))
+        self.val_xs.setText(format_si(xs, "Ω", sig_figs=z_sig_figs))
+        self.val_ls.setText(format_si(ls, "H", sig_figs=z_sig_figs))
+        self.val_cs.setText(format_si(cs, "F", sig_figs=z_sig_figs))
+
+        self.val_rp.setText(format_si(rp, "Ω", sig_figs=z_sig_figs))
+        self.val_xp.setText(format_si(xp, "Ω", sig_figs=z_sig_figs))
+        self.val_lp.setText(format_si(lp, "H", sig_figs=z_sig_figs))
+        self.val_cp.setText(format_si(cp, "F", sig_figs=z_sig_figs))
         
         # Admittance display: use SI prefixes (nS/µS/mS/...) with significant figures.
-        self.val_y_mag.setText(format_si(abs(y), "S", sig_figs=4))
-        self.val_g.setText(format_si(g, "S", sig_figs=4))
-        self.val_b.setText(format_si(b, "S", sig_figs=4))
+        # Keep slightly lower default sig-figs than impedance to avoid noisy UI.
+        self.val_y_mag.setText(format_si(abs(y), "S", sig_figs=max(4, z_sig_figs - 1)))
+        self.val_g.setText(format_si(g, "S", sig_figs=max(4, z_sig_figs - 1)))
+        self.val_b.setText(format_si(b, "S", sig_figs=max(4, z_sig_figs - 1)))
+
+        self.val_q.setText(self._fmt_dimless(q, sig_figs=max(4, z_sig_figs - 1)))
+        self.val_d.setText(self._fmt_dimless(d, sig_figs=max(4, z_sig_figs - 1)))
+        self.val_esr.setText(format_si(rs, "Ω", sig_figs=z_sig_figs))
         
-        self.val_q.setText(f"{q:.4g}")
-        self.val_d.setText(f"{d:.4g}")
-        self.val_esr.setText(f"{rs:.4g} Ω")
-        
+        # Raw signals are shown primarily for debugging; keep their previous style.
         self.val_v.setText(f"{abs(v):.4g} V")
         self.val_i.setText(f"{abs(i)*1000:.4g} mA")
         self.val_v_phase.setText(f"{np.degrees(np.angle(v)):.2f}°")
@@ -770,31 +851,31 @@ class ImpedanceResultsWidget(QWidget):
         
         if self.circuit_mode == tr("Series"):
             self.lbl_p1_name.setText(tr("Rs:"))
-            self.lbl_p1_val.setText(f"{rs:.4g} Ω")
+            self.lbl_p1_val.setText(format_si(rs, "Ω", sig_figs=z_sig_figs))
             self.lbl_p2_name.setText(tr("Xs:"))
-            self.lbl_p2_val.setText(f"{xs:.4g} Ω")
+            self.lbl_p2_val.setText(format_si(xs, "Ω", sig_figs=z_sig_figs))
             
             if xs > 0: # Inductive
                 self.lbl_lc_name.setText(tr("Ls:"))
-                self.lbl_lc_val.setText(f"{ls*1e6:.4g} µH" if abs(ls) < 1e-3 else f"{ls*1e3:.4g} mH")
+                self.lbl_lc_val.setText(format_si(ls, "H", sig_figs=z_sig_figs))
             else: # Capacitive
                 self.lbl_lc_name.setText(tr("Cs:"))
-                self.lbl_lc_val.setText(f"{cs*1e9:.4g} nF" if abs(cs) < 1e-6 else f"{cs*1e6:.4g} µF")
+                self.lbl_lc_val.setText(format_si(cs, "F", sig_figs=z_sig_figs))
                 
         else: # Parallel
             self.lbl_p1_name.setText(tr("Rp:"))
-            self.lbl_p1_val.setText(f"{rp:.4g} Ω")
+            self.lbl_p1_val.setText(format_si(rp, "Ω", sig_figs=z_sig_figs))
             self.lbl_p2_name.setText(tr("Xp:"))
-            self.lbl_p2_val.setText(f"{xp:.4g} Ω")
+            self.lbl_p2_val.setText(format_si(xp, "Ω", sig_figs=z_sig_figs))
             
             if b < 0: # Inductive (B is negative for Inductor in Admittance? Y = 1/jwL = -j/wL -> B < 0)
                 self.lbl_lc_name.setText(tr("Lp:"))
-                self.lbl_lc_val.setText(f"{lp*1e6:.4g} µH" if abs(lp) < 1e-3 else f"{lp*1e3:.4g} mH")
+                self.lbl_lc_val.setText(format_si(lp, "H", sig_figs=z_sig_figs))
             else: # Capacitive (Y = jwC -> B > 0)
                 self.lbl_lc_name.setText(tr("Cp:"))
-                self.lbl_lc_val.setText(f"{cp*1e9:.4g} nF" if abs(cp) < 1e-6 else f"{cp*1e6:.4g} µF")
+                self.lbl_lc_val.setText(format_si(cp, "F", sig_figs=z_sig_figs))
 
-        self.lbl_q_val.setText(f"{tr('Q:')} {q:.4g}")
+        self.lbl_q_val.setText(f"{tr('Q:')} {self._fmt_dimless(q, sig_figs=max(4, z_sig_figs - 1))}")
 
 
 class ImpedanceAnalyzerWidget(QWidget):
@@ -1072,6 +1153,45 @@ class ImpedanceAnalyzerWidget(QWidget):
         if not self.module.is_running: return
         
         self.module.process_data()
+
+        # Auto-precision based on dispersion when averaging >= 2.
+        z_mag_std = None
+        z_phase_std_deg = None
+        try:
+            if int(getattr(self.module, 'averaging_count', 1) or 1) >= 2:
+                hv = list(getattr(self.module, 'history_v', []) or [])
+                hi = list(getattr(self.module, 'history_i', []) or [])
+                if len(hv) >= 2 and len(hi) == len(hv):
+                    hv_arr = np.asarray(hv, dtype=np.complex128)
+                    hi_arr = np.asarray(hi, dtype=np.complex128)
+                    mask = np.abs(hi_arr) > 1e-12
+                    z_raw = np.full_like(hv_arr, np.nan + 1j * np.nan)
+                    z_raw[mask] = - (hv_arr[mask] * float(self.module.shunt_resistance)) / hi_arr[mask]
+
+                    if bool(getattr(self.module, 'use_calibration', False)) and bool(getattr(self.module, 'cal_short', {})) and bool(getattr(self.module, 'cal_open', {})):
+                        z_samp = []
+                        for zr in z_raw:
+                            if not np.isfinite(zr.real) or not np.isfinite(zr.imag):
+                                continue
+                            try:
+                                z_samp.append(self.module.apply_calibration(zr, float(self.module.gen_frequency)))
+                            except Exception:
+                                z_samp.append(zr)
+                        z_samp = np.asarray(z_samp, dtype=np.complex128)
+                    else:
+                        z_samp = z_raw[np.isfinite(z_raw.real) & np.isfinite(z_raw.imag)]
+
+                    if len(z_samp) >= 2:
+                        mags = np.abs(z_samp)
+                        z_mag_std = float(np.std(mags))
+
+                        phases = np.angle(z_samp)
+                        phases = np.unwrap(phases)
+                        z_phase_std_deg = float(np.degrees(np.std(phases)))
+        except Exception:
+            z_mag_std = None
+            z_phase_std_deg = None
+
         self.results_widget.update_data(
             self.module.meas_z_complex,
             self.module.meas_v_complex,
@@ -1079,6 +1199,8 @@ class ImpedanceAnalyzerWidget(QWidget):
             self.module.gen_frequency,
             buffer_size=self.module.buffer_size,
             sample_rate=self.module.audio_engine.sample_rate,
+            z_mag_std=z_mag_std,
+            z_phase_std_deg=z_phase_std_deg,
         )
 
     def start_sweep(self, mode):
