@@ -3,6 +3,7 @@ import json
 import numpy as np
 import pyqtgraph as pg
 from collections import deque
+import threading
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
                              QComboBox, QCheckBox, QGroupBox, QFormLayout, 
                              QDoubleSpinBox, QProgressBar, QSpinBox, QTabWidget, QMessageBox, QApplication, QGridLayout, QFileDialog)
@@ -17,11 +18,17 @@ class ImpedanceAnalyzer(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
         self.audio_engine = audio_engine
         self.is_running = False
-        self.buffer_size = 4096 
+        self.base_buffer_size = 4096
+        self.max_buffer_multiplier = 16
+        self.dynamic_buffer_threshold_hz = 100.0
+        # Target number of cycles to integrate at low frequencies.
+        self.dynamic_buffer_min_cycles = 8.0
+        self.buffer_size = int(self.base_buffer_size)
         self.input_data = np.zeros((self.buffer_size, 2))
+        self._buffer_lock = threading.Lock()
         
         # Settings
-        self.gen_frequency = 1000.0
+        self._gen_frequency = 1000.0
         self.gen_amplitude = 0.5 
         self.output_channel = 0 # 0: Left, 1: Right, 2: Stereo
         self.voltage_channel = 0 # 0: Left, 1: Right
@@ -40,14 +47,114 @@ class ImpedanceAnalyzer(MeasurementModule):
         # Results
         self.meas_v_complex = 0j
         self.meas_i_complex = 0j
+        # Raw (uncalibrated) impedance for calibration capture
+        self.meas_z_raw = 0j
         self.meas_z_complex = 0j
         
         # Averaging
         self.averaging_count = 1
         self.history_v = deque(maxlen=100)
         self.history_i = deque(maxlen=100)
+
+        # Post-mix IIR LPF (dynamic reserve) — same scheme as Lock-in Amplifier.
+        # Implemented as a cascade of up to 8 one-pole IIR sections on the complex baseband.
+        # 0 = Off, 1..8 = number of poles.
+        self.postmix_lpf_order = 4
+        # Time constant (seconds). If <= 0, defaults to the current integration time (buffer duration).
+        self.postmix_lpf_tau_s = 0.0
+        self._postmix_lpf_state_v = [0j] * 8
+        self._postmix_lpf_state_i = [0j] * 8
+        self._postmix_lpf_initialized_v = False
+        self._postmix_lpf_initialized_i = False
+        self._last_demod_freq = None
         
         self.callback_id = None
+
+    def set_base_buffer_size(self, base_size: int):
+        base_size = int(base_size)
+        if base_size <= 0:
+            return
+        self.base_buffer_size = base_size
+        # Re-evaluate dynamic buffering target at current frequency.
+        self._apply_dynamic_buffering(self.gen_frequency)
+
+    @property
+    def gen_frequency(self) -> float:
+        return float(getattr(self, '_gen_frequency', 0.0) or 0.0)
+
+    @gen_frequency.setter
+    def gen_frequency(self, value: float):
+        try:
+            f = float(value)
+        except Exception:
+            return
+        if not np.isfinite(f):
+            return
+        if f < 0:
+            f = 0.0
+        self._gen_frequency = f
+        # Apply dynamic buffering when frequency changes.
+        try:
+            self._apply_dynamic_buffering(f)
+        except Exception:
+            pass
+
+    def _desired_buffer_multiplier(self, freq_hz: float) -> int:
+        base = int(getattr(self, 'base_buffer_size', 4096) or 4096)
+        max_mul = int(getattr(self, 'max_buffer_multiplier', 8) or 8)
+        threshold = float(getattr(self, 'dynamic_buffer_threshold_hz', 100.0) or 100.0)
+        min_cycles = float(getattr(self, 'dynamic_buffer_min_cycles', 8.0) or 8.0)
+        sr = float(self.audio_engine.sample_rate)
+
+        if base <= 0 or max_mul <= 0 or sr <= 0:
+            return 1
+        if not np.isfinite(freq_hz) or freq_hz <= 0:
+            return 1
+        if freq_hz >= threshold:
+            return 1
+
+        # Required samples to include at least min_cycles of the tone.
+        required_samples = (min_cycles * sr) / max(freq_hz, 1e-9)
+        mul = int(np.ceil(required_samples / base))
+        mul = max(1, min(max_mul, mul))
+        return mul
+
+    def _set_buffer_size(self, new_size: int):
+        new_size = int(new_size)
+        if new_size <= 0:
+            return
+        if new_size == int(getattr(self, 'buffer_size', 0) or 0):
+            return
+
+        # Reset state that depends on integration time/buffer.
+        try:
+            self.reset_postmix_lpf()
+        except Exception:
+            pass
+        try:
+            self.history_v.clear()
+            self.history_i.clear()
+        except Exception:
+            pass
+
+        with self._buffer_lock:
+            self.buffer_size = new_size
+            self.input_data = np.zeros((self.buffer_size, 2))
+
+    def _apply_dynamic_buffering(self, freq_hz: float):
+        base = int(getattr(self, 'base_buffer_size', 4096) or 4096)
+        mul = self._desired_buffer_multiplier(freq_hz)
+        target = base * mul
+        # Cap at max_multiplier by design.
+        max_mul = int(getattr(self, 'max_buffer_multiplier', 16) or 16)
+        target = min(target, base * max_mul)
+        self._set_buffer_size(target)
+
+    def reset_postmix_lpf(self):
+        self._postmix_lpf_state_v = [0j] * 8
+        self._postmix_lpf_state_i = [0j] * 8
+        self._postmix_lpf_initialized_v = False
+        self._postmix_lpf_initialized_i = False
         
     @property
     def name(self) -> str:
@@ -68,7 +175,10 @@ class ImpedanceAnalyzer(MeasurementModule):
             return
 
         self.is_running = True
-        self.input_data = np.zeros((self.buffer_size, 2))
+        with self._buffer_lock:
+            self.input_data = np.zeros((self.buffer_size, 2))
+        self.reset_postmix_lpf()
+        self._last_demod_freq = None
         
         # Generator State
         self._phase = 0
@@ -78,18 +188,20 @@ class ImpedanceAnalyzer(MeasurementModule):
             if status:
                 print(status)
             
-            # --- Input Capture ---
+            # --- Input Capture (thread-safe) ---
             if indata.shape[1] >= 2:
                 new_data = indata[:, :2]
             else:
                 new_data = np.column_stack((indata[:, 0], indata[:, 0]))
-            
-            # Roll buffer
-            if len(new_data) > self.buffer_size:
-                self.input_data[:] = new_data[-self.buffer_size:]
-            else:
-                self.input_data = np.roll(self.input_data, -len(new_data), axis=0)
-                self.input_data[-len(new_data):] = new_data
+
+            with self._buffer_lock:
+                bs = int(self.buffer_size)
+                # Roll buffer
+                if len(new_data) > bs:
+                    self.input_data[:] = new_data[-bs:]
+                else:
+                    self.input_data = np.roll(self.input_data, -len(new_data), axis=0)
+                    self.input_data[-len(new_data):] = new_data
             
             # --- Output Generation ---
             t = (np.arange(frames) + self._phase) / sample_rate
@@ -112,42 +224,39 @@ class ImpedanceAnalyzer(MeasurementModule):
                 self.audio_engine.unregister_callback(self.callback_id)
                 self.callback_id = None
             self.is_running = False
+            self.reset_postmix_lpf()
+            self._last_demod_freq = None
 
-    def process_data(self):
+    def process_data(self, ignore_calibration: bool = False):
         """
         Perform Dual Lock-in calculation.
         """
-        data = self.input_data
+        with self._buffer_lock:
+            data = np.array(self.input_data, copy=True)
         
         # Extract Signals
         sig_v = data[:, self.voltage_channel]
         sig_i = data[:, self.current_channel]
         
-        # Generate Reference Phasor (Internally generated sine)
-        # We need to reconstruct the reference phase corresponding to the buffer.
-        # However, since we are generating the signal, we know the frequency.
-        # But we don't know the exact phase of the buffer relative to generation start easily 
-        # without passing it from callback. 
-        # ALTERNATIVE: Use one of the channels (e.g. V) as phase reference if we only care about Z phase?
-        # NO, we need absolute phase relative to generator or relative to each other.
-        # Relative to each other is Z phase.
-        # So we can just lock-in both to a common reference.
-        # Ideally we should use the Loopback (REF) if available, but here we assume 
-        # internal generation is perfect and we just want relative phase V vs I.
-        # Actually, if we use Hilbert on the generated signal (or just cos/sin), we need time alignment.
-        # 
-        # SIMPLIFICATION:
-        # We can treat V as the reference for phase 0? No, Z phase is Phase(V) - Phase(I).
-        # So we can calculate V phasor and I phasor independently using an arbitrary reference 
-        # (e.g. the first sample of the buffer is t=0).
-        # As long as V and I are from the same buffer, the relative phase is preserved.
-        
-        # Coherent demodulation (single-bin DFT) at gen_frequency.
-        # Use the voltage channel as the phase reference to stabilize displayed phases and
-        # apply a scalloping-loss correction derived from the voltage channel's time-domain RMS.
+        # Internal REF (generator frequency) + coherent demodulation, then optional post-mix LPF.
+        # This follows the same measurement approach as the Lock-in Amplifier module.
         n = len(sig_v)
         sr = self.audio_engine.sample_rate
         f0 = float(self.gen_frequency)
+
+        # If the demodulation frequency changes, reset stateful filters/averaging to avoid mixing data.
+        last_f = getattr(self, '_last_demod_freq', None)
+        if last_f is None or abs(float(last_f) - f0) > 1e-9:
+            try:
+                self.reset_postmix_lpf()
+            except Exception:
+                pass
+            try:
+                self.history_v.clear()
+                self.history_i.clear()
+            except Exception:
+                pass
+            self._last_demod_freq = f0
 
         # Reference present check (avoid unstable division)
         v_rms = float(np.sqrt(np.mean(sig_v ** 2)))
@@ -158,11 +267,17 @@ class ImpedanceAnalyzer(MeasurementModule):
             return
 
         t = np.arange(n) / sr
+        # Window the projections to reduce spectral leakage when we don't have an integer number of cycles.
+        w = np.hanning(n)
+        w_mean = float(np.mean(w))
+        if not np.isfinite(w_mean) or w_mean <= 0.0:
+            w_mean = 1.0
+
         osc = np.exp(-1j * 2 * np.pi * f0 * t)
 
         # Complex amplitudes (peak) at f0
-        v_raw = 2 * np.mean(sig_v * osc)
-        i_raw = 2 * np.mean(sig_i * osc)
+        v_raw = 2 * np.mean(sig_v * w * osc) / w_mean
+        i_raw = 2 * np.mean(sig_i * w * osc) / w_mean
 
         # Scalloping correction: for a near-sinusoidal V, v_rms*sqrt(2) ≈ V_peak.
         # |v_raw| = V_peak*|H| when f0 is not an integer bin, so correction ≈ 1/|H|.
@@ -178,6 +293,50 @@ class ImpedanceAnalyzer(MeasurementModule):
         v_ref = v_corr / (np.abs(v_corr) + 1e-12)
         v_rot = v_corr * np.conj(v_ref)
         i_rot = i_corr * np.conj(v_ref)
+
+        # Post-mix IIR LPF (dynamic reserve) on complex baseband (V and I separately)
+        order = int(getattr(self, 'postmix_lpf_order', 0) or 0)
+        if order > 0:
+            order = min(max(order, 1), 8)
+            dt = self.buffer_size / self.audio_engine.sample_rate
+
+            tau = float(getattr(self, 'postmix_lpf_tau_s', 0.0) or 0.0)
+            if tau <= 0.0:
+                tau = dt
+            tau = max(tau, 1e-6)
+            alpha = dt / (tau + dt)
+            if alpha < 0.0:
+                alpha = 0.0
+            if alpha > 1.0:
+                alpha = 1.0
+
+            # V path
+            if not self._postmix_lpf_initialized_v:
+                for stage in range(order):
+                    self._postmix_lpf_state_v[stage] = v_rot
+                self._postmix_lpf_initialized_v = True
+            else:
+                x = v_rot
+                for stage in range(order):
+                    y_prev = self._postmix_lpf_state_v[stage]
+                    y = y_prev + alpha * (x - y_prev)
+                    self._postmix_lpf_state_v[stage] = y
+                    x = y
+                v_rot = x
+
+            # I path
+            if not self._postmix_lpf_initialized_i:
+                for stage in range(order):
+                    self._postmix_lpf_state_i[stage] = i_rot
+                self._postmix_lpf_initialized_i = True
+            else:
+                x = i_rot
+                for stage in range(order):
+                    y_prev = self._postmix_lpf_state_i[stage]
+                    y = y_prev + alpha * (x - y_prev)
+                    self._postmix_lpf_state_i[stage] = y
+                    x = y
+                i_rot = x
         
         # Averaging (after phase normalization)
         self.history_v.append(v_rot)
@@ -201,9 +360,11 @@ class ImpedanceAnalyzer(MeasurementModule):
             z_raw = - (avg_v * self.shunt_resistance) / avg_i
         else:
             z_raw = 0j
+
+        self.meas_z_raw = z_raw
             
         # Apply Calibration
-        if self.use_calibration:
+        if (not ignore_calibration) and self.use_calibration:
             self.meas_z_complex = self.apply_calibration(z_raw, self.gen_frequency)
         else:
             self.meas_z_complex = z_raw
@@ -341,7 +502,7 @@ class ImpedanceSweepWorker(QThread):
     result = pyqtSignal(float, complex) # freq, z_complex
     finished_sweep = pyqtSignal()
     
-    def __init__(self, module: ImpedanceAnalyzer, start_f, end_f, steps, log_sweep, settle_time):
+    def __init__(self, module: ImpedanceAnalyzer, start_f, end_f, steps, log_sweep, settle_time, cal_mode=None):
         super().__init__()
         self.module = module
         self.start_f = start_f
@@ -349,6 +510,7 @@ class ImpedanceSweepWorker(QThread):
         self.steps = steps
         self.log_sweep = log_sweep
         self.settle_time = settle_time
+        self.cal_mode = cal_mode
         self.is_cancelled = False
         
     def run(self):
@@ -382,9 +544,13 @@ class ImpedanceSweepWorker(QThread):
             for _ in range(self.module.averaging_count):
                 if self.is_cancelled: break
                 time.sleep(wait_time)
-                self.module.process_data()
-                
-            z = self.module.meas_z_complex
+                self.module.process_data(ignore_calibration=self.cal_mode in ('open', 'short', 'load'))
+
+            # During calibration capture, always store the uncalibrated impedance.
+            if self.cal_mode in ('open', 'short', 'load'):
+                z = self.module.meas_z_raw
+            else:
+                z = self.module.meas_z_complex
             self.result.emit(f, z)
             self.progress.emit(int((i+1)/self.steps * 100))
             
@@ -503,7 +669,7 @@ class ImpedanceResultsWidget(QWidget):
         box_q.setLayout(lay_q)
         detail_layout.addWidget(box_q, 1, 1)
         
-        # Group 5: Raw Signals
+        # Group 5: Raw Signals (V / I)
         box_raw = QGroupBox(tr("Raw Signals (V / I)"))
         lay_raw = QFormLayout()
         self.val_v = QLabel("-"); lay_raw.addRow(tr("Voltage:"), self.val_v)
@@ -511,7 +677,14 @@ class ImpedanceResultsWidget(QWidget):
         self.val_v_phase = QLabel("-"); lay_raw.addRow(tr("V Phase:"), self.val_v_phase)
         self.val_i_phase = QLabel("-"); lay_raw.addRow(tr("I Phase:"), self.val_i_phase)
         box_raw.setLayout(lay_raw)
-        detail_layout.addWidget(box_raw, 2, 0, 1, 2)
+        detail_layout.addWidget(box_raw, 2, 0)
+
+        # Group 6: Buffer (shown as a separate framed column to the right of V/I)
+        box_buf = QGroupBox(tr("Buffer"))
+        lay_buf = QFormLayout()
+        self.val_buffer = QLabel("-"); lay_buf.addRow(tr("Size:"), self.val_buffer)
+        box_buf.setLayout(lay_buf)
+        detail_layout.addWidget(box_buf, 2, 1)
         
         layout.addWidget(self.detail_widget)
         layout.addStretch()
@@ -521,9 +694,19 @@ class ImpedanceResultsWidget(QWidget):
         self.detail_widget.setVisible(checked)
         self.detail_btn.setText(tr("Hide Details") if checked else tr("Show Details"))
 
-    def update_data(self, z: complex, v: complex, i: complex, freq: float):
+    def update_data(self, z: complex, v: complex, i: complex, freq: float, buffer_size: int | None = None, sample_rate: float | None = None):
         if freq <= 0: return
         w = 2 * np.pi * freq
+        # Buffer display (shown in the Details panel)
+        try:
+            if buffer_size is not None and sample_rate is not None and sample_rate > 0:
+                bs = int(buffer_size)
+                dt_ms = (bs / float(sample_rate)) * 1000.0
+                self.val_buffer.setText(f"{bs} samples ({dt_ms:.1f} ms)")
+            elif buffer_size is not None:
+                self.val_buffer.setText(f"{int(buffer_size)} samples")
+        except Exception:
+            pass
         
         # Basic Z
         z_mag = abs(z)
@@ -678,6 +861,28 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.avg_spin.setRange(1, 100); self.avg_spin.setValue(self.module.averaging_count)
         self.avg_spin.valueChanged.connect(lambda v: setattr(self.module, 'averaging_count', v))
         lay_meas.addRow(tr("Averages:"), self.avg_spin)
+
+        # Default buffer size (base integration window)
+        self.base_buffer_combo = QComboBox()
+        self.base_buffer_combo.addItems(["4096", "8192", "16384"])
+        try:
+            current_base = int(getattr(self.module, 'base_buffer_size', 4096) or 4096)
+        except Exception:
+            current_base = 4096
+        if current_base in (4096, 8192, 16384):
+            self.base_buffer_combo.setCurrentText(str(current_base))
+        else:
+            self.base_buffer_combo.setCurrentText("4096")
+
+        def _on_base_buffer_changed(text: str):
+            try:
+                base = int(text)
+            except Exception:
+                return
+            self.module.set_base_buffer_size(base)
+
+        self.base_buffer_combo.currentTextChanged.connect(_on_base_buffer_changed)
+        lay_meas.addRow(tr("Default Buffer:"), self.base_buffer_combo)
         
         self.circuit_combo = QComboBox()
         self.circuit_combo.addItems([tr("Series"), tr("Parallel")])
@@ -854,19 +1059,56 @@ class ImpedanceAnalyzerWidget(QWidget):
         # Trigger update if running
         if not self.module.is_running:
             # Manually update with last known data if available
-            self.results_widget.update_data(self.module.meas_z_complex, self.module.meas_v_complex, self.module.meas_i_complex, self.module.gen_frequency)
+            self.results_widget.update_data(
+                self.module.meas_z_complex,
+                self.module.meas_v_complex,
+                self.module.meas_i_complex,
+                self.module.gen_frequency,
+                buffer_size=self.module.buffer_size,
+                sample_rate=self.module.audio_engine.sample_rate,
+            )
 
     def update_ui(self):
         if not self.module.is_running: return
         
         self.module.process_data()
-        self.results_widget.update_data(self.module.meas_z_complex, self.module.meas_v_complex, self.module.meas_i_complex, self.module.gen_frequency)
+        self.results_widget.update_data(
+            self.module.meas_z_complex,
+            self.module.meas_v_complex,
+            self.module.meas_i_complex,
+            self.module.gen_frequency,
+            buffer_size=self.module.buffer_size,
+            sample_rate=self.module.audio_engine.sample_rate,
+        )
 
     def start_sweep(self, mode):
         if self.sweep_worker is not None and self.sweep_worker.isRunning():
             return
+
+        # If manual measurement UI is running, stop its timer-driven updates.
+        # Sweeps drive their own processing in a worker thread; running both concurrently
+        # mixes averaging/filter state and can corrupt calibration/measurement display.
+        if self.timer.isActive():
+            self.timer.stop()
+        try:
+            # Reflect that manual mode is stopped while sweeping.
+            self.toggle_btn.blockSignals(True)
+            self.toggle_btn.setChecked(False)
+            self.toggle_btn.setText(tr("Start Measurement"))
+            self.toggle_btn.blockSignals(False)
+            self.toggle_btn.setEnabled(False)
+        except Exception:
+            pass
             
         self.cal_mode = mode
+
+        # If starting a calibration sweep, clear the corresponding dict so we don't mix old/new points.
+        if mode == 'open':
+            self.module.cal_open = {}
+        elif mode == 'short':
+            self.module.cal_short = {}
+        elif mode == 'load':
+            self.module.cal_load = {}
         self.sweep_freqs = []
         self.sweep_z_complex = []
         self.sweep_z_mags = []
@@ -895,7 +1137,7 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.plot_widget.getPlotItem().enableAutoRange()
         self.plot_right.enableAutoRange()
         
-        self.sweep_worker = ImpedanceSweepWorker(self.module, start, end, steps, log, 0.2)
+        self.sweep_worker = ImpedanceSweepWorker(self.module, start, end, steps, log, 0.2, cal_mode=mode)
         self.sweep_worker.progress.connect(self.sw_progress.setValue)
         self.sweep_worker.result.connect(self.on_sweep_result)
         self.sweep_worker.finished_sweep.connect(self.on_sweep_finished)
@@ -1131,6 +1373,19 @@ class ImpedanceAnalyzerWidget(QWidget):
             # Update Plot
             self.refresh_plot_data()
 
+            # Live numeric readout during sweep (no timer-driven processing).
+            try:
+                self.results_widget.update_data(
+                    z,
+                    self.module.meas_v_complex,
+                    self.module.meas_i_complex,
+                    f,
+                    buffer_size=self.module.buffer_size,
+                    sample_rate=self.module.audio_engine.sample_rate,
+                )
+            except Exception:
+                pass
+
     def on_sweep_finished(self):
         if self.cal_mode == 'open':
             QMessageBox.information(self, tr("Calibration"), tr("Open Calibration Completed"))
@@ -1145,6 +1400,12 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.btn_load.setEnabled(True)
         self.btn_dut.setEnabled(True)
         self.btn_stop.setEnabled(False)
+
+        # Re-enable manual control button (manual updates remain stopped unless user presses Start Measurement).
+        try:
+            self.toggle_btn.setEnabled(True)
+        except Exception:
+            pass
         
         if self.cal_mode is None and self.chk_resonance.isChecked():
             self.calculate_resonance()
