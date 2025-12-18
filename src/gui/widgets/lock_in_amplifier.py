@@ -454,11 +454,15 @@ class LockInAmplifierWidget(QWidget):
     def __init__(self, module: LockInAmplifier):
         super().__init__()
         self.module = module
+        self._last_nyquist_freq = None
         self.init_ui()
         
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_ui)
         self.timer.setInterval(100) # 10Hz update
+        # Keep a lightweight UI refresh running even when measurement is stopped,
+        # so frequency limits track sample rate changes.
+        self.timer.start()
 
     def get_decimal_places(self, val_std, val_abs=None, is_db=False, default=3, max_places=6):
         if val_std <= 0: return default
@@ -518,6 +522,7 @@ class LockInAmplifierWidget(QWidget):
         settings_layout.addRow(QLabel(tr("<b>Output Generator</b>")))
         
         self.freq_spin = QDoubleSpinBox()
+        # Range is set dynamically up to Nyquist (sample_rate/2).
         self.freq_spin.setRange(20, 20000)
         self.freq_spin.setValue(1000)
         self.freq_spin.setSuffix(" Hz")
@@ -718,10 +723,12 @@ class LockInAmplifierWidget(QWidget):
         fra_form = QFormLayout()
         
         self.fra_start_spin = QDoubleSpinBox()
+        # Range is set dynamically up to Nyquist (sample_rate/2).
         self.fra_start_spin.setRange(20, 20000); self.fra_start_spin.setValue(20); self.fra_start_spin.setSuffix(" Hz")
         fra_form.addRow(tr("Start Freq:"), self.fra_start_spin)
         
         self.fra_end_spin = QDoubleSpinBox()
+        # Range is set dynamically up to Nyquist (sample_rate/2).
         self.fra_end_spin.setRange(20, 20000); self.fra_end_spin.setValue(20000); self.fra_end_spin.setSuffix(" Hz")
         fra_form.addRow(tr("End Freq:"), self.fra_end_spin)
         
@@ -795,10 +802,12 @@ class LockInAmplifierWidget(QWidget):
         cal_form = QFormLayout()
         
         self.cal_start_spin = QDoubleSpinBox()
+        # Range is set dynamically up to Nyquist (sample_rate/2).
         self.cal_start_spin.setRange(20, 20000); self.cal_start_spin.setValue(20); self.cal_start_spin.setSuffix(" Hz")
         cal_form.addRow(tr("Start Freq:"), self.cal_start_spin)
         
         self.cal_end_spin = QDoubleSpinBox()
+        # Range is set dynamically up to Nyquist (sample_rate/2).
         self.cal_end_spin.setRange(20, 20000); self.cal_end_spin.setValue(20000); self.cal_end_spin.setSuffix(" Hz")
         cal_form.addRow(tr("End Freq:"), self.cal_end_spin)
         
@@ -877,6 +886,9 @@ class LockInAmplifierWidget(QWidget):
         self.cal_plot.getPlotItem().getAxis('right').setLabel(tr('Phase'), units='deg')
         
         self.cal_plot_p.addItem(self.cal_curve_phase)
+
+        # Apply Nyquist-based frequency limits once UI is constructed.
+        self._refresh_frequency_limits(force=True)
         
         # Handle resizing for cal plot
         def update_cal_views():
@@ -905,11 +917,9 @@ class LockInAmplifierWidget(QWidget):
     def on_toggle(self, checked):
         if checked:
             self.module.start_analysis()
-            self.timer.start()
             self.toggle_btn.setText(tr("Stop"))
         else:
             self.module.stop_analysis()
-            self.timer.stop()
             self.toggle_btn.setText(tr("Start Output & Measure"))
 
     def on_freq_changed(self, val):
@@ -1044,6 +1054,8 @@ class LockInAmplifierWidget(QWidget):
         self.module.reset_postmix_lpf()
 
     def update_ui(self):
+        # Keep frequency ranges synced with the current sample rate.
+        self._refresh_frequency_limits()
         if not self.module.is_running:
             return
             
@@ -1246,7 +1258,15 @@ class LockInAmplifierWidget(QWidget):
         if log:
             axis = self.fra_plot.getPlotItem().getAxis('bottom')
             # Generate ticks
-            ticks = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+            nyquist_freq = float(getattr(self.module.audio_engine, 'sample_rate', 48000) or 48000) / 2.0
+            ticks_base = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000]
+            ticks = [t for t in ticks_base if t <= nyquist_freq]
+            if ticks:
+                # Add Nyquist as the last tick if it's meaningfully beyond the last base tick.
+                if nyquist_freq > (ticks[-1] * 1.05):
+                    ticks.append(int(round(nyquist_freq)))
+            else:
+                ticks = [int(round(nyquist_freq))]
             ticks_log = [(np.log10(t), str(t) if t < 1000 else f"{t/1000:.0f}k") for t in ticks]
             axis.setTicks([ticks_log])
         else:
@@ -1259,6 +1279,38 @@ class LockInAmplifierWidget(QWidget):
         self.fra_worker.start()
         
         self.fra_start_btn.setText(tr("Stop Sweep"))
+
+    def _refresh_frequency_limits(self, force: bool = False):
+        """Update frequency spin box ranges up to Nyquist (sample_rate/2)."""
+        try:
+            sample_rate = float(getattr(self.module.audio_engine, 'sample_rate', 48000) or 48000)
+        except Exception:
+            sample_rate = 48000.0
+
+        nyquist_freq = max(1.0, sample_rate / 2.0)
+
+        if (not force) and (self._last_nyquist_freq is not None) and (abs(nyquist_freq - self._last_nyquist_freq) <= 1e-9):
+            return
+
+        self._last_nyquist_freq = nyquist_freq
+        min_freq = 20.0
+        max_freq = nyquist_freq
+
+        # Manual
+        if hasattr(self, 'freq_spin'):
+            self.freq_spin.setRange(min_freq, max_freq)
+
+        # FRA
+        if hasattr(self, 'fra_start_spin'):
+            self.fra_start_spin.setRange(min_freq, max_freq)
+        if hasattr(self, 'fra_end_spin'):
+            self.fra_end_spin.setRange(min_freq, max_freq)
+
+        # Calibration
+        if hasattr(self, 'cal_start_spin'):
+            self.cal_start_spin.setRange(min_freq, max_freq)
+        if hasattr(self, 'cal_end_spin'):
+            self.cal_end_spin.setRange(min_freq, max_freq)
         
     def on_fra_result(self, f, mag, phase):
         self.fra_freqs.append(f)
