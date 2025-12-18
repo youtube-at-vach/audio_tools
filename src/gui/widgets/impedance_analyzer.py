@@ -891,6 +891,14 @@ class ImpedanceAnalyzerWidget(QWidget):
         
         # Resonance Marker
         self.resonance_line = None
+
+        # Manual time-series capture (used when running manual measurement)
+        self.manual_ts_t = deque(maxlen=2000)           # seconds since start of capture
+        self.manual_ts_f = deque(maxlen=2000)           # Hz (for derived quantities)
+        self.manual_ts_z = deque(maxlen=2000)           # complex Z samples
+        self._manual_ts_t0 = None
+        self._manual_ts_warmup_until = None
+        self._manual_ts_next_capture_at = None
         
         self.init_ui()
         
@@ -1112,6 +1120,14 @@ class ImpedanceAnalyzerWidget(QWidget):
         self.plot_mode_combo.addItems([tr("|Z| & Phase"), tr("R & X (ESR/ESL)"), tr("D (Tan δ)"), tr("C / L"), tr("Nyquist Plot")])
         self.plot_mode_combo.currentIndexChanged.connect(self.update_plot_mode)
         pm_layout.addWidget(self.plot_mode_combo)
+
+        self.manual_ts_check = QCheckBox(tr("Time Series (Manual)"))
+        self.manual_ts_check.setToolTip(tr("Plot manual measurements versus time instead of frequency."))
+        self.manual_ts_check.toggled.connect(self.on_manual_ts_toggled)
+        # Time-series is only valid for manual continuous measurement.
+        self.manual_ts_check.setChecked(False)
+        self.manual_ts_check.setEnabled(False)
+        pm_layout.addWidget(self.manual_ts_check)
         pm_layout.addStretch()
         right_layout.addLayout(pm_layout)
         
@@ -1125,15 +1141,95 @@ class ImpedanceAnalyzerWidget(QWidget):
         # Initial Setup
         self.update_plot_mode()
 
+    def _manual_ts_active(self) -> bool:
+        try:
+            if not (hasattr(self, 'manual_ts_check') and self.manual_ts_check.isChecked()):
+                return False
+            if not bool(getattr(self.module, 'is_running', False)):
+                return False
+            if not bool(self.timer.isActive()):
+                return False
+            if self.sweep_worker is not None and self.sweep_worker.isRunning():
+                return False
+            return True
+        except Exception:
+            return False
+
+    def on_manual_ts_toggled(self, enabled: bool):
+        # Start a fresh capture window when enabling.
+        if enabled:
+            self.manual_ts_t.clear()
+            self.manual_ts_f.clear()
+            self.manual_ts_z.clear()
+            now = time.monotonic()
+            self._manual_ts_t0 = now
+            # Warm-up so the first plotted point isn't the unstable startup sample.
+            try:
+                sr = float(self.module.audio_engine.sample_rate)
+                buf_s = float(self.module.buffer_size) / sr if sr > 0 else 0.0
+                avg = int(getattr(self.module, 'averaging_count', 1) or 1)
+                warmup_s = max(0.25, buf_s * max(1, avg))
+            except Exception:
+                warmup_s = 1.0
+            self._manual_ts_warmup_until = now + float(warmup_s)
+            self._manual_ts_next_capture_at = self._manual_ts_warmup_until
+        else:
+            self._manual_ts_t0 = None
+            self._manual_ts_warmup_until = None
+            self._manual_ts_next_capture_at = None
+
+        # Update axes/labels immediately.
+        self.update_plot_mode()
+
     def on_toggle(self, checked):
         if checked:
             self.module.start_analysis()
             self.timer.start()
             self.toggle_btn.setText(tr("Stop"))
+
+            # Allow time-series option only while manual measurement is running.
+            try:
+                self.manual_ts_check.setEnabled(True)
+            except Exception:
+                pass
+
+            # If time-series view is enabled, reset capture at start.
+            if hasattr(self, 'manual_ts_check') and self.manual_ts_check.isChecked():
+                self.manual_ts_t.clear()
+                self.manual_ts_f.clear()
+                self.manual_ts_z.clear()
+                now = time.monotonic()
+                self._manual_ts_t0 = now
+                try:
+                    sr = float(self.module.audio_engine.sample_rate)
+                    buf_s = float(self.module.buffer_size) / sr if sr > 0 else 0.0
+                    avg = int(getattr(self.module, 'averaging_count', 1) or 1)
+                    warmup_s = max(0.25, buf_s * max(1, avg))
+                except Exception:
+                    warmup_s = 1.0
+                self._manual_ts_warmup_until = now + float(warmup_s)
+                self._manual_ts_next_capture_at = self._manual_ts_warmup_until
+
+            # Ensure axes reflect current plot source (time-series vs frequency).
+            self.update_plot_mode()
         else:
             self.module.stop_analysis()
             self.timer.stop()
             self.toggle_btn.setText(tr("Start Measurement"))
+            self._manual_ts_warmup_until = None
+            self._manual_ts_next_capture_at = None
+
+            # Force-disable time-series when manual measurement ends.
+            try:
+                self.manual_ts_check.blockSignals(True)
+                self.manual_ts_check.setChecked(False)
+                self.manual_ts_check.setEnabled(False)
+                self.manual_ts_check.blockSignals(False)
+            except Exception:
+                pass
+
+            # Keep plot consistent with current selection/data.
+            self.update_plot_mode()
 
     def on_circuit_mode_changed(self, mode):
         self.results_widget.circuit_mode = mode
@@ -1203,6 +1299,51 @@ class ImpedanceAnalyzerWidget(QWidget):
             z_phase_std_deg=z_phase_std_deg,
         )
 
+        # Manual time-series capture and plotting
+        try:
+            if self._manual_ts_active():
+                now = time.monotonic()
+                if self._manual_ts_t0 is None:
+                    self._manual_ts_t0 = now
+
+                # Determine a reasonable capture interval based on integration time.
+                # Use max(1s, buffer_duration * averaging_count).
+                try:
+                    sr = float(self.module.audio_engine.sample_rate)
+                    buf_s = float(self.module.buffer_size) / sr if sr > 0 else 0.0
+                    avg = int(getattr(self.module, 'averaging_count', 1) or 1)
+                    min_interval_s = max(1.0, buf_s * max(1, avg))
+                except Exception:
+                    min_interval_s = 1.0
+
+                # Initialize warm-up / first capture scheduling.
+                if self._manual_ts_warmup_until is None:
+                    self._manual_ts_warmup_until = now + float(min_interval_s)
+                    self._manual_ts_next_capture_at = self._manual_ts_warmup_until
+
+                # Skip early points until warm-up completes.
+                if now < float(self._manual_ts_warmup_until or 0.0):
+                    return
+
+                # Capture only at scheduled times.
+                if self._manual_ts_next_capture_at is None:
+                    self._manual_ts_next_capture_at = now
+                if now + 1e-9 < float(self._manual_ts_next_capture_at):
+                    return
+
+                t_rel = now - float(self._manual_ts_t0)
+                self.manual_ts_t.append(float(t_rel))
+                self.manual_ts_f.append(float(self.module.gen_frequency))
+                self.manual_ts_z.append(complex(self.module.meas_z_complex))
+
+                # Schedule next capture.
+                self._manual_ts_next_capture_at = now + float(min_interval_s)
+
+                # Update plot only when a new point is appended.
+                self.refresh_plot_data()
+        except Exception:
+            pass
+
     def start_sweep(self, mode):
         if self.sweep_worker is not None and self.sweep_worker.isRunning():
             return
@@ -1221,6 +1362,18 @@ class ImpedanceAnalyzerWidget(QWidget):
             self.toggle_btn.setEnabled(False)
         except Exception:
             pass
+
+        # Time-series is manual-only; force it off during sweep/calibration.
+        try:
+            self.manual_ts_check.blockSignals(True)
+            self.manual_ts_check.setChecked(False)
+            self.manual_ts_check.setEnabled(False)
+            self.manual_ts_check.blockSignals(False)
+        except Exception:
+            pass
+        self._manual_ts_t0 = None
+        self._manual_ts_warmup_until = None
+        self._manual_ts_next_capture_at = None
             
         self.cal_mode = mode
 
@@ -1305,7 +1458,8 @@ class ImpedanceAnalyzerWidget(QWidget):
         ax_right.setStyle(showValues=True)
         
         # X-Axis Log Mode
-        is_log_x = self.sw_log.isChecked()
+        manual_ts_plot = self._manual_ts_active()
+        is_log_x = (self.sw_log.isChecked() and (not manual_ts_plot))
         pi.setLogMode(x=is_log_x, y=False) # Reset Y log first
         
         # Clear Legend (Robust)
@@ -1316,9 +1470,16 @@ class ImpedanceAnalyzerWidget(QWidget):
         else:
             self.legend.clear()
         
+        # Title + bottom axis label depend on x-axis mode.
+        if manual_ts_plot:
+            self.plot_widget.setTitle(tr("Impedance Z(t)"))
+            pi.setLabel('bottom', tr("Time"), units='s')
+        else:
+            self.plot_widget.setTitle(tr("Impedance Z(f)"))
+            pi.setLabel('bottom', tr("Frequency"), units='Hz')
+
         if mode == tr("|Z| & Phase"):
             pi.setLabel('left', tr("|Z|"), units='Ohm')
-            pi.setLabel('bottom', tr("Frequency"), units='Hz')
             pi.setLogMode(y=True) # Z is Log Y
             
             self.curve_primary.setData(name=tr('|Z|'), pen='g')
@@ -1331,7 +1492,6 @@ class ImpedanceAnalyzerWidget(QWidget):
             
         elif mode == tr("R & X (ESR/ESL)"):
             pi.setLabel('left', tr("Resistance (R) / Reactance (X)"), units='Ohm')
-            pi.setLabel('bottom', tr("Frequency"), units='Hz')
             pi.setLogMode(y=True) # R/X often span large ranges
             
             self.curve_primary.setData(name=tr('Resistance (R)'), pen='y')
@@ -1347,7 +1507,6 @@ class ImpedanceAnalyzerWidget(QWidget):
             
         elif mode == tr("D (Tan δ)"):
             pi.setLabel('left', tr("D (Tan δ)"))
-            pi.setLabel('bottom', tr("Frequency"), units='Hz')
             pi.setLogMode(y=False) 
             
             self.curve_primary.setData(name=tr('D'), pen='r')
@@ -1359,7 +1518,6 @@ class ImpedanceAnalyzerWidget(QWidget):
             
         elif mode == tr("C / L"):
             pi.setLabel('left', tr("Capacitance"), units='F')
-            pi.setLabel('bottom', tr("Frequency"), units='Hz')
             pi.setLogMode(y=True)
             
             self.curve_primary.setData(name=tr('Capacitance'), pen='b')
@@ -1372,23 +1530,117 @@ class ImpedanceAnalyzerWidget(QWidget):
             self.legend.addItem(self.curve_right, tr('Inductance'))
             
         elif mode == tr("Nyquist Plot"):
-            pi.setLabel('left', tr("-Imag (Z)"), units='Ohm')
-            pi.setLabel('bottom', tr("Real (Z)"), units='Ohm')
-            pi.setLogMode(x=False, y=False) # Linear for Nyquist
-            
-            self.curve_primary.setData(name=tr('Nyquist'), pen='w', symbol='o', symbolSize=5)
-            self.legend.addItem(self.curve_primary, tr('Nyquist'))
-            
-            self.curve_right.setVisible(False)
-            ax_right.setLabel('')
-            ax_right.setStyle(showValues=False)
+            if manual_ts_plot:
+                # In time-series mode, use Nyquist selection to show Re(Z) and -Im(Z) versus time.
+                pi.setLabel('left', tr("Real (Z)"), units='Ohm')
+                pi.setLogMode(x=False, y=False)
+
+                self.curve_primary.setData(name=tr('Real (Z)'), pen='w')
+                self.legend.addItem(self.curve_primary, tr('Real (Z)'))
+
+                self.curve_secondary.setVisible(True)
+                self.curve_secondary.setData(name=tr('-Imag (Z)'), pen='c')
+                self.legend.addItem(self.curve_secondary, tr('-Imag (Z)'))
+
+                self.curve_right.setVisible(False)
+                ax_right.setLabel('')
+                ax_right.setStyle(showValues=False)
+            else:
+                pi.setLabel('left', tr("-Imag (Z)"), units='Ohm')
+                pi.setLabel('bottom', tr("Real (Z)"), units='Ohm')
+                pi.setLogMode(x=False, y=False) # Linear for Nyquist
+
+                self.curve_primary.setData(name=tr('Nyquist'), pen='w', symbol='o', symbolSize=5)
+                self.legend.addItem(self.curve_primary, tr('Nyquist'))
+
+                self.curve_right.setVisible(False)
+                ax_right.setLabel('')
+                ax_right.setStyle(showValues=False)
             
         # Re-plot data if available
-        if self.sweep_freqs:
+        if manual_ts_plot and len(self.manual_ts_t) >= 2:
+            self.refresh_plot_data()
+        elif self.sweep_freqs:
             self.refresh_plot_data()
 
     def refresh_plot_data(self):
-        if not self.sweep_freqs: return
+        manual_ts = self._manual_ts_active()
+
+        if manual_ts:
+            if len(self.manual_ts_t) < 2:
+                return
+
+            mode = self.plot_mode_combo.currentText()
+            t = np.asarray(self.manual_ts_t, dtype=float)
+            zs = np.asarray(self.manual_ts_z, dtype=np.complex128)
+            freqs = np.asarray(self.manual_ts_f, dtype=float)
+
+            x_data = t
+
+            if mode == tr("|Z| & Phase"):
+                y_data = np.abs(zs)
+                if self.plot_widget.getPlotItem().getAxis('left').logMode:
+                    y_data = np.log10(y_data + 1e-24)
+                self.curve_primary.setData(x_data, y_data)
+                self.curve_right.setData(x_data, np.degrees(np.angle(zs)))
+                return
+
+            if mode == tr("R & X (ESR/ESL)"):
+                r_data = np.abs(zs.real)
+                x_react = np.abs(zs.imag)
+                if self.plot_widget.getPlotItem().getAxis('left').logMode:
+                    r_data = np.log10(r_data + 1e-12)
+                    x_react = np.log10(x_react + 1e-12)
+                self.curve_primary.setData(x_data, r_data)
+                self.curve_secondary.setData(x_data, x_react)
+                return
+
+            if mode == tr("D (Tan δ)"):
+                rs = zs.real
+                xs = zs.imag
+                ds = np.zeros_like(rs, dtype=float)
+                mask = (np.abs(xs) > 1e-12)
+                ds[mask] = np.abs(rs[mask]) / np.abs(xs[mask])
+                self.curve_primary.setData(x_data, ds)
+                return
+
+            if mode == tr("C / L"):
+                w = 2 * np.pi * np.maximum(freqs, 1e-12)
+                xs = zs.imag
+                cs = np.full_like(xs, np.nan, dtype=float)
+                mask_c = (xs < -1e-12)
+                cs[mask_c] = -1.0 / (w[mask_c] * xs[mask_c])
+                ls = np.full_like(xs, np.nan, dtype=float)
+                mask_l = (xs > 1e-12)
+                ls[mask_l] = xs[mask_l] / w[mask_l]
+
+                if self.plot_widget.getPlotItem().getAxis('left').logMode:
+                    valid_c = np.isfinite(cs) & (cs > 0)
+                    cs_plot = np.full_like(cs, np.nan, dtype=float)
+                    cs_plot[valid_c] = np.log10(cs[valid_c])
+                    self.curve_primary.setData(x_data, cs_plot)
+                else:
+                    self.curve_primary.setData(x_data, cs)
+
+                if self.plot_widget.getPlotItem().getAxis('right').logMode:
+                    valid_l = np.isfinite(ls) & (ls > 0)
+                    ls_plot = np.full_like(ls, np.nan, dtype=float)
+                    ls_plot[valid_l] = np.log10(ls[valid_l])
+                    self.curve_right.setData(x_data, ls_plot)
+                else:
+                    self.curve_right.setData(x_data, ls)
+                return
+
+            if mode == tr("Nyquist Plot"):
+                # See update_plot_mode(): Nyquist selection becomes Re/-Im versus time.
+                self.curve_primary.setData(x_data, zs.real)
+                self.curve_secondary.setData(x_data, -zs.imag)
+                return
+
+            return
+
+        if not self.sweep_freqs:
+            return
         
         mode = self.plot_mode_combo.currentText()
         freqs = np.array(self.sweep_freqs)
