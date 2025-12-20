@@ -29,12 +29,29 @@ def main():
     # Startup splash (loading screen): show immediately while MainWindow initializes.
     pixmap = QPixmap(resource_path('src/assets/welcome.png'))
     if pixmap.isNull():
-        pixmap = QPixmap(720, 405)
+        pixmap = QPixmap(520, 300)
         pixmap.fill(Qt.GlobalColor.black)
+    else:
+        pixmap = pixmap.scaled(
+            520,
+            300,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
 
     splash = QSplashScreen(pixmap)
     splash.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
     splash.show()
+    # Center on primary screen
+    try:
+        screen = app.primaryScreen()
+        if screen is not None:
+            geom = screen.availableGeometry()
+            splash_rect = splash.frameGeometry()
+            splash_rect.moveCenter(geom.center())
+            splash.move(splash_rect.topLeft())
+    except Exception:
+        pass
     splash.showMessage(
         f"{tr('Loading...')}\n{tr('Initializing application...')}",
         Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
