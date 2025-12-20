@@ -7,9 +7,10 @@ Provides theme detection and switching functionality with support for:
 - Dynamic theme switching with QPalette
 """
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QStyleFactory
 from PyQt6.QtGui import QPalette, QColor
 from PyQt6.QtCore import QObject, pyqtSignal
+import sys
 import logging
 
 
@@ -24,6 +25,12 @@ class ThemeManager(QObject):
         self.app = app
         self.logger = logging.getLogger(self.__class__.__name__)
         self.current_theme = "system"
+
+        # Cache original style so we can restore it when leaving dark theme.
+        try:
+            self._original_style_name = self.app.style().objectName()
+        except Exception:
+            self._original_style_name = None
         
         # Check if Qt supports colorScheme (Qt 6.5+)
         self.supports_color_scheme = hasattr(self.app.styleHints(), 'colorScheme')
@@ -123,6 +130,7 @@ class ThemeManager(QObject):
     
     def _apply_light_theme(self):
         """Apply light theme palette."""
+        self._restore_platform_style_if_needed()
         palette = QPalette()
         
         # Base colors
@@ -157,6 +165,7 @@ class ThemeManager(QObject):
     
     def _apply_dark_theme(self):
         """Apply dark theme palette."""
+        self._ensure_fusion_style_on_windows()
         palette = QPalette()
         
         # Base colors
@@ -188,3 +197,52 @@ class ThemeManager(QObject):
         
         self.app.setPalette(palette)
         self.logger.info("Dark theme applied")
+
+    def _ensure_fusion_style_on_windows(self) -> None:
+        """Force Fusion style on Windows so custom palettes render consistently."""
+        if not sys.platform.startswith("win"):
+            return
+
+        try:
+            current = self.app.style().objectName()
+        except Exception:
+            current = ""
+
+        # Palette-based dark themes are known to behave inconsistently with native Windows styles.
+        # Fusion respects QPalette far more predictably.
+        if current.casefold() == "fusion":
+            return
+
+        available = {k.casefold(): k for k in QStyleFactory.keys()}
+        fusion_key = available.get("fusion")
+        if not fusion_key:
+            self.logger.warning("Fusion style not available; cannot stabilize dark palette on Windows")
+            return
+
+        self.logger.info(f"Windows detected: switching style '{current}' -> '{fusion_key}' for dark theme")
+        self.app.setStyle(fusion_key)
+
+    def _restore_platform_style_if_needed(self) -> None:
+        """Restore the original style if we previously switched it for dark theme."""
+        if not sys.platform.startswith("win"):
+            return
+        if not self._original_style_name:
+            return
+
+        try:
+            current = self.app.style().objectName()
+        except Exception:
+            current = ""
+
+        # Only attempt restore if we're currently on Fusion.
+        if current.casefold() != "fusion":
+            return
+
+        available = {k.casefold(): k for k in QStyleFactory.keys()}
+        desired = available.get(self._original_style_name.casefold())
+        if not desired:
+            # If the exact original style isn't available, keep Fusion rather than risking a crash.
+            return
+
+        self.logger.info(f"Windows detected: restoring style '{current}' -> '{desired}'")
+        self.app.setStyle(desired)
