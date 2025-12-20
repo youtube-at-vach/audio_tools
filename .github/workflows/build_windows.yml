@@ -32,13 +32,24 @@ jobs:
         # ImageMagick is pre-installed on windows-latest
         magick app_icon.png -define icon:auto-resize=256,128,64,48,32,16 app_icon.ico
 
-    - name: Build with PyInstaller
+    - name: Build (onefile) with PyInstaller
       run: |
         # Note: Windows uses ; as separator for add-data
-        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.ico --add-data "src;src" --exclude-module matplotlib --collect-all backports --collect-all soundfile main_gui.py
+        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.ico --add-data "src;src" --exclude-module matplotlib --collect-all backports --collect-all soundfile --distpath dist/onefile --workpath build/onefile main_gui.py
 
-    - name: Upload Artifact
+    - name: Build (onedir) with PyInstaller
+      run: |
+        # Default PyInstaller mode is onedir (folder-based distribution)
+        pyinstaller --windowed --name Audio_Measurement_Tools --icon=app_icon.ico --add-data "src;src" --exclude-module matplotlib --collect-all backports --collect-all soundfile --distpath dist/onedir --workpath build/onedir main_gui.py
+
+    - name: Upload Artifact (onefile)
       uses: actions/upload-artifact@v4
       with:
-        name: Audio_Measurement_Tools_Windows
-        path: dist/Audio_Measurement_Tools.exe
+        name: Audio_Measurement_Tools_Windows_onefile
+        path: dist/onefile/Audio_Measurement_Tools.exe
+
+    - name: Upload Artifact (onedir)
+      uses: actions/upload-artifact@v4
+      with:
+        name: Audio_Measurement_Tools_Windows_onedir
+        path: dist/onedir/Audio_Measurement_Tools/
