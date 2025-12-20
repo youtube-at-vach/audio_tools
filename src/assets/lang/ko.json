@@ -1,5 +1,7 @@
 {
     "Audio Measurement Suite": "오디오 측정 제품군",
+    "Loading...": "로딩 중...",
+    "Initializing application...": "애플리케이션을 초기화하는 중...",
     "A comprehensive set of tools for precision audio analysis and measurement.\nSelect a module from the sidebar to begin.": "정밀 오디오 분석 및 측정을 위한 포괄적인 도구 모음입니다.\n시작하려면 사이드바에서 모듈을 선택하세요.",
     "Signal Generator": "신호 발생기",
     "Spectrum Analyzer": "스펙트럼 분석기",

@@ -1,5 +1,7 @@
 {
     "Audio Measurement Suite": "Набор инструментов для измерения звука",
+    "Loading...": "Загрузка...",
+    "Initializing application...": "Инициализация приложения...",
     "A comprehensive set of tools for precision audio analysis and measurement.\nSelect a module from the sidebar to begin.": "Полный набор инструментов для точного анализа и измерения звука.\nВыберите модуль на боковой панели, чтобы начать.",
     "Signal Generator": "Генератор сигналов",
     "Spectrum Analyzer": "Анализатор спектра",

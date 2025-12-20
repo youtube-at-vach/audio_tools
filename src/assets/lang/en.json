@@ -1,5 +1,7 @@
 {
     "Audio Measurement Suite": "Audio Measurement Suite",
+    "Loading...": "Loading...",
+    "Initializing application...": "Initializing application...",
     "A comprehensive set of tools for precision audio analysis and measurement.\nSelect a module from the sidebar to begin.": "A comprehensive set of tools for precision audio analysis and measurement.\nSelect a module from the sidebar to begin.",
     "Signal Generator": "Signal Generator",
     "Spectrum Analyzer": "Spectrum Analyzer",

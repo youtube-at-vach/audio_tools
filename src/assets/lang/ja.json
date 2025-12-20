@@ -1,5 +1,7 @@
 {
     "Audio Measurement Suite": "オーディオ測定スイート",
+    "Loading...": "読み込み中...",
+    "Initializing application...": "アプリケーションを初期化しています...",
     "A comprehensive set of tools for precision audio analysis and measurement.\nSelect a module from the sidebar to begin.": "高精度なオーディオ分析と測定のための包括的なツールセットです。\nサイドバーからモジュールを選択して開始してください。",
     "Signal Generator": "信号発生器",
     "Spectrum Analyzer": "スペクトラムアナライザ",

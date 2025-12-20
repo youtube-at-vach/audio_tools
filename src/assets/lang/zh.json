@@ -1,5 +1,7 @@
 {
     "Audio Measurement Suite": "音频测量套件",
+    "Loading...": "正在加载...",
+    "Initializing application...": "正在初始化应用程序...",
     "A comprehensive set of tools for precision audio analysis and measurement.\nSelect a module from the sidebar to begin.": "用于高精度音频分析和测量的综合工具集。\n请从侧边栏选择一个模块开始。",
     "Signal Generator": "信号发生器",
     "Spectrum Analyzer": "频谱分析仪",

@@ -1,5 +1,7 @@
 {
     "Audio Measurement Suite": "Suite de Mesure Audio",
+    "Loading...": "Chargement...",
+    "Initializing application...": "Initialisation de l'application...",
     "A comprehensive set of tools for precision audio analysis and measurement.\nSelect a module from the sidebar to begin.": "Un ensemble complet d'outils pour l'analyse et la mesure audio de précision.\nSélectionnez un module dans la barre latérale pour commencer.",
     "Signal Generator": "Générateur de Signaux",
     "Spectrum Analyzer": "Analyseur de Spectre",
