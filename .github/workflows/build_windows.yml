@@ -45,11 +45,11 @@ jobs:
     - name: Upload Artifact (onefile)
       uses: actions/upload-artifact@v4
       with:
-        name: Audio_Measurement_Tools_Windows_onefile
+        name: MeasureLab_Windows_onefile
         path: dist/onefile/Audio_Measurement_Tools.exe
 
     - name: Upload Artifact (onedir)
       uses: actions/upload-artifact@v4
       with:
-        name: Audio_Measurement_Tools_Windows_onedir
+        name: MeasureLab_Windows_onedir
         path: dist/onedir/Audio_Measurement_Tools/

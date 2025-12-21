@@ -51,7 +51,7 @@ jobs:
         $outDir = "dist/release"
         New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
-        $base = "audio-tools-$tag-windows-x64"
+        $base = "MeasureLab-$tag-windows-x64"
         Compress-Archive -Path "dist/onefile/Audio_Measurement_Tools.exe" -DestinationPath "$outDir/$base-onefile.zip" -Force
         Compress-Archive -Path "dist/onedir/Audio_Measurement_Tools" -DestinationPath "$outDir/$base-onedir.zip" -Force
 
@@ -120,7 +120,7 @@ jobs:
           echo "No AppImage found" >&2
           exit 1
         fi
-        mv "${candidates[0]}" "dist/release/audio-tools-${tag}-linux-x86_64.AppImage"
+        mv "${candidates[0]}" "dist/release/MeasureLab-${tag}-linux-x86_64.AppImage"
 
     - name: Extract CHANGELOG for version
       id: changelog

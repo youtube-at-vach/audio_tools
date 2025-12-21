@@ -1,4 +1,4 @@
-# 🚀 **Audio Measurement Suite** 🎶
+# 🚀 **MeasureLab (Audio Measurement Suite)** 🎶
 
 A collection of DIY audio measurement and analysis tools, grown organically as needed.
 「必要に応じて作り足しながら育ててきた DIY のオーディオ測定・解析ツール集」です。
@@ -66,11 +66,11 @@ A collection of DIY audio measurement and analysis tools, grown organically as n
 ### 📦 ビルド済みパッケージを使用する場合
 **Releases** ページから最新のバージョンをダウンロードしてください。
 
-*   **Windows**: `Audio_Measurement_Tools-Windows.zip` をダウンロードして解凍し、`Audio_Measurement_Tools.exe` を実行します。
-*   **Linux**: `Audio_Measurement_Tools-x86_64.AppImage` をダウンロードし、実行権限を付与して起動します。
+*   **Windows**: `MeasureLab-<version>-windows-x64-onefile.zip`（または `MeasureLab-<version>-windows-x64-onedir.zip`）をダウンロードして解凍し、`Audio_Measurement_Tools.exe` を実行します。
+*   **Linux**: `MeasureLab-<version>-linux-x86_64.AppImage` をダウンロードし、実行権限を付与して起動します。
     ```bash
-    chmod +x Audio_Measurement_Tools-*.AppImage
-    ./Audio_Measurement_Tools-*.AppImage
+    chmod +x MeasureLab-*-linux-x86_64.AppImage
+    ./MeasureLab-*-linux-x86_64.AppImage
     ```
 
 #### Linux（任意）: JACK / PipeWire を使う場合の注意
