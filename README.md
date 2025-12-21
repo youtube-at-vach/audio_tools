@@ -66,7 +66,7 @@ A collection of DIY audio measurement and analysis tools, grown organically as n
 ### 📦 ビルド済みパッケージを使用する場合
 **Releases** ページから最新のバージョンをダウンロードしてください。
 
-*   **Windows**: `MeasureLab-<version>-windows-x64-onefile.zip`（または `MeasureLab-<version>-windows-x64-onedir.zip`）をダウンロードして解凍し、`Audio_Measurement_Tools.exe` を実行します。
+*   **Windows**: `MeasureLab-<version>-windows-x64-onefile.zip`（または `MeasureLab-<version>-windows-x64-onedir.zip`）をダウンロードして解凍し、`MeasureLab.exe` を実行します。
 *   **Linux**: `MeasureLab-<version>-linux-x86_64.AppImage` をダウンロードし、実行権限を付与して起動します。
     ```bash
     chmod +x MeasureLab-*-linux-x86_64.AppImage

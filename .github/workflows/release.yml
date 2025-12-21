@@ -35,11 +35,11 @@ jobs:
 
     - name: Build (onefile) with PyInstaller
       run: |
-        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.ico --add-data "src;src" --collect-all backports --distpath dist/onefile --workpath build/onefile main_gui.py
+        pyinstaller --onefile --windowed --name MeasureLab --icon=app_icon.ico --add-data "src;src" --collect-all backports --distpath dist/onefile --workpath build/onefile main_gui.py
 
     - name: Build (onedir) with PyInstaller
       run: |
-        pyinstaller --windowed --name Audio_Measurement_Tools --icon=app_icon.ico --add-data "src;src" --collect-all backports --distpath dist/onedir --workpath build/onedir main_gui.py
+        pyinstaller --windowed --name MeasureLab --icon=app_icon.ico --add-data "src;src" --collect-all backports --distpath dist/onedir --workpath build/onedir main_gui.py
 
     - name: Package Windows release assets
       shell: pwsh
@@ -52,8 +52,8 @@ jobs:
         New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
         $base = "MeasureLab-$tag-windows-x64"
-        Compress-Archive -Path "dist/onefile/Audio_Measurement_Tools.exe" -DestinationPath "$outDir/$base-onefile.zip" -Force
-        Compress-Archive -Path "dist/onedir/Audio_Measurement_Tools" -DestinationPath "$outDir/$base-onedir.zip" -Force
+        Compress-Archive -Path "dist/onefile/MeasureLab.exe" -DestinationPath "$outDir/$base-onefile.zip" -Force
+        Compress-Archive -Path "dist/onedir/MeasureLab" -DestinationPath "$outDir/$base-onedir.zip" -Force
 
     - name: Extract CHANGELOG for version
       id: changelog
@@ -101,7 +101,7 @@ jobs:
     - name: Build standalone binary with PyInstaller
       run: |
         mkdir -p libs
-        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.png --add-data "src:src" --exclude-module matplotlib --collect-all backports main_gui.py
+        pyinstaller --onefile --windowed --name MeasureLab --icon=app_icon.png --add-data "src:src" --exclude-module matplotlib --collect-all backports main_gui.py
 
     - name: Build AppImage
       run: |
@@ -115,7 +115,7 @@ jobs:
         tag="${GITHUB_REF#refs/tags/}"
         mkdir -p dist/release
         shopt -s nullglob
-        candidates=(Audio_Measurement_Tools*.AppImage)
+        candidates=(MeasureLab*.AppImage)
         if [ ${#candidates[@]} -eq 0 ]; then
           echo "No AppImage found" >&2
           exit 1

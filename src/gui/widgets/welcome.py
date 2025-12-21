@@ -49,7 +49,7 @@ class WelcomeWidget(QWidget):
         text_layout.setSpacing(15)
         
         # Title
-        title = QLabel(tr("Audio Measurement Suite"))
+        title = QLabel("MeasureLab")
         title.setFont(QFont("Arial", 24, QFont.Weight.Bold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         text_layout.addWidget(title)

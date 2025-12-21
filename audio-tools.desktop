@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=Audio Measurement Tools
-Comment=Unified Audio Measurement and Analysis Tools
+Name=MeasureLab
+Comment=Audio measurement and analysis tools
 Exec=main_gui
 Icon=app_icon
 Categories=AudioVideo;Audio;Engineering;

@@ -19,7 +19,7 @@ class AudioEngine:
 
         # PipeWire/JACK resident mode: keep PortAudio stream open for the app lifetime.
         self.pipewire_jack_resident = False
-        self.jack_client_name = "audio-tools"
+        self.jack_client_name = "MeasureLab"
         
         # Calibration
         self.calibration = CalibrationManager()

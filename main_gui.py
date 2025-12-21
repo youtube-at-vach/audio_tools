@@ -59,7 +59,12 @@ def main():
     )
     app.processEvents()
 
-    app.setApplicationName(tr("Audio Measurement Suite"))
+    # Brand name (do not translate)
+    app.setApplicationName("MeasureLab")
+    try:
+        app.setApplicationDisplayName("MeasureLab")
+    except Exception:
+        pass
     
     window = MainWindow()
 

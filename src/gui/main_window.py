@@ -128,7 +128,7 @@ def _load_welcome_widget_class():
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(tr("Audio Measurement Suite"))
+        self.setWindowTitle("MeasureLab")
         self.resize(1000, 700)
         
         # Initialize Core Components
