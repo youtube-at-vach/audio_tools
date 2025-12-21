@@ -33,19 +33,27 @@ jobs:
       run: |
         magick app_icon.png -define icon:auto-resize=256,128,64,48,32,16 app_icon.ico
 
-    - name: Build with PyInstaller
+    - name: Build (onefile) with PyInstaller
       run: |
-        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.ico --add-data "src;src" --collect-all backports main_gui.py
+        pyinstaller --onefile --windowed --name Audio_Measurement_Tools --icon=app_icon.ico --add-data "src;src" --collect-all backports --distpath dist/onefile --workpath build/onefile main_gui.py
 
-    - name: Zip EXE
+    - name: Build (onedir) with PyInstaller
+      run: |
+        pyinstaller --windowed --name Audio_Measurement_Tools --icon=app_icon.ico --add-data "src;src" --collect-all backports --distpath dist/onedir --workpath build/onedir main_gui.py
+
+    - name: Package Windows release assets
       shell: pwsh
       run: |
         # タグ名を取得（refs/tags/... から取り除く）
         $tag = $env:GITHUB_REF -replace 'refs/tags/',''
         if (-not $tag) { $tag = 'untagged' }
-        $zip = "dist/Audio_Measurement_Tools-Windows.zip"
-        Compress-Archive -Path "dist/Audio_Measurement_Tools.exe" -DestinationPath $zip -Force
-        Write-Output "Zipped to: $zip"
+
+        $outDir = "dist/release"
+        New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+        $base = "audio-tools-$tag-windows-x64"
+        Compress-Archive -Path "dist/onefile/Audio_Measurement_Tools.exe" -DestinationPath "$outDir/$base-onefile.zip" -Force
+        Compress-Archive -Path "dist/onedir/Audio_Measurement_Tools" -DestinationPath "$outDir/$base-onedir.zip" -Force
 
     - name: Extract CHANGELOG for version
       id: changelog
@@ -61,7 +69,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: dist/*.zip
+        files: dist/release/*.zip
         body_path: release_notes.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -100,6 +108,20 @@ jobs:
         chmod +x build_appimage.sh
         ./build_appimage.sh
 
+    - name: Rename AppImage for release
+      shell: bash
+      run: |
+        set -euo pipefail
+        tag="${GITHUB_REF#refs/tags/}"
+        mkdir -p dist/release
+        shopt -s nullglob
+        candidates=(Audio_Measurement_Tools*.AppImage)
+        if [ ${#candidates[@]} -eq 0 ]; then
+          echo "No AppImage found" >&2
+          exit 1
+        fi
+        mv "${candidates[0]}" "dist/release/audio-tools-${tag}-linux-x86_64.AppImage"
+
     - name: Extract CHANGELOG for version
       id: changelog
       run: |
@@ -113,7 +135,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: Audio_Measurement_Tools-*.AppImage
+        files: dist/release/*.AppImage
         body_path: release_notes.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
