@@ -781,6 +781,42 @@ class SettingsWidget(QWidget):
         self.config_manager = config_manager
         self.init_ui()
 
+    def _format_device_label(self, device_index: int, dev: dict) -> str:
+        """Build a human-friendly device label for the combo boxes.
+
+        On Windows especially, the same physical device can appear multiple times
+        under different host APIs (ASIO/WASAPI/DirectSound/etc). We surface that
+        info to help users pick the right one.
+        """
+        base = f"{device_index}: {dev.get('name', '')}"
+        hostapi_name = dev.get('hostapi_name')
+        if hostapi_name:
+            return f"{base} ({hostapi_name})"
+        return base
+
+    def _get_device_name_for_config(self, device_index: int, fallback_text: str) -> str:
+        """Return the raw PortAudio device name for config persistence."""
+        try:
+            if device_index is not None and int(device_index) >= 0:
+                devices = self.audio_engine.list_devices()
+                idx = int(device_index)
+                if 0 <= idx < len(devices):
+                    name = devices[idx].get('name')
+                    if name:
+                        return str(name)
+        except Exception:
+            pass
+
+        # Fallback to prior behavior (best-effort, strips our appended hostapi).
+        try:
+            raw = fallback_text.split(": ", 1)[1]
+        except Exception:
+            raw = fallback_text
+        raw = str(raw).strip()
+        if raw.endswith(')') and ' (' in raw:
+            raw = raw.rsplit(' (', 1)[0]
+        return raw
+
     def init_ui(self):
         main_layout = QVBoxLayout()
         
@@ -1114,7 +1150,7 @@ class SettingsWidget(QWidget):
         default_out = self.audio_engine.output_device
         
         for i, dev in enumerate(devices):
-            name = f"{i}: {dev['name']}"
+            name = self._format_device_label(i, dev)
             if dev['max_input_channels'] > 0:
                 self.input_combo.addItem(name, i)
             if dev['max_output_channels'] > 0:
@@ -1154,8 +1190,8 @@ class SettingsWidget(QWidget):
                 self.active_out_label.setText(self.output_combo.currentText())
                 
                 # Save to config
-                in_name = self.input_combo.currentText().split(": ", 1)[1]
-                out_name = self.output_combo.currentText().split(": ", 1)[1]
+                in_name = self._get_device_name_for_config(input_idx, self.input_combo.currentText())
+                out_name = self._get_device_name_for_config(output_idx, self.output_combo.currentText())
                 
                 self.config_manager.set_audio_config(
                     in_name, 
@@ -1187,8 +1223,10 @@ class SettingsWidget(QWidget):
             
             # Save config
             if self.input_combo.currentIndex() >= 0:
-                in_name = self.input_combo.currentText().split(": ", 1)[1]
-                out_name = self.output_combo.currentText().split(": ", 1)[1]
+                in_id = self.input_combo.currentData()
+                out_id = self.output_combo.currentData()
+                in_name = self._get_device_name_for_config(in_id, self.input_combo.currentText())
+                out_name = self._get_device_name_for_config(out_id, self.output_combo.currentText())
                 self.config_manager.set_audio_config(
                     in_name, out_name, rate, 
                     self.audio_engine.block_size,
@@ -1206,8 +1244,10 @@ class SettingsWidget(QWidget):
             
             # Save config
             if self.input_combo.currentIndex() >= 0:
-                in_name = self.input_combo.currentText().split(": ", 1)[1]
-                out_name = self.output_combo.currentText().split(": ", 1)[1]
+                in_id = self.input_combo.currentData()
+                out_id = self.output_combo.currentData()
+                in_name = self._get_device_name_for_config(in_id, self.input_combo.currentText())
+                out_name = self._get_device_name_for_config(out_id, self.output_combo.currentText())
                 self.config_manager.set_audio_config(
                     in_name, out_name, 
                     self.audio_engine.sample_rate,
@@ -1225,8 +1265,10 @@ class SettingsWidget(QWidget):
         
         # Save config
         if self.input_combo.currentIndex() >= 0:
-            in_name = self.input_combo.currentText().split(": ", 1)[1]
-            out_name = self.output_combo.currentText().split(": ", 1)[1]
+            in_id = self.input_combo.currentData()
+            out_id = self.output_combo.currentData()
+            in_name = self._get_device_name_for_config(in_id, self.input_combo.currentText())
+            out_name = self._get_device_name_for_config(out_id, self.output_combo.currentText())
             self.config_manager.set_audio_config(
                 in_name, out_name, 
                 self.audio_engine.sample_rate,

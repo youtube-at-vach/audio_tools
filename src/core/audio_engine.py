@@ -69,8 +69,37 @@ class AudioEngine:
         self.logger.info(f"Set mute output: {enabled}")
 
     def list_devices(self):
-        """Returns a list of available audio devices."""
-        return sd.query_devices()
+        """Returns a list of available audio devices.
+
+        We enrich PortAudio device info with a human-readable host API name
+        (e.g. ASIO/WASAPI/DirectSound on Windows) to make UI selection clearer.
+        """
+        devices = sd.query_devices()
+
+        # Try to attach host API names; fall back to raw device dicts on error.
+        try:
+            hostapis = sd.query_hostapis()
+        except Exception:
+            hostapis = None
+
+        enriched = []
+        for dev in devices:
+            d = dict(dev)
+            hostapi_name = None
+            if hostapis is not None:
+                try:
+                    hostapi_idx = d.get('hostapi')
+                    if hostapi_idx is not None and 0 <= int(hostapi_idx) < len(hostapis):
+                        hostapi_name = hostapis[int(hostapi_idx)].get('name')
+                except Exception:
+                    hostapi_name = None
+
+            if hostapi_name:
+                d['hostapi_name'] = str(hostapi_name)
+
+            enriched.append(d)
+
+        return enriched
 
     def set_devices(self, input_device_id, output_device_id):
         """Sets the input and output devices."""
