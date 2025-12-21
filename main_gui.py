@@ -62,8 +62,23 @@ def main():
     app.setApplicationName(tr("Audio Measurement Suite"))
     
     window = MainWindow()
-    window.show()
 
+    # Preload all modules while splash is visible, so module switching feels instant.
+    def _update_splash(msg: str):
+        splash.showMessage(
+            f"{tr('Loading...')}\n{msg}",
+            Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
+            Qt.GlobalColor.white,
+        )
+        app.processEvents()
+
+    try:
+        window.preload_all_modules(progress_callback=_update_splash)
+    except Exception:
+        # If preload fails, still show the window; individual pages may show errors.
+        pass
+
+    window.show()
     splash.finish(window)
     
     sys.exit(app.exec())
