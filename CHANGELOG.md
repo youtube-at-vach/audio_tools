@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.2.6] - 2025-12-21
+
+### Changed
+
+* オーディオデバイス一覧にホスト API 名を併記し、入力・出力先の選択時にホスト環境を判別しやすく改善
+* PyInstaller の onefile / onedir ビルド手順を整理し、Windows と Linux 向けパッケージ生成フローを強化
+
 ## [v0.2.5] - 2025-12-20
 
 ### Added
