@@ -363,6 +363,8 @@ class FrequencyCounterWidget(QWidget):
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_display)
         self.timer.setInterval(self.module.update_interval_ms)
+
+        self._last_hist_update_t = 0.0
         
         # Start time tracking
         self.module.start_time = time.time()
@@ -485,6 +487,42 @@ class FrequencyCounterWidget(QWidget):
         self.allan_plot.setLogMode(x=True, y=True)
         self.allan_curve = self.allan_plot.plot(pen='c', symbol='o', symbolSize=5)
         self.tab_widget.addTab(self.allan_plot, tr("Allan Deviation"))
+
+        # Tab 3: Modulation Domain (Jitter Histogram)
+        self.jitter_tab = QWidget()
+        jitter_layout = QVBoxLayout()
+
+        jitter_stats_layout = QHBoxLayout()
+        self.jitter_mean_label = QLabel(tr("Mean: --"))
+        self.jitter_mean_label.setStyleSheet("color: #aaa; font-size: 14px;")
+        jitter_stats_layout.addWidget(self.jitter_mean_label)
+
+        self.jitter_sigma_label = QLabel(tr("Std Dev: --"))
+        self.jitter_sigma_label.setStyleSheet("color: #aaa; font-size: 14px;")
+        jitter_stats_layout.addWidget(self.jitter_sigma_label)
+
+        self.jitter_n_label = QLabel(tr("N: --"))
+        self.jitter_n_label.setStyleSheet("color: #aaa; font-size: 14px;")
+        jitter_stats_layout.addWidget(self.jitter_n_label)
+
+        jitter_stats_layout.addStretch()
+        jitter_layout.addLayout(jitter_stats_layout)
+
+        self.jitter_plot = pg.PlotWidget(title=tr("Jitter Histogram (Modulation Domain)"))
+        self.jitter_plot.showGrid(x=True, y=True)
+        self.jitter_plot.setLabel('left', tr('Probability'), units='%')
+        self.jitter_hist_item = pg.BarGraphItem(x=[0.0], height=[0.0], width=1.0, brush='m')
+        self.jitter_plot.addItem(self.jitter_hist_item)
+
+        # Optional: Normal distribution overlay as a probability-per-bin curve
+        self.jitter_pdf_curve = self.jitter_plot.plot(pen=pg.mkPen('w', width=2))
+
+        jitter_layout.addWidget(self.jitter_plot)
+        self.jitter_tab.setLayout(jitter_layout)
+        self.tab_widget.addTab(self.jitter_tab, tr("Jitter Histogram"))
+
+        # Initialize plot labels based on current mode
+        self._update_jitter_plot_labels_for_display_mode()
         
         self.setLayout(layout)
 
@@ -538,6 +576,108 @@ class FrequencyCounterWidget(QWidget):
             self.plot_widget.setTitle(tr("Frequency Drift"))
             self.plot_widget.setLabel('left', tr('Frequency'), units='Hz')
             self.tab_widget.setTabText(0, tr("Frequency Drift"))
+
+        self._update_jitter_plot_labels_for_display_mode()
+
+    def _update_jitter_plot_labels_for_display_mode(self):
+        if not hasattr(self, 'jitter_plot'):
+            return
+
+        if self.display_mode == 'period':
+            self.jitter_plot.setLabel('bottom', tr('Jitter (ΔT from mean)'), units='s')
+        else:
+            self.jitter_plot.setLabel('bottom', tr('Jitter (Δf from mean)'), units='Hz')
+
+    def _get_distribution_series(self):
+        """Returns (jitter_series, mean_value, std_value, n, mean_text, std_text)."""
+        if len(self.module.freq_history) < 2:
+            return None, None, None, 0, None, None
+
+        data = np.asarray(self.module.freq_history, dtype=float)
+        data = data[np.isfinite(data) & (data > 0)]
+        if len(data) < 2:
+            return None, None, None, 0, None, None
+
+        if self.display_mode == 'period':
+            series = 1.0 / data
+            mean_val = float(np.mean(series))
+            jitter = series - mean_val
+            std_val = float(np.std(series, ddof=1)) if len(series) >= 2 else 0.0
+            mean_text = tr("Mean: {0}").format(self._format_seconds_value(mean_val, decimals=6))
+            std_text = tr("Std Dev: {0}").format(self._format_seconds_value(std_val, decimals=6))
+        else:
+            mean_val = float(np.mean(data))
+            jitter = data - mean_val
+            std_val = float(np.std(data, ddof=1)) if len(data) >= 2 else 0.0
+            mean_text = tr("Mean: {0:.8f} Hz").format(mean_val)
+            std_text = tr("Std Dev: {0:.8f} Hz").format(std_val)
+
+        return jitter, mean_val, std_val, int(len(data)), mean_text, std_text
+
+    def _compute_histogram_percent(self, values: np.ndarray):
+        """Compute histogram as probability (%). Returns (centers, probs_percent, bin_width)."""
+        values = np.asarray(values, dtype=float)
+        values = values[np.isfinite(values)]
+        n = len(values)
+        if n < 2:
+            return np.array([]), np.array([]), 0.0
+
+        v_min = float(np.min(values))
+        v_max = float(np.max(values))
+        if not np.isfinite(v_min) or not np.isfinite(v_max):
+            return np.array([]), np.array([]), 0.0
+
+        if v_min == v_max:
+            # Expand a tiny range to make at least one bin
+            pad = 1e-12 if v_min == 0 else abs(v_min) * 1e-6
+            v_min -= pad
+            v_max += pad
+
+        # Freedman–Diaconis rule (robust bin width); fallback to Scott/range.
+        q25, q75 = np.percentile(values, [25, 75])
+        iqr = float(q75 - q25)
+        bin_width = 0.0
+        if np.isfinite(iqr) and iqr > 0:
+            bin_width = 2.0 * iqr * (n ** (-1.0 / 3.0))
+
+        if not np.isfinite(bin_width) or bin_width <= 0:
+            std = float(np.std(values, ddof=1)) if n >= 2 else 0.0
+            if np.isfinite(std) and std > 0:
+                bin_width = 3.5 * std * (n ** (-1.0 / 3.0))  # Scott
+            else:
+                bin_width = (v_max - v_min) / 50.0
+
+        if not np.isfinite(bin_width) or bin_width <= 0:
+            return np.array([]), np.array([]), 0.0
+
+        # Clamp number of bins to keep UI responsive and readable
+        bins_est = int(np.ceil((v_max - v_min) / bin_width))
+        bins_est = max(20, min(120, bins_est))
+        bin_width = (v_max - v_min) / float(bins_est)
+
+        edges = np.linspace(v_min, v_max, bins_est + 1)
+        hist, bin_edges = np.histogram(values, bins=edges, density=False)
+        centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+        total = float(np.sum(hist))
+        probs = (hist / total) * 100.0 if total > 0 else hist.astype(float)
+
+        return centers, probs, float(bin_width)
+
+    def _normal_prob_per_bin_percent(self, x_centers: np.ndarray, mean: float, std: float, bin_width: float):
+        """Normal distribution overlay scaled to probability-per-bin (%)."""
+        if x_centers is None or len(x_centers) == 0:
+            return np.array([]), np.array([])
+        if std is None or not np.isfinite(std) or std <= 0:
+            return np.array([]), np.array([])
+        if bin_width is None or not np.isfinite(bin_width) or bin_width <= 0:
+            return np.array([]), np.array([])
+
+        x = np.asarray(x_centers, dtype=float)
+        z = (x - float(mean)) / float(std)
+        pdf = np.exp(-0.5 * z * z) / (float(std) * np.sqrt(2.0 * np.pi))
+        # Convert density to probability mass per bin in percent
+        y = pdf * float(bin_width) * 100.0
+        return x, y
 
     def _calculate_period_stats_from_freq_history(self):
         if len(self.module.freq_history) < 2:
@@ -692,6 +832,39 @@ class FrequencyCounterWidget(QWidget):
 
                     if len(taus) > 0:
                         self.allan_curve.setData(taus, devs)
+
+            elif current_tab == 2:  # Jitter Histogram (Modulation Domain)
+                # Throttle histogram updates slightly to reduce UI churn.
+                now_t = time.time()
+                if (now_t - self._last_hist_update_t) >= 0.25:
+                    self._last_hist_update_t = now_t
+
+                    jitter, mean_val, std_val, n, mean_text, std_text = self._get_distribution_series()
+                    if jitter is None or n < 2:
+                        self.jitter_mean_label.setText(tr("Mean: --"))
+                        self.jitter_sigma_label.setText(tr("Std Dev: --"))
+                        self.jitter_n_label.setText(tr("N: --"))
+                        self.jitter_hist_item.setOpts(x=[0.0], height=[0.0], width=1.0)
+                        self.jitter_pdf_curve.setData([], [])
+                    else:
+                        self.jitter_mean_label.setText(mean_text)
+                        self.jitter_sigma_label.setText(std_text)
+                        self.jitter_n_label.setText(tr("N: {0}").format(n))
+
+                        centers, probs, bin_width = self._compute_histogram_percent(jitter)
+                        if len(centers) > 0:
+                            # A slight gap between bars improves readability
+                            bar_width = bin_width * 0.95 if np.isfinite(bin_width) and bin_width > 0 else 1.0
+                            self.jitter_hist_item.setOpts(x=centers, height=probs, width=bar_width)
+
+                            # Normal overlay fit on jitter distribution
+                            mu_j = float(np.mean(jitter))
+                            sig_j = float(np.std(jitter, ddof=1)) if len(jitter) >= 2 else 0.0
+                            x_pdf, y_pdf = self._normal_prob_per_bin_percent(centers, mu_j, sig_j, bin_width)
+                            self.jitter_pdf_curve.setData(x_pdf, y_pdf)
+                        else:
+                            self.jitter_hist_item.setOpts(x=[0.0], height=[0.0], width=1.0)
+                            self.jitter_pdf_curve.setData([], [])
         else:
             self.freq_label.setText(self._placeholder_main_text())
             if self.display_mode == 'period':
@@ -700,3 +873,11 @@ class FrequencyCounterWidget(QWidget):
             else:
                 self.std_label.setText(tr("Std Dev: -- Hz"))
                 self.allan_label.setText(tr("Allan Dev: -- Hz"))
+
+            # Clear distribution view if the user is currently on that tab.
+            if self.tab_widget.currentIndex() == 2 and hasattr(self, 'jitter_hist_item'):
+                self.jitter_mean_label.setText(tr("Mean: --"))
+                self.jitter_sigma_label.setText(tr("Std Dev: --"))
+                self.jitter_n_label.setText(tr("N: --"))
+                self.jitter_hist_item.setOpts(x=[0.0], height=[0.0], width=1.0)
+                self.jitter_pdf_curve.setData([], [])
