@@ -492,7 +492,39 @@ class FrequencyCounterWidget(QWidget):
         self.jitter_tab = QWidget()
         jitter_layout = QVBoxLayout()
 
+        jitter_controls_layout = QHBoxLayout()
+        jitter_controls_layout.addWidget(QLabel(tr("Baseline:")))
+        self.jitter_baseline_combo = QComboBox()
+        self.jitter_baseline_combo.addItem(tr("Mean"), 'mean')
+        self.jitter_baseline_combo.addItem(tr("Reference"), 'reference')
+        jitter_controls_layout.addWidget(self.jitter_baseline_combo)
+
+        jitter_controls_layout.addWidget(QLabel(tr("Ref (Hz):")))
+        self.jitter_ref_spin = QDoubleSpinBox()
+        self.jitter_ref_spin.setRange(0.0, 1_000_000_000.0)
+        self.jitter_ref_spin.setDecimals(6)
+        self.jitter_ref_spin.setValue(0.0)
+        self.jitter_ref_spin.setToolTip(tr("Reference frequency. Used when Baseline=Reference."))
+        jitter_controls_layout.addWidget(self.jitter_ref_spin)
+
+        jitter_controls_layout.addWidget(QLabel(tr("X-axis:")))
+        self.jitter_units_combo = QComboBox()
+        self.jitter_units_combo.addItem(tr("Native"), 'native')
+        self.jitter_units_combo.addItem(tr("ppm"), 'ppm')
+        jitter_controls_layout.addWidget(self.jitter_units_combo)
+
+        jitter_controls_layout.addStretch()
+        jitter_layout.addLayout(jitter_controls_layout)
+
         jitter_stats_layout = QHBoxLayout()
+        self.jitter_baseline_label = QLabel(tr("Baseline: --"))
+        self.jitter_baseline_label.setStyleSheet("color: #aaa; font-size: 14px;")
+        jitter_stats_layout.addWidget(self.jitter_baseline_label)
+
+        self.jitter_offset_label = QLabel(tr("Offset: --"))
+        self.jitter_offset_label.setStyleSheet("color: #aaa; font-size: 14px;")
+        jitter_stats_layout.addWidget(self.jitter_offset_label)
+
         self.jitter_mean_label = QLabel(tr("Mean: --"))
         self.jitter_mean_label.setStyleSheet("color: #aaa; font-size: 14px;")
         jitter_stats_layout.addWidget(self.jitter_mean_label)
@@ -523,6 +555,12 @@ class FrequencyCounterWidget(QWidget):
 
         # Initialize plot labels based on current mode
         self._update_jitter_plot_labels_for_display_mode()
+
+        # Wire jitter controls
+        self.jitter_baseline_combo.currentIndexChanged.connect(self._on_jitter_settings_changed)
+        self.jitter_units_combo.currentIndexChanged.connect(self._on_jitter_settings_changed)
+        self.jitter_ref_spin.valueChanged.connect(self._on_jitter_settings_changed)
+        self._on_jitter_settings_changed()
         
         self.setLayout(layout)
 
@@ -583,36 +621,103 @@ class FrequencyCounterWidget(QWidget):
         if not hasattr(self, 'jitter_plot'):
             return
 
-        if self.display_mode == 'period':
-            self.jitter_plot.setLabel('bottom', tr('Jitter (ΔT from mean)'), units='s')
+        units_mode = getattr(self, 'jitter_units_combo', None)
+        units_mode = units_mode.currentData() if units_mode is not None else 'native'
+
+        if units_mode == 'ppm':
+            self.jitter_plot.setLabel('bottom', tr('Jitter (fractional)'), units='ppm')
         else:
-            self.jitter_plot.setLabel('bottom', tr('Jitter (Δf from mean)'), units='Hz')
+            if self.display_mode == 'period':
+                self.jitter_plot.setLabel('bottom', tr('Jitter (ΔT)'), units='s')
+            else:
+                self.jitter_plot.setLabel('bottom', tr('Jitter (Δf)'), units='Hz')
+
+    def _on_jitter_settings_changed(self):
+        # Enable ref input only when it matters.
+        baseline_mode = getattr(self, 'jitter_baseline_combo', None)
+        baseline_mode = baseline_mode.currentData() if baseline_mode is not None else 'mean'
+        if hasattr(self, 'jitter_ref_spin'):
+            self.jitter_ref_spin.setEnabled(baseline_mode == 'reference')
+
+        self._update_jitter_plot_labels_for_display_mode()
+        # Force next histogram refresh.
+        self._last_hist_update_t = 0.0
 
     def _get_distribution_series(self):
-        """Returns (jitter_series, mean_value, std_value, n, mean_text, std_text)."""
+        """Returns distribution inputs and UI text.
+
+        Returns:
+            tuple: (jitter_display, n, baseline_label, offset_label, mean_label, sigma_label, baseline_for_ppm)
+        """
         if len(self.module.freq_history) < 2:
-            return None, None, None, 0, None, None
+            return None, 0, None, None, None, None, None
 
         data = np.asarray(self.module.freq_history, dtype=float)
         data = data[np.isfinite(data) & (data > 0)]
         if len(data) < 2:
-            return None, None, None, 0, None, None
+            return None, 0, None, None, None, None, None
+
+        baseline_mode = getattr(self, 'jitter_baseline_combo', None)
+        baseline_mode = baseline_mode.currentData() if baseline_mode is not None else 'mean'
+        units_mode = getattr(self, 'jitter_units_combo', None)
+        units_mode = units_mode.currentData() if units_mode is not None else 'native'
+        ref_hz = float(getattr(self, 'jitter_ref_spin', None).value()) if hasattr(self, 'jitter_ref_spin') else 0.0
 
         if self.display_mode == 'period':
             series = 1.0 / data
             mean_val = float(np.mean(series))
-            jitter = series - mean_val
-            std_val = float(np.std(series, ddof=1)) if len(series) >= 2 else 0.0
+            if baseline_mode == 'reference' and ref_hz > 0:
+                baseline_val = 1.0 / ref_hz
+                baseline_text = tr("Baseline: Ref {0:.6f} Hz").format(ref_hz)
+            else:
+                baseline_val = mean_val
+                baseline_text = tr("Baseline: Mean") if baseline_mode == 'mean' else tr("Baseline: Ref -- (using mean)")
+
+            jitter_native = series - baseline_val
+            sigma_native = float(np.std(jitter_native, ddof=1)) if len(jitter_native) >= 2 else 0.0
+
+            if units_mode == 'ppm' and np.isfinite(baseline_val) and baseline_val > 0:
+                jitter_display = jitter_native / baseline_val * 1e6
+                offset_display = (mean_val - baseline_val) / baseline_val * 1e6
+                sigma_display = float(np.std(jitter_display, ddof=1)) if len(jitter_display) >= 2 else 0.0
+                offset_text = tr("Offset: {0:.3f} ppm").format(offset_display)
+                sigma_text = tr("Std Dev: {0:.3f} ppm").format(sigma_display)
+                baseline_for_ppm = baseline_val
+            else:
+                jitter_display = jitter_native
+                offset_text = tr("Offset: {0}").format(self._format_seconds_value(mean_val - baseline_val, decimals=6))
+                sigma_text = tr("Std Dev: {0}").format(self._format_seconds_value(sigma_native, decimals=6))
+                baseline_for_ppm = baseline_val
+
             mean_text = tr("Mean: {0}").format(self._format_seconds_value(mean_val, decimals=6))
-            std_text = tr("Std Dev: {0}").format(self._format_seconds_value(std_val, decimals=6))
         else:
             mean_val = float(np.mean(data))
-            jitter = data - mean_val
-            std_val = float(np.std(data, ddof=1)) if len(data) >= 2 else 0.0
-            mean_text = tr("Mean: {0:.8f} Hz").format(mean_val)
-            std_text = tr("Std Dev: {0:.8f} Hz").format(std_val)
+            if baseline_mode == 'reference' and ref_hz > 0:
+                baseline_val = ref_hz
+                baseline_text = tr("Baseline: Ref {0:.6f} Hz").format(ref_hz)
+            else:
+                baseline_val = mean_val
+                baseline_text = tr("Baseline: Mean") if baseline_mode == 'mean' else tr("Baseline: Ref -- (using mean)")
 
-        return jitter, mean_val, std_val, int(len(data)), mean_text, std_text
+            jitter_native = data - baseline_val
+            sigma_native = float(np.std(jitter_native, ddof=1)) if len(jitter_native) >= 2 else 0.0
+
+            if units_mode == 'ppm' and np.isfinite(baseline_val) and baseline_val > 0:
+                jitter_display = jitter_native / baseline_val * 1e6
+                offset_display = (mean_val - baseline_val) / baseline_val * 1e6
+                sigma_display = float(np.std(jitter_display, ddof=1)) if len(jitter_display) >= 2 else 0.0
+                offset_text = tr("Offset: {0:.3f} ppm").format(offset_display)
+                sigma_text = tr("Std Dev: {0:.3f} ppm").format(sigma_display)
+                baseline_for_ppm = baseline_val
+            else:
+                jitter_display = jitter_native
+                offset_text = tr("Offset: {0:.8f} Hz").format(mean_val - baseline_val)
+                sigma_text = tr("Std Dev: {0:.8f} Hz").format(sigma_native)
+                baseline_for_ppm = baseline_val
+
+            mean_text = tr("Mean: {0:.8f} Hz").format(mean_val)
+
+        return jitter_display, int(len(data)), baseline_text, offset_text, mean_text, sigma_text, baseline_for_ppm
 
     def _compute_histogram_percent(self, values: np.ndarray):
         """Compute histogram as probability (%). Returns (centers, probs_percent, bin_width)."""
@@ -839,27 +944,31 @@ class FrequencyCounterWidget(QWidget):
                 if (now_t - self._last_hist_update_t) >= 0.25:
                     self._last_hist_update_t = now_t
 
-                    jitter, mean_val, std_val, n, mean_text, std_text = self._get_distribution_series()
-                    if jitter is None or n < 2:
+                    jitter_display, n, baseline_text, offset_text, mean_text, sigma_text, _baseline_for_ppm = self._get_distribution_series()
+                    if jitter_display is None or n < 2:
+                        self.jitter_baseline_label.setText(tr("Baseline: --"))
+                        self.jitter_offset_label.setText(tr("Offset: --"))
                         self.jitter_mean_label.setText(tr("Mean: --"))
                         self.jitter_sigma_label.setText(tr("Std Dev: --"))
                         self.jitter_n_label.setText(tr("N: --"))
                         self.jitter_hist_item.setOpts(x=[0.0], height=[0.0], width=1.0)
                         self.jitter_pdf_curve.setData([], [])
                     else:
+                        self.jitter_baseline_label.setText(baseline_text)
+                        self.jitter_offset_label.setText(offset_text)
                         self.jitter_mean_label.setText(mean_text)
-                        self.jitter_sigma_label.setText(std_text)
+                        self.jitter_sigma_label.setText(sigma_text)
                         self.jitter_n_label.setText(tr("N: {0}").format(n))
 
-                        centers, probs, bin_width = self._compute_histogram_percent(jitter)
+                        centers, probs, bin_width = self._compute_histogram_percent(jitter_display)
                         if len(centers) > 0:
                             # A slight gap between bars improves readability
                             bar_width = bin_width * 0.95 if np.isfinite(bin_width) and bin_width > 0 else 1.0
                             self.jitter_hist_item.setOpts(x=centers, height=probs, width=bar_width)
 
                             # Normal overlay fit on jitter distribution
-                            mu_j = float(np.mean(jitter))
-                            sig_j = float(np.std(jitter, ddof=1)) if len(jitter) >= 2 else 0.0
+                            mu_j = float(np.mean(jitter_display))
+                            sig_j = float(np.std(jitter_display, ddof=1)) if len(jitter_display) >= 2 else 0.0
                             x_pdf, y_pdf = self._normal_prob_per_bin_percent(centers, mu_j, sig_j, bin_width)
                             self.jitter_pdf_curve.setData(x_pdf, y_pdf)
                         else:
@@ -876,6 +985,8 @@ class FrequencyCounterWidget(QWidget):
 
             # Clear distribution view if the user is currently on that tab.
             if self.tab_widget.currentIndex() == 2 and hasattr(self, 'jitter_hist_item'):
+                self.jitter_baseline_label.setText(tr("Baseline: --"))
+                self.jitter_offset_label.setText(tr("Offset: --"))
                 self.jitter_mean_label.setText(tr("Mean: --"))
                 self.jitter_sigma_label.setText(tr("Std Dev: --"))
                 self.jitter_n_label.setText(tr("N: --"))
