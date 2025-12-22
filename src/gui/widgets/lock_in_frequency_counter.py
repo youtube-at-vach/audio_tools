@@ -266,13 +266,7 @@ class LockInFrequencyCounterWidget(QWidget):
         self.plot_phase = pg.PlotWidget(title=tr("Integrated Phase φ (deg)"))
         self.plot_phase.showGrid(x=True, y=True)
         self.curve_phase = self.plot_phase.plot(pen='c')
-        
-        # Phase Drift Indicator (Label above plot)
-        self.lbl_drift = QLabel(tr("Phase Drift: --"))
-        self.lbl_drift.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.lbl_drift.setStyleSheet("font-size: 14pt; font-weight: bold; color: #aaaaaa;")
-        left_layout.addWidget(self.lbl_drift)
-        
+
         left_layout.addWidget(self.plot_phase)
         
         splitter.addWidget(left_widget)
@@ -335,23 +329,6 @@ class LockInFrequencyCounterWidget(QWidget):
             if len(t_data) > 0:
                 self.curve_freq.setData(t_data, f_data)
                 self.curve_phase.setData(t_data, p_data)
-                
-                # Update Drift Indicator (Smoothed)
-                drift_uhz = delta_f_smooth * 1_000_000
-                
-                if drift_uhz > 0:
-                    arrow = "↑"
-                    color = "#00ffff" # Cyan
-                else:
-                    arrow = "↓"
-                    color = "#00ffff" # Cyan
-                
-                if abs(drift_uhz) < 0.001:
-                    arrow = "-"
-                    color = "#88ff88" # Green for "Locked"
-                
-                self.lbl_drift.setText(f"Phase Drift: {arrow} {drift_uhz:+.3f} µHz")
-                self.lbl_drift.setStyleSheet(f"font-size: 14pt; font-weight: bold; color: {color};")
                 
                 i_data = list(self.module.iq_history_i)
                 q_data = list(self.module.iq_history_q)
