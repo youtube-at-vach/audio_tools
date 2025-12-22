@@ -16,6 +16,11 @@ class LockInFrequencyCounter(MeasurementModule):
         self.is_running = False
         self.buffer_size = 4096 
         self.input_data = np.zeros((self.buffer_size, 2))
+
+        # Signal detect (match FrequencyCounter-style amplitude gate)
+        self.gate_threshold_db = -60.0
+        self.current_amp_db = -120.0
+        self.signal_present = False
         
         # Settings
         self.gen_frequency = 1000.0 # NCO Frequency
@@ -83,6 +88,9 @@ class LockInFrequencyCounter(MeasurementModule):
         self.smoothed_freq_dev = 0.0
         self.current_phase_deg = 0.0
 
+        self.current_amp_db = -120.0
+        self.signal_present = False
+
         self._samples_received = 0
         self._estimates_discarded = 0
         
@@ -143,6 +151,13 @@ class LockInFrequencyCounter(MeasurementModule):
         sig = data[:, self.signal_channel]
         n_samples = len(sig)
         sr = self.audio_engine.sample_rate
+
+        # 1) Signal detect (RMS gate)
+        rms = float(np.sqrt(np.mean(sig.astype(np.float64) ** 2)))
+        self.current_amp_db = float(20.0 * np.log10(rms + 1e-12))
+        if self.current_amp_db < float(getattr(self, 'gate_threshold_db', -60.0)):
+            self.signal_present = False
+            return
         
         t = np.arange(n_samples) / sr
         
@@ -168,6 +183,7 @@ class LockInFrequencyCounter(MeasurementModule):
             avg = np.mean(segment * win)
             
             if np.abs(avg) < 1e-9:
+                self.signal_present = False
                 return # Noise
                 
             phi = np.angle(avg)
@@ -195,6 +211,8 @@ class LockInFrequencyCounter(MeasurementModule):
             mean_vec = np.mean(z)
             self.iq_history_i.append(np.real(mean_vec))
             self.iq_history_q.append(np.imag(mean_vec))
+
+            self.signal_present = True
             
             self.current_freq_dev = delta_f
             
@@ -298,6 +316,13 @@ class LockInFrequencyCounterWidget(QWidget):
         
         # -- Meters --
         meters_layout = QHBoxLayout()
+
+        # Signal indicator (shown only when signal is missing)
+        self.lbl_signal_status = QLabel(tr("No Signal"))
+        self.lbl_signal_status.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.lbl_signal_status.setVisible(False)
+        meters_layout.addWidget(self.lbl_signal_status)
+
         self.lbl_delta_f = QLabel("Δf: 0.000 Hz")
         self.lbl_delta_f.setStyleSheet("font-size: 16px; font-weight: bold;")
         meters_layout.addWidget(self.lbl_delta_f)
@@ -330,6 +355,10 @@ class LockInFrequencyCounterWidget(QWidget):
     def update_ui(self):
         if self.module.is_running:
             self.module.process_data()
+
+            # Signal present indicator
+            has_signal = bool(getattr(self.module, 'signal_present', False))
+            self.lbl_signal_status.setVisible(not has_signal)
             
             delta_f = self.module.current_freq_dev
             delta_f_smooth = self.module.smoothed_freq_dev
