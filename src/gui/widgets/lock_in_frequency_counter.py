@@ -24,9 +24,9 @@ class LockInFrequencyCounter(MeasurementModule):
         
         # Settings
         self.gen_frequency = 1000.0 # NCO Frequency
-        self.signal_channel = 0 # 0: Left
-        self.ref_channel = 1    # 1: Right (Used in Audio REF mode)
-        self.ref_mode = "internal" # internal, loopback, audio
+        self.signal_channel = 0 # 0: Ch1 (L), 1: Ch2 (R)
+        self.ref_channel = 1
+        self.ref_mode = "internal" # internal, loopback
         # Display is ~1000 points @ 10 Hz = ~100 s window. A ~2 s EMA time constant
         # provides stable readout without feeling laggy.
         self.smoothing_tau = 2.0
@@ -278,9 +278,16 @@ class LockInFrequencyCounterWidget(QWidget):
         
         # Ref Mode
         self.ref_combo = QComboBox()
-        self.ref_combo.addItems(["Internal (NCO)", "Loopback (Ref Out)", "Audio REF (CH2)"])
+        self.ref_combo.addItems(["Internal (NCO)", "Loopback (Ref Out)"])
         self.ref_combo.currentIndexChanged.connect(self.on_ref_mode_changed)
         controls_layout.addRow(tr("Reference Mode:"), self.ref_combo)
+
+        # Input Channel (L/R)
+        self.input_ch_combo = QComboBox()
+        self.input_ch_combo.addItems([tr("Ch 1"), tr("Ch 2")])
+        self.input_ch_combo.setCurrentIndex(int(getattr(self.module, 'signal_channel', 0)))
+        self.input_ch_combo.currentIndexChanged.connect(self.on_input_channel_changed)
+        controls_layout.addRow(tr("Channel:"), self.input_ch_combo)
         
         # Start/Stop
         self.btn_run = QPushButton(tr("Start"))
@@ -348,8 +355,11 @@ class LockInFrequencyCounterWidget(QWidget):
         self.module.gen_frequency = val
 
     def on_ref_mode_changed(self, idx):
-        modes = ["internal", "loopback", "audio"]
+        modes = ["internal", "loopback"]
         self.module.ref_mode = modes[idx]
+
+    def on_input_channel_changed(self, idx):
+        self.module.signal_channel = int(idx)
 
     def on_run_clicked(self, checked):
         if checked:
