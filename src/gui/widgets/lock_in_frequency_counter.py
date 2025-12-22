@@ -22,7 +22,9 @@ class LockInFrequencyCounter(MeasurementModule):
         self.signal_channel = 0 # 0: Left
         self.ref_channel = 1    # 1: Right (Used in Audio REF mode)
         self.ref_mode = "internal" # internal, loopback, audio
-        self.smoothing_tau = 5.0 # Reduced speed: Default 5.0s for slow trend confirmation
+        # Display is ~1000 points @ 10 Hz = ~100 s window. A ~2 s EMA time constant
+        # provides stable readout without feeling laggy.
+        self.smoothing_tau = 2.0
         
         # Internal State
         self._nco_phase = 0.0
@@ -74,6 +76,7 @@ class LockInFrequencyCounter(MeasurementModule):
         self._first_run = True
         self.start_time = 0
         self.smoothed_freq_dev = 0.0
+        self.current_phase_deg = 0.0
         
         self.time_axis.clear()
         self.freq_dev_history.clear()
@@ -230,16 +233,6 @@ class LockInFrequencyCounterWidget(QWidget):
         self.ref_combo.currentIndexChanged.connect(self.on_ref_mode_changed)
         controls_layout.addRow(tr("Reference Mode:"), self.ref_combo)
         
-        # Smoothing
-        self.smooth_spin = QDoubleSpinBox()
-        self.smooth_spin.setRange(0.0, 60.0) # Up to 60s
-        self.smooth_spin.setValue(5.0) # Default 5s
-        self.smooth_spin.setSingleStep(1.0)
-        self.smooth_spin.setSuffix(" s")
-        self.smooth_spin.setToolTip("Smoothing Time Constant (Tau). Higher = Slower trend update.")
-        self.smooth_spin.valueChanged.connect(self.on_smooth_changed)
-        controls_layout.addRow(tr("Smoothing (Tau):"), self.smooth_spin)
-        
         # Start/Stop
         self.btn_run = QPushButton(tr("Start"))
         self.btn_run.setCheckable(True)
@@ -301,9 +294,6 @@ class LockInFrequencyCounterWidget(QWidget):
     def on_ref_mode_changed(self, idx):
         modes = ["internal", "loopback", "audio"]
         self.module.ref_mode = modes[idx]
-        
-    def on_smooth_changed(self, val):
-        self.module.smoothing_tau = val
 
     def on_run_clicked(self, checked):
         if checked:
