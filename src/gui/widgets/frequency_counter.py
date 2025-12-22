@@ -24,6 +24,12 @@ class FrequencyCounter(MeasurementModule):
         self.update_interval_ms = 100 # Fast: 100ms, Slow: 500ms
         self.buffer_size = 8192 # Good resolution
         self.selected_channel = 0 # 0: Ch1, 1: Ch2
+
+        # Some devices/hosts produce unstable measurements immediately after start
+        # (buffer still contains zeros / settling). Discard the first few *valid*
+        # measurements from history so plots/stats/histograms don't get polluted.
+        self.warmup_discard_points = 3
+        self._warmup_remaining = 0
         
         # State
         self.input_buffer = np.zeros(self.buffer_size)
@@ -69,7 +75,8 @@ class FrequencyCounter(MeasurementModule):
         self.input_buffer = np.zeros(self.buffer_size)
         self.freq_history.clear()
         self.time_history.clear()
-        self.start_time = 0 # Will be set on first update
+        self.start_time = time.time()
+        self._warmup_remaining = int(max(0, getattr(self, 'warmup_discard_points', 0)))
         
         def callback(indata, outdata, frames, time, status):
             if status:
@@ -101,6 +108,7 @@ class FrequencyCounter(MeasurementModule):
                 self.audio_engine.unregister_callback(self.callback_id)
                 self.callback_id = None
             self.is_running = False
+            self._warmup_remaining = 0
 
     def set_update_interval(self, interval_ms):
         was_running = self.is_running
@@ -180,6 +188,37 @@ class FrequencyCounter(MeasurementModule):
                 return coarse_freq
         else:
             return coarse_freq
+
+    def record_frequency_measurement(self, freq_hz: float, now_t: float | None = None) -> bool:
+        """Record a valid measurement into history.
+
+        Returns True if the measurement was recorded, False if it was discarded (warm-up).
+        """
+        if freq_hz is None:
+            return False
+
+        try:
+            freq_val = float(freq_hz)
+        except Exception:
+            return False
+
+        if not np.isfinite(freq_val):
+            return False
+
+        now = time.time() if now_t is None else float(now_t)
+
+        if not getattr(self, 'start_time', 0):
+            self.start_time = now
+
+        warmup_remaining = int(getattr(self, '_warmup_remaining', 0))
+        if warmup_remaining > 0:
+            self._warmup_remaining = warmup_remaining - 1
+            return False
+
+        t = now - float(self.start_time)
+        self.freq_history.append(freq_val)
+        self.time_history.append(float(t))
+        return True
 
     def calculate_stats(self):
         if len(self.freq_history) < 2:
@@ -867,9 +906,10 @@ class FrequencyCounterWidget(QWidget):
     def on_run_toggle(self, checked):
         if checked:
             self.module.start_analysis()
-            self.timer.start()
             self.run_btn.setText(tr("Stop"))
+            # Ensure time base is set before the first timer tick.
             self.module.start_time = time.time()
+            self.timer.start()
         else:
             self.module.stop_analysis()
             self.timer.stop()
@@ -887,11 +927,10 @@ class FrequencyCounterWidget(QWidget):
                 self.freq_label.setText(self._format_period_text(freq))
             else:
                 self.freq_label.setText(self._format_frequency_text(freq))
-            
-            # Update History
-            t = time.time() - self.module.start_time
-            self.module.freq_history.append(freq)
-            self.module.time_history.append(t)
+
+            # Update History (discard initial warm-up points)
+            if not self.module.record_frequency_measurement(freq, time.time()):
+                return
             
             # Update Stats
             self.module.calculate_stats()
