@@ -77,6 +77,10 @@ def _load_module_class(module_key: str):
         from src.gui.widgets.frequency_counter import FrequencyCounter
 
         return FrequencyCounter
+    if module_key == "Lock-in Frequency Counter":
+        from src.gui.widgets.lock_in_frequency_counter import LockInFrequencyCounter
+
+        return LockInFrequencyCounter
     if module_key == "Spectrogram":
         from src.gui.widgets.spectrogram import Spectrogram
 
@@ -224,6 +228,7 @@ class MainWindow(QMainWindow):
             "Lock-in Amplifier",
             "Lock-in THD Analyzer",
             "Frequency Counter",
+            "Lock-in Frequency Counter",
             "Spectrogram",
             "Boxcar Averager",
             "Goniometer",
