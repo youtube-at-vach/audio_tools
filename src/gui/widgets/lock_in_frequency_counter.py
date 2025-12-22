@@ -30,6 +30,11 @@ class LockInFrequencyCounter(MeasurementModule):
         self._nco_phase = 0.0
         self._last_unwrapped_phase = 0.0
         self._first_run = True
+
+        # Startup transient handling
+        self._samples_received = 0
+        self._discard_initial_estimates = 3
+        self._estimates_discarded = 0
         
         # Plot Data Buffers
         self.max_history = 1000 # points on plot
@@ -77,6 +82,9 @@ class LockInFrequencyCounter(MeasurementModule):
         self.start_time = 0
         self.smoothed_freq_dev = 0.0
         self.current_phase_deg = 0.0
+
+        self._samples_received = 0
+        self._estimates_discarded = 0
         
         self.time_axis.clear()
         self.freq_dev_history.clear()
@@ -99,6 +107,8 @@ class LockInFrequencyCounter(MeasurementModule):
             else:
                 self.input_data = np.roll(self.input_data, -len(new_data), axis=0)
                 self.input_data[-len(new_data):] = new_data
+
+            self._samples_received += frames
                 
             # Output Generation
             outdata.fill(0)
@@ -121,6 +131,11 @@ class LockInFrequencyCounter(MeasurementModule):
 
     def process_data(self):
         if not self.is_running:
+            return
+
+        # Wait until we have a fully populated buffer, then discard a few initial
+        # estimates to avoid startup transients causing a "first point jump".
+        if self._samples_received < self.buffer_size:
             return
 
         # Get Snapshot
@@ -168,6 +183,13 @@ class LockInFrequencyCounter(MeasurementModule):
         if len(t_centers) > 1:
             slope, intercept = np.polyfit(t_centers, seg_phases_unwrapped, 1)
             delta_f = slope / (2*np.pi)
+
+            if self._estimates_discarded < self._discard_initial_estimates:
+                self._estimates_discarded += 1
+                # Keep the UI stable at start: don't integrate or append history yet.
+                self.current_freq_dev = 0.0
+                self.smoothed_freq_dev = 0.0
+                return
             
             # Mean Vector for IQ
             mean_vec = np.mean(z)
