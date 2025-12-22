@@ -288,6 +288,16 @@ class LockInFrequencyCounterWidget(QWidget):
         self.input_ch_combo.setCurrentIndex(int(getattr(self.module, 'signal_channel', 0)))
         self.input_ch_combo.currentIndexChanged.connect(self.on_input_channel_changed)
         controls_layout.addRow(tr("Channel:"), self.input_ch_combo)
+
+        # Signal gate
+        self.gate_spin = QDoubleSpinBox()
+        self.gate_spin.setRange(-120.0, 0.0)
+        self.gate_spin.setDecimals(1)
+        self.gate_spin.setSingleStep(1.0)
+        self.gate_spin.setValue(float(getattr(self.module, 'gate_threshold_db', -60.0)))
+        self.gate_spin.setSuffix(" dB")
+        self.gate_spin.valueChanged.connect(self.on_gate_changed)
+        controls_layout.addRow(tr("Gate (dB):"), self.gate_spin)
         
         # Start/Stop
         self.btn_run = QPushButton(tr("Start"))
@@ -360,6 +370,9 @@ class LockInFrequencyCounterWidget(QWidget):
 
     def on_input_channel_changed(self, idx):
         self.module.signal_channel = int(idx)
+
+    def on_gate_changed(self, val):
+        self.module.gate_threshold_db = float(val)
 
     def on_run_clicked(self, checked):
         if checked:
