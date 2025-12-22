@@ -560,27 +560,30 @@ class NetworkAnalyzerWidget(QWidget):
         form.addRow(tr("Input Mode:"), self.in_combo)
         
         # Freqs
-        self.start_spin = QDoubleSpinBox()
+        self.start_spin = QDoubleSpinBox(controls_group)
         self.start_spin.setRange(10, 20000); self.start_spin.setValue(20)
         self.start_spin.valueChanged.connect(lambda v: setattr(self.module, 'start_freq', v))
         form.addRow(tr("Start Freq:"), self.start_spin)
         
-        self.end_spin = QDoubleSpinBox()
+        self.end_spin = QDoubleSpinBox(controls_group)
         self.end_spin.setRange(10, 24000); self.end_spin.setValue(20000)
         self.end_spin.valueChanged.connect(lambda v: setattr(self.module, 'end_freq', v))
         form.addRow(tr("End Freq:"), self.end_spin)
         
-        self.steps_spin = QDoubleSpinBox() 
+        # NOTE: These widgets are shown/hidden immediately in on_mode_changed().
+        # They must have a parent during init, otherwise .show() makes them a
+        # transient top-level window (startup flash).
+        self.steps_spin = QDoubleSpinBox(controls_group)
         self.steps_spin.setDecimals(0)
         self.steps_spin.setRange(1, 48); self.steps_spin.setValue(12)
         self.steps_spin.valueChanged.connect(lambda v: setattr(self.module, 'steps_per_octave', int(v)))
-        self.steps_label = QLabel(tr("Steps/Octave:"))
+        self.steps_label = QLabel(tr("Steps/Octave:"), controls_group)
         form.addRow(self.steps_label, self.steps_spin)
         
-        self.duration_spin = QDoubleSpinBox()
+        self.duration_spin = QDoubleSpinBox(controls_group)
         self.duration_spin.setRange(0.1, 60.0); self.duration_spin.setValue(1.0)
         self.duration_spin.valueChanged.connect(lambda v: setattr(self.module, 'chirp_duration', v))
-        self.duration_label = QLabel(tr("Duration (s):"))
+        self.duration_label = QLabel(tr("Duration (s):"), controls_group)
         form.addRow(self.duration_label, self.duration_spin)
         self.duration_label.hide(); self.duration_spin.hide()
 

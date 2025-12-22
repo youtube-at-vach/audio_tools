@@ -463,7 +463,9 @@ class BoxcarAveragerWidget(QWidget):
         controls_layout.addWidget(self.channel_combo, 0, 7)
 
         # Gate Controls
-        self.gate_group = QWidget()
+        # Parent this container so calling .show() during init can't create a
+        # transient top-level window (startup flash during module preload).
+        self.gate_group = QWidget(controls_group)
         gate_layout = QHBoxLayout(self.gate_group)
         gate_layout.setContentsMargins(0,0,0,0)
 
@@ -496,7 +498,8 @@ class BoxcarAveragerWidget(QWidget):
         controls_layout.addWidget(self.gate_group, 1, 0, 1, 4)
         
         # External Sync Controls (Hidden by default)
-        self.ext_group = QWidget()
+        # Same reasoning as gate_group: ensure a parent exists before hide/show.
+        self.ext_group = QWidget(controls_group)
         ext_layout = QHBoxLayout(self.ext_group)
         ext_layout.setContentsMargins(0,0,0,0)
         
