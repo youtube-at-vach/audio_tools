@@ -758,5 +758,12 @@
     "Stop": "Stop",
     "Analyzing...": "Analyzing...",
     "Glow:": "Glow:",
-    "Smooth Lines": "Smooth Lines"
+    "Smooth Lines": "Smooth Lines",
+    "Lock-in Frequency Counter": "Lock-in Frequency Counter",
+    "Precision Frequency & Phase Drift Measurement using Lock-in Principle.": "Precision Frequency & Phase Drift Measurement using Lock-in Principle.",
+    "Internal (NCO)": "Internal (NCO)",
+    "Loopback (Ref Out)": "Loopback (Ref Out)",
+    "NCO Frequency:": "NCO Frequency:",
+    "Δf: {0:.6f} Hz": "Δf: {0:.6f} Hz",
+    "φ: {0:.2f}°": "φ: {0:.2f}°"
 }

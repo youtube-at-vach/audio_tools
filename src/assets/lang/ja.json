@@ -705,7 +705,6 @@
     "Input": "入力",
     "dBV": "dBV",
     "dBFS": "dBFS",
-
     "Transient Analyzer": "トランジェントアナライザー",
     "Transient analysis using Wavelet Transform.": "ウェーブレット変換を用いた過渡解析。",
     "Controls": "操作",
@@ -731,5 +730,12 @@
     "Stop": "停止",
     "Analyzing...": "解析中...",
     "Glow:": "グロー:",
-    "Smooth Lines": "滑らかな線"
+    "Smooth Lines": "滑らかな線",
+    "Lock-in Frequency Counter": "ロックイン周波数カウンター",
+    "Precision Frequency & Phase Drift Measurement using Lock-in Principle.": "ロックイン原理を使用した高精度周波数・位相ドリフト測定。",
+    "Internal (NCO)": "内部 (NCO)",
+    "Loopback (Ref Out)": "ループバック (Ref出力)",
+    "NCO Frequency:": "NCO周波数:",
+    "Δf: {0:.6f} Hz": "Δf: {0:.6f} Hz",
+    "φ: {0:.2f}°": "φ: {0:.2f}°"
 }

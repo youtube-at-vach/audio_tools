@@ -63,11 +63,11 @@ class LockInFrequencyCounter(MeasurementModule):
 
     @property
     def name(self) -> str:
-        return "Lock-in Frequency Counter"
+        return tr("Lock-in Frequency Counter")
 
     @property
     def description(self) -> str:
-        return "Precision Frequency & Phase Drift Measurement using Lock-in Principle."
+        return tr("Precision Frequency & Phase Drift Measurement using Lock-in Principle.")
 
     def run(self, args: argparse.Namespace):
         print("CLI not implemented")
@@ -208,7 +208,7 @@ class LockInFrequencyCounter(MeasurementModule):
         if len(t_centers) > 1:
             slope, intercept = np.polyfit(t_centers, seg_phases_unwrapped, 1)
             delta_f = slope / (2*np.pi)
-
+ 
             if self._estimates_discarded < self._discard_initial_estimates:
                 self._estimates_discarded += 1
                 # Keep the UI stable at start: don't integrate or append history yet.
@@ -278,7 +278,7 @@ class LockInFrequencyCounterWidget(QWidget):
         
         # Ref Mode
         self.ref_combo = QComboBox()
-        self.ref_combo.addItems(["Internal (NCO)", "Loopback (Ref Out)"])
+        self.ref_combo.addItems([tr("Internal (NCO)"), tr("Loopback (Ref Out)")])
         self.ref_combo.currentIndexChanged.connect(self.on_ref_mode_changed)
         controls_layout.addRow(tr("Reference Mode:"), self.ref_combo)
 
@@ -349,11 +349,11 @@ class LockInFrequencyCounterWidget(QWidget):
         self.lbl_signal_status.setVisible(False)
         meters_layout.addWidget(self.lbl_signal_status)
 
-        self.lbl_delta_f = QLabel("Δf: 0.000 Hz")
+        self.lbl_delta_f = QLabel(tr("Δf: {0:.6f} Hz").format(0.0))
         self.lbl_delta_f.setStyleSheet("font-size: 16px; font-weight: bold;")
         meters_layout.addWidget(self.lbl_delta_f)
         
-        self.lbl_phase = QLabel("φ: 0.00°")
+        self.lbl_phase = QLabel(tr("φ: {0:.2f}°").format(0.0))
         self.lbl_phase.setStyleSheet("font-size: 16px; font-weight: bold;")
         meters_layout.addWidget(self.lbl_phase)
         
@@ -413,5 +413,6 @@ class LockInFrequencyCounterWidget(QWidget):
                     self.scatter_iq.setData(i_data, q_data)
             
             # Meters (Smoothed for consistency)
-            self.lbl_delta_f.setText(f"Δf: {delta_f_smooth:.6f} Hz") 
-            self.lbl_phase.setText(f"φ: {self.module.current_phase_deg:.2f}°")
+            self.lbl_delta_f.setText(tr("Δf: {0:.6f} Hz").format(delta_f_smooth)) 
+            self.lbl_phase.setText(tr("φ: {0:.2f}°").format(self.module.current_phase_deg))
+
