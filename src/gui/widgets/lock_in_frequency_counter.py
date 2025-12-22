@@ -38,7 +38,9 @@ class LockInFrequencyCounter(MeasurementModule):
 
         # Startup transient handling
         self._samples_received = 0
-        self._discard_initial_estimates = 3
+        # Only enable estimate discarding during real-time streaming (set in start_analysis).
+        # This keeps offline/unit-test calls to process_data() responsive.
+        self._discard_initial_estimates = 0
         self._estimates_discarded = 0
         
         # Plot Data Buffers
@@ -92,6 +94,7 @@ class LockInFrequencyCounter(MeasurementModule):
         self.signal_present = False
 
         self._samples_received = 0
+        self._discard_initial_estimates = 3
         self._estimates_discarded = 0
         
         self.time_axis.clear()
@@ -144,7 +147,13 @@ class LockInFrequencyCounter(MeasurementModule):
         # Wait until we have a fully populated buffer, then discard a few initial
         # estimates to avoid startup transients causing a "first point jump".
         if self._samples_received < self.buffer_size:
-            return
+            # In normal operation, samples arrive via the audio callback and the
+            # buffer starts as zeros. In unit tests / offline use, input_data may
+            # be populated directly without advancing _samples_received.
+            if self._samples_received == 0 and np.any(self.input_data):
+                pass
+            else:
+                return
 
         # Get Snapshot
         data = self.input_data
