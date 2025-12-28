@@ -573,7 +573,16 @@ class DistortionAnalyzerWidget(QWidget):
         
         # 3. Meters (Real-time only)
         self.meters_group = QGroupBox(tr("Measurements"))
-        meters_layout = QFormLayout()
+        self.meters_main_layout = QVBoxLayout()
+        self.meters_group.setLayout(self.meters_main_layout)
+        
+        # View switcher
+        self.meters_view_stack = QStackedWidget()
+        self.meters_main_layout.addWidget(self.meters_view_stack)
+        
+        # --- Basic View ---
+        basic_view = QWidget()
+        meters_layout = QFormLayout(basic_view)
         
         # THD+N row (value and dB on one line)
         thdn_row = QWidget()
@@ -610,7 +619,26 @@ class DistortionAnalyzerWidget(QWidget):
         meters_layout.addRow(QLabel(tr("IMD:")), self.imd_row_widget)
         self.imd_row_widget.setVisible(False)
         
-        self.meters_group.setLayout(meters_layout)
+        self.meters_view_stack.addWidget(basic_view)
+
+        # --- Detailed View ---
+        detailed_view = QWidget()
+        detailed_layout = QVBoxLayout(detailed_view)
+        detailed_layout.setContentsMargins(0, 5, 0, 5)
+        
+        self.detailed_label = QLabel()
+        self.detailed_label.setStyleSheet("font-family: 'Courier New', monospace; font-size: 14px; line-height: 1.5;")
+        self.detailed_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        detailed_layout.addWidget(self.detailed_label)
+        
+        self.meters_view_stack.addWidget(detailed_view)
+        
+        # Toggle button
+        self.view_toggle_btn = QPushButton(tr("Show Detailed"))
+        self.view_toggle_btn.setCheckable(True)
+        self.view_toggle_btn.clicked.connect(self.on_toggle_view)
+        self.meters_main_layout.addWidget(self.view_toggle_btn)
+
         left_panel.addWidget(self.meters_group)
         
         left_panel.addStretch()
@@ -902,6 +930,14 @@ class DistortionAnalyzerWidget(QWidget):
         self.action_btn.setText(tr("Start Measurement"))
         self.action_btn.setChecked(False)
 
+    def on_toggle_view(self, checked):
+        if checked:
+            self.meters_view_stack.setCurrentIndex(1)
+            self.view_toggle_btn.setText(tr("Show Basic"))
+        else:
+            self.meters_view_stack.setCurrentIndex(0)
+            self.view_toggle_btn.setText(tr("Show Detailed"))
+
     def on_sweep_result(self, result):
         self.module.sweep_results.append(result)
         
@@ -958,6 +994,23 @@ class DistortionAnalyzerWidget(QWidget):
             self.imd_label.setText(tr("{0:.4f} %").format(res['imd']))
             self.imd_db_label.setText(tr("{0:.2f} dB").format(res['imd_db']))
             
+            # Update Detailed Label for IMD
+            window_name = self.module.window_type.capitalize()
+            fft_size = self.module.buffer_size
+            input_level = 20 * np.log10(np.sqrt(np.mean(data**2)) + 1e-12)
+            
+            detailed_text = (
+                f"{tr('Input level:'):<15} {input_level:>10.1f} dBFS   ✔\n"
+                f"{tr('Window:'):<15} {window_name:>10}\n"
+                f"{tr('FFT size:'):<15} {fft_size:>10}\n"
+                f"{tr('Bandwidth:'):<15} {'20 kHz':>10}\n"
+                "--------------------------------\n"
+                f"{tr('IMD:'):<15} {res['imd']:>10.4f} %\n"
+                f"{tr('IMD (dB):'):<15} {res['imd_db']:>10.1f} dB\n"
+                "--------------------------------"
+            )
+            self.detailed_label.setText(detailed_text)
+
             mag_linear = self.module.apply_spectrum_averaging(mag_linear)
             mag_db = 20 * np.log10(mag_linear + 1e-12)
             self.spectrum_curve.setData(freqs[1:], mag_db[1:])
@@ -977,6 +1030,37 @@ class DistortionAnalyzerWidget(QWidget):
             self.thdn_db_label.setText(tr("{0:.2f} dB").format(results['thdn_db']))
             self.thd_label.setText(tr("{0:.4f} %").format(results['thd_percent']))
             self.sinad_label.setText(tr("{0:.2f} dB").format(results['sinad_db']))
+            
+            # ENOB Calculation
+            # ENOB is only valid near full scale (strict check).
+            # We'll use a threshold of -1.0 dBFS.
+            sinad = results['sinad_db']
+            enob_val = "--"
+            input_level = results['basic_wave']['amplitude_dbfs']
+            
+            if input_level >= -1.0:
+                 enob_calc = (sinad - 1.76) / 6.02
+                 enob_str = f"{enob_calc:>10.1f} bits   ✔"
+            else:
+                 enob_str = f"{'--':>10} bits"
+            
+            # Update Detailed Label
+            window_name = self.module.window_type.capitalize()
+            fft_size = self.module.buffer_size
+            bandwidth = "20 kHz" # Fixed bandwidth in current analysis
+            
+            detailed_text = (
+                f"{tr('Input level:'):<15} {input_level:>10.1f} dBFS   ✔\n"
+                f"{tr('Window:'):<15} {window_name:>10}\n"
+                f"{tr('FFT size:'):<15} {fft_size:>10}\n"
+                f"{tr('Bandwidth:'):<15} {bandwidth:>10}\n"
+                "--------------------------------\n"
+                f"{tr('THD+N:'):<15} {results['thdn_db']:>10.1f} dB\n"
+                f"{tr('SINAD:'):<15} {results['sinad_db']:>10.1f} dB\n"
+                f"{tr('ENOB:'):<15} {enob_str}\n"
+                "--------------------------------"
+            )
+            self.detailed_label.setText(detailed_text)
             
             # Update Harmonics Table & Bar Graph
             self.harmonics_table.setRowCount(len(results['harmonics']))
