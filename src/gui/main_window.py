@@ -113,6 +113,10 @@ def _load_module_class(module_key: str):
         from src.gui.widgets.transient_analyzer import TransientAnalyzer
 
         return TransientAnalyzer
+    if module_key == "Sound Quality Analyzer":
+        from src.gui.widgets.sound_quality_analyzer import SoundQualityAnalyzer
+
+        return SoundQualityAnalyzer
 
     raise KeyError(f"Unknown module key: {module_key}")
 
@@ -237,6 +241,7 @@ class MainWindow(QMainWindow):
             "Recorder / Player",
             "Inverse Filter",
             "Transient Analyzer",
+            "Sound Quality Analyzer",
         ]
         self.modules = [None] * len(self._module_keys)
         self.module_widgets = [None] * len(self._module_keys)
