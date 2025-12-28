@@ -3,11 +3,11 @@
 A collection of DIY audio measurement and analysis tools, grown organically as needed.
 「必要に応じて作り足しながら育ててきた DIY のオーディオ測定・解析ツール集」です。
 
-**Audio Measurement Suite** は、これらのツールを1つの GUI アプリにまとめた形で提供します。Python と PyQt6 製で、高精度な信号生成・解析・測定を直感的に扱えます。
+**MeasureLab** は、これらのツールを1つの GUI アプリにまとめた形で提供します。Python と PyQt6 製で、高精度な信号生成・解析・測定を直感的に扱えます。
 
 ## Quick glance (English)
 
-- PyQt6 desktop app bundling 20+ DIY modules: signal generator, spectrum/PSD analyzer, sound level & LUFS meters, lock-in/FRA, network/impedance analyzers, oscilloscope, spectrogram, distortion/IMD tools, recorder/player, inverse filter, frequency counter, noise profiler, boxcar averager, goniometer, and more.
+- PyQt6 desktop app bundling 25+ DIY modules: signal generator, spectrum/PSD analyzer, sound level & LUFS meters, lock-in/FRA, network/impedance analyzers, oscilloscope, spectrogram, distortion/IMD tools, recorder/player, inverse filter, frequency counter, lock-in frequency counter, sound quality analyzer, noise profiler, boxcar averager, goniometer, and more.
 - Built for hobbyists and engineers: device routing, calibration (input/output/SPL), multi-language UI, light/dark themes.
 - Runs on Windows/Linux; grab the AppImage/ZIP or `python main_gui.py` from source (Python 3.10+).
 
@@ -32,14 +32,16 @@ A collection of DIY audio measurement and analysis tools, grown organically as n
 14. **Lock-in THD+N Analyzer**: ロックイン検波を用いた THD/THD+N 測定専用モジュール。整数周期ウィンドウと平均化、残差履歴・プロット表示、ハーモニクス/残差バーグラフで歪み成分を可視化。
 15. **Impedance Analyzer**: インピーダンス測定とOSL (Open/Short/Load) キャリブレーション。複数プロットモード(Z/θ、R/X、Q、C/L、Nyquist、Smith Chart)、スイープ測定、キャリブレーション補間対応。
 16. **Inverse Filter**: キャリブレーションマップから逆特性FIRを設計し、音声ファイルへ適用するデコンボリューションツール。ゲイン上限による正則化、タップ数/スムージング指定、応答プレビュー、出力ピーク正規化付きのバッチ処理に対応。
-17. **Frequency Counter**: 高精度な周波数・周期測定。アラン分散プロット、キャリブレーション機能搭載。
-18. **Spectrogram**: 時間-周波数表示のスペクトログラム。周波数範囲制限、カラーマップ選択対応。
-19. **Boxcar Averager**: ボックスカー平均によるノイズ低減と過渡応答解析。内部パルス/ステップ生成、外部リファレンス同期(立ち上がり/立ち下がりエッジ)対応。
-20. **Goniometer**: ステレオ信号の位相相関と空間分布の可視化。Lissajous表示、フォスファー表示モード(残光効果)、カスタムカラーパレット対応。
-21. **Noise Profiler**: ノイズ特性の詳細解析ツール。1/fノイズ、ハムノイズ、ホワイトノイズの自動検出と定量化。平均化モード、LNAゲイン補正、熱雑音限界表示、等価抵抗表示対応。
-22. **Recorder & Player**: オーディオファイル(WAV/MP3/FLAC/OGG等)の録音・再生。リサンプリング、ループ再生、ソフトウェアループバック機能搭載。
-23. **Detachable Wrapper**: 任意ウィジットを独立ウィンドウとして切り離し・再接続できるUIユーティリティ。
-24. **Settings**: デバイス設定、キャリブレーション、テーマ選択、多言語切り替えなど。
+17. **Frequency Counter**: 高精度な周波数・周期測定。アラン分散プロット、ジッターヒストグラムおよび統計、キャリブレーション機能搭載。
+18. **Lock-in Frequency Counter**: ロックイン検波 (PSD) による高精度な周波数・位相偏差のトラッキング。微小な偏差の可視化と安定性の評価に対応。
+19. **Spectrogram**: 時間-周波数表示のスペクトログラム。周波数範囲制限、カラーマップ選択対応。
+20. **Boxcar Averager**: ボックスカー平均によるノイズ低減と過渡応答解析。内部パルス/ステップ生成、外部リファレンス同期(立ち上がり/立ち下がりエッジ)対応。
+21. **Goniometer**: ステレオ信号の位相相関と空間分布の可視化。Lissajous表示、フォスファー表示モード(残光効果)、カスタムカラーパレット対応。
+22. **Noise Profiler**: ノイズ特性の詳細解析ツール。1/fノイズ、ハムノイズ、ホワイトノイズの自動検出と定量化。平均化モード、LNAゲイン補正、熱雑音限界表示、等価抵抗表示対応。
+23. **Recorder & Player**: オーディオファイル(WAV/MP3/FLAC/OGG等)の録音・再生。リサンプリング、ループ再生、ソフトウェアループバック機能搭載。
+24. **Sound Quality Analyzer**: 音質評価指標 (Integrated/Momentary Loudness, Zwicker Sharpness, Roughness, Tonality) の数値およびグラフ表示。
+25. **Detachable Wrapper**: 任意ウィジットを独立ウィンドウとして切り離し・再接続できるUIユーティリティ。
+26. **Settings**: デバイス設定、キャリブレーション、テーマ選択、多言語切り替えなど。
 
 ### 🌍 多言語対応 (Localization)
 世界中の主要な言語をサポートしています。設定画面から切り替え可能です。
