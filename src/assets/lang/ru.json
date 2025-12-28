@@ -850,5 +850,22 @@
     "{0:.4f} %": "{0:.4f} %",
     "{0:d} m {1:.0f} s": "{0:d} m {1:.0f} s",
     "{0} dB": "{0} dB",
-    "{0} {1}": "{0} {1}"
+    "{0} {1}": "{0} {1}",
+    "Sound Quality Analyzer": "Анализатор качества звука",
+    "Loading file...": "Загрузка файла...",
+    "Calculating Loudness ({})...": "Расчет громкости ({})...",
+    "Calculating Sharpness ({})...": "Расчет резкости ({})...",
+    "Calculating Roughness ({})...": "Расчет шероховатости ({})...",
+    "Calculating Tonality ({})...": "Расчет тональности ({})...",
+    "Load File...": "Загрузить файл...",
+    "Summary Metrics": "Сводные метрики",
+    "Integrated Loudness": "Интегральная громкость",
+    "Mean Sharpness (acum)": "Средняя резкость (acum)",
+    "Mean Roughness": "Средняя шероховатость",
+    "Mean Tonality": "Средняя тональность",
+    "Loudness (Momentary)": "Громкость (Мгновенная)",
+    "Sharpness (Zwicker)": "Резкость (Zwicker)",
+    "Channel": "Канал",
+    "Roughness": "Шероховатость",
+    "Time Series": "Временные ряды"
 }

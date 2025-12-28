@@ -850,5 +850,22 @@
     "{0:.4f} %": "{0:.4f} %",
     "{0:d} m {1:.0f} s": "{0:d} m {1:.0f} s",
     "{0} dB": "{0} dB",
-    "{0} {1}": "{0} {1}"
+    "{0} {1}": "{0} {1}",
+    "Sound Quality Analyzer": "음질 분석기",
+    "Loading file...": "파일 로딩 중...",
+    "Calculating Loudness ({})...": "라우드니스 계산 중 ({})...",
+    "Calculating Sharpness ({})...": "샤프니스 계산 중 ({})...",
+    "Calculating Roughness ({})...": "러프니스 계산 중 ({})...",
+    "Calculating Tonality ({})...": "토널리티 계산 중 ({})...",
+    "Load File...": "파일 불러오기...",
+    "Summary Metrics": "요약 지표",
+    "Integrated Loudness": "적분 라우드니스",
+    "Mean Sharpness (acum)": "평균 샤프니스 (acum)",
+    "Mean Roughness": "평균 러프니스",
+    "Mean Tonality": "평균 토널리티",
+    "Loudness (Momentary)": "라우드니스 (순간)",
+    "Sharpness (Zwicker)": "샤프니스 (Zwicker)",
+    "Channel": "채널",
+    "Roughness": "러프니스",
+    "Time Series": "시계열"
 }

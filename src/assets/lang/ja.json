@@ -850,5 +850,22 @@
     "{0:.4f} %": "{0:.4f} %",
     "{0:d} m {1:.0f} s": "{0:d} m {1:.0f} s",
     "{0} dB": "{0} dB",
-    "{0} {1}": "{0} {1}"
+    "{0} {1}": "{0} {1}",
+    "Sound Quality Analyzer": "音質アナライザー",
+    "Loading file...": "ファイルを読み込み中...",
+    "Calculating Loudness ({})...": "ラウドネスを計算中 ({})...",
+    "Calculating Sharpness ({})...": "シャープネスを計算中 ({})...",
+    "Calculating Roughness ({})...": "ラフネスを計算中 ({})...",
+    "Calculating Tonality ({})...": "トーナリティを計算中 ({})...",
+    "Load File...": "ファイルを読み込む...",
+    "Summary Metrics": "サマリー指標",
+    "Integrated Loudness": "積分ラウドネス",
+    "Mean Sharpness (acum)": "平均シャープネス (acum)",
+    "Mean Roughness": "平均ラフネス",
+    "Mean Tonality": "平均トーナリティ",
+    "Loudness (Momentary)": "ラウドネス (瞬時)",
+    "Sharpness (Zwicker)": "シャープネス (Zwicker)",
+    "Channel": "チャンネル",
+    "Roughness": "ラフネス",
+    "Time Series": "時系列"
 }

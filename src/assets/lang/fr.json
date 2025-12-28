@@ -850,5 +850,22 @@
     "{0:.4f} %": "{0:.4f} %",
     "{0:d} m {1:.0f} s": "{0:d} m {1:.0f} s",
     "{0} dB": "{0} dB",
-    "{0} {1}": "{0} {1}"
+    "{0} {1}": "{0} {1}",
+    "Sound Quality Analyzer": "Analyseur de Qualité Sonore",
+    "Loading file...": "Chargement du fichier...",
+    "Calculating Loudness ({})...": "Calcul de la sonie ({})...",
+    "Calculating Sharpness ({})...": "Calcul de l'acuité ({})...",
+    "Calculating Roughness ({})...": "Calcul de la rugosité ({})...",
+    "Calculating Tonality ({})...": "Calcul de la tonalité ({})...",
+    "Load File...": "Charger un fichier...",
+    "Summary Metrics": "Métriques récapitulatives",
+    "Integrated Loudness": "Sonie intégrée",
+    "Mean Sharpness (acum)": "Acuité moyenne (acum)",
+    "Mean Roughness": "Rugosité moyenne",
+    "Mean Tonality": "Tonalité moyenne",
+    "Loudness (Momentary)": "Sonie (Momentanée)",
+    "Sharpness (Zwicker)": "Acuité (Zwicker)",
+    "Channel": "Canal",
+    "Roughness": "Rugosité",
+    "Time Series": "Séries temporelles"
 }

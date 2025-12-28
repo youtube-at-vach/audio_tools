@@ -850,5 +850,22 @@
     "{0:.4f} %": "{0:.4f} %",
     "{0:d} m {1:.0f} s": "{0:d} m {1:.0f} s",
     "{0} dB": "{0} dB",
-    "{0} {1}": "{0} {1}"
+    "{0} {1}": "{0} {1}",
+    "Sound Quality Analyzer": "音质分析仪",
+    "Loading file...": "正在加载文件...",
+    "Calculating Loudness ({})...": "正在计算响度 ({})...",
+    "Calculating Sharpness ({})...": "正在计算尖锐度 ({})...",
+    "Calculating Roughness ({})...": "正在计算粗糙度 ({})...",
+    "Calculating Tonality ({})...": "正在计算音调性 ({})...",
+    "Load File...": "加载文件...",
+    "Summary Metrics": "摘要指标",
+    "Integrated Loudness": "综合响度",
+    "Mean Sharpness (acum)": "平均尖锐度 (acum)",
+    "Mean Roughness": "平均粗糙度",
+    "Mean Tonality": "平均音调性",
+    "Loudness (Momentary)": "响度（瞬时）",
+    "Sharpness (Zwicker)": "尖锐度 (Zwicker)",
+    "Channel": "通道",
+    "Roughness": "粗糙度",
+    "Time Series": "时间序列"
 }

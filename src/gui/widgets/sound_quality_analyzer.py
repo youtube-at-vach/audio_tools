@@ -60,28 +60,28 @@ class AnalysisWorker(QThread):
                 
                 # 1. Loudness
                 if self._is_cancelled: return
-                self.progress_update.emit(int((current_step / total_steps) * 100), tr(f"Calculating Loudness ({ch_names[i]})..."))
+                self.progress_update.emit(int((current_step / total_steps) * 100), tr("Calculating Loudness ({})...").format(ch_names[i]))
                 l_res = self._calc_loudness(audio, samplerate)
                 ch_res.update(l_res)
                 current_step += 1
                 
                 # 2. Sharpness
                 if self._is_cancelled: return
-                self.progress_update.emit(int((current_step / total_steps) * 100), tr(f"Calculating Sharpness ({ch_names[i]})..."))
+                self.progress_update.emit(int((current_step / total_steps) * 100), tr("Calculating Sharpness ({})...").format(ch_names[i]))
                 s_res = self._calc_sharpness(audio, samplerate)
                 ch_res.update(s_res)
                 current_step += 1
                 
                 # 3. Roughness
                 if self._is_cancelled: return
-                self.progress_update.emit(int((current_step / total_steps) * 100), tr(f"Calculating Roughness ({ch_names[i]})..."))
+                self.progress_update.emit(int((current_step / total_steps) * 100), tr("Calculating Roughness ({})...").format(ch_names[i]))
                 r_res = self._calc_roughness(audio, samplerate)
                 ch_res.update(r_res)
                 current_step += 1
                 
                 # 4. Tonality
                 if self._is_cancelled: return
-                self.progress_update.emit(int((current_step / total_steps) * 100), tr(f"Calculating Tonality ({ch_names[i]})..."))
+                self.progress_update.emit(int((current_step / total_steps) * 100), tr("Calculating Tonality ({})...").format(ch_names[i]))
                 t_res = self._calc_tonality(audio, samplerate)
                 ch_res.update(t_res)
                 current_step += 1
