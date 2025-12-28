@@ -1,5 +1,33 @@
 # Changelog
 
+## [v0.2.7] - 2025-12-28
+
+### Added
+
+* Sound Quality Analyzer モジュールを追加 (Loudness, Sharpness, Roughness, Tonality)
+* Lock-in Frequency Counter モジュールを追加 (信号検出, ゲート制御, チャネル選択)
+* Frequency Counter にジッターヒストグラムおよび解析機能を追加
+* 測定メーターの詳細表示切り替え機能を追加 (ENOB 等の高度なメトリクス表示に対応)
+* 翻訳管理スクリプト (`check_trn_keys.py`) を追加
+
+### Changed
+
+* アプリケーション名を「MeasureLab」へ変更しブランディングを統一
+* Lock-in Frequency Counter の応答性改善と UI 整理を強化
+* 起動時スプラッシュスクリーンのメッセージ多言語化とフィードバック表示を強化
+* GUI 描画のチラつき（フラッシュ）防止を改善
+* AGENT.md の開発環境手順を更新 (グローバル Python 環境の推奨)
+
+### Removed
+
+* Lock-in Frequency Counter の位相ドリフトインジケーターを削除 (安定性向上のため)
+* 未使用または重複した翻訳キーを整理
+
+### Documentation
+
+* README および関連ドキュメントのブランディングを「MeasureLab」へ更新
+
+
 ## [v0.2.6] - 2025-12-21
 
 ### Changed
