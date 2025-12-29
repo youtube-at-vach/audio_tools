@@ -5,8 +5,8 @@ from scipy.fft import fft, rfft, rfftfreq
 import soundfile as sf
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QGroupBox, QGridLayout, QFileDialog, QTabWidget, QProgressBar)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+                             QGroupBox, QGridLayout, QFileDialog, QTabWidget, QProgressBar, QCheckBox)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 from src.core.localization import tr
@@ -18,9 +18,10 @@ class AnalysisWorker(QThread):
     results_ready = pyqtSignal(object)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, file_path):
+    def __init__(self, file_path, target_sr):
         super().__init__()
         self.file_path = file_path
+        self.target_sr = target_sr
         self._is_cancelled = False
 
     def cancel(self):
@@ -30,6 +31,12 @@ class AnalysisWorker(QThread):
         try:
             self.progress_update.emit(0, tr("Loading file..."))
             data, samplerate = sf.read(self.file_path)
+            
+            # Resampling if needed
+            if samplerate != self.target_sr:
+                self.progress_update.emit(5, tr("Resampling to {}Hz (Fast)...").format(self.target_sr))
+                data = self._fast_resample(data, samplerate, self.target_sr)
+                samplerate = self.target_sr            
             
             if self._is_cancelled:
                 return
@@ -87,6 +94,11 @@ class AnalysisWorker(QThread):
                 current_step += 1
                 
                 results["channels"].append(ch_res)
+
+            # Add raw audio for playback
+            # Store as float32 for audio engine
+            results["audio_data"] = data.astype(np.float32)
+            results["samplerate"] = samplerate
                 
             self.results_ready.emit(results)
             
@@ -94,6 +106,47 @@ class AnalysisWorker(QThread):
             import traceback
             traceback.print_exc()
             self.error_occurred.emit(str(e))
+
+    def _fast_resample(self, data, src_sr, target_sr):
+        """
+        Fast approximated resampling for preview/analysis purposes.
+        Uses integer slicing/repeating or linear interpolation.
+        """
+        if src_sr == target_sr:
+            return data
+
+        # Check for integer factors
+        # Downsampling (e.g. 96k -> 48k)
+        if src_sr > target_sr and src_sr % target_sr == 0:
+            step = src_sr // target_sr
+            # Simple decimation (no anti-aliasing filter here, but fast)
+            return data[::step]
+        
+        # Upsampling (e.g. 44.1k -> 88.2k)
+        if target_sr > src_sr and target_sr % src_sr == 0:
+            factor = target_sr // src_sr
+            # Simple repeat (zero-order hold)
+            if data.ndim == 1:
+                return np.repeat(data, factor)
+            else:
+                return np.repeat(data, factor, axis=0)
+
+        # General case: Linear Interpolation (np.interp)
+        # Calculate new time indices
+        old_len = len(data)
+        new_len = int(old_len * target_sr / src_sr)
+        
+        x_old = np.linspace(0, old_len - 1, old_len)
+        x_new = np.linspace(0, old_len - 1, new_len)
+        
+        if data.ndim == 1:
+            return np.interp(x_new, x_old, data).astype(data.dtype)
+        else:
+            # Handle each channel
+            resampled = np.zeros((new_len, data.shape[1]), dtype=data.dtype)
+            for i in range(data.shape[1]):
+                resampled[:, i] = np.interp(x_new, x_old, data[:, i])
+            return resampled
 
     def _calc_loudness(self, audio, sr):
         # Time-series (Momentary)
@@ -425,6 +478,18 @@ class SoundQualityAnalyzerWidget(QWidget):
         self.module = module
         self.worker = None
         self.analysis_results = None
+        self.audio_data = None
+        self.samplerate = 48000
+        # Playback State
+        self.is_playing = False
+        self.playback_position = 0 # In samples
+        self.callback_id = None
+        self.playback_timer = QTimer()
+        self.playback_timer.setInterval(50) # 20 fps update
+        self.playback_timer.timeout.connect(self.update_playback_cursor)
+        
+        self.cursors = [] # List of InfiniteLines
+
         self.init_ui()
 
     def init_ui(self):
@@ -432,6 +497,27 @@ class SoundQualityAnalyzerWidget(QWidget):
         
         # --- Top: Controls ---
         controls_layout = QHBoxLayout()
+        
+        self.play_btn = QPushButton("▶")
+        self.play_btn.setToolTip(tr("Play/Pause"))
+        self.play_btn.setFixedWidth(40)
+        self.play_btn.clicked.connect(self.toggle_playback)
+        self.play_btn.setEnabled(False)
+        controls_layout.addWidget(self.play_btn)
+        
+        self.stop_btn = QPushButton("■")
+        self.stop_btn.setToolTip(tr("Stop"))
+        self.stop_btn.setFixedWidth(40)
+        self.stop_btn.clicked.connect(self.stop_playback)
+        self.stop_btn.setEnabled(False)
+        controls_layout.addWidget(self.stop_btn)
+        
+        self.chk_follow = QCheckBox(tr("Follow Cursor"))
+        self.chk_follow.setChecked(True)
+        controls_layout.addWidget(self.chk_follow)
+        
+        # Spacer
+        controls_layout.addSpacing(10)
         
         self.file_label = QLabel(tr("No file selected"))
         controls_layout.addWidget(self.file_label, stretch=1)
@@ -516,7 +602,12 @@ class SoundQualityAnalyzerWidget(QWidget):
         
         self.plot_widget.clear()
         
-        self.worker = AnalysisWorker(self.current_file)
+        # Stop playback if running
+        if hasattr(self, 'stop_playback'):
+            self.stop_playback()
+        
+        target_sr = self.module.audio_engine.sample_rate
+        self.worker = AnalysisWorker(self.current_file, target_sr)
         self.worker.progress_update.connect(self.on_progress)
         self.worker.results_ready.connect(self.on_results)
         self.worker.error_occurred.connect(self.on_error)
@@ -528,12 +619,34 @@ class SoundQualityAnalyzerWidget(QWidget):
 
     def on_results(self, results):
         self.analysis_results = results
+        
+        # Store for playback
+        if "audio_data" in results:
+            self.audio_data = results["audio_data"] # (samples, ch) or (samples,)
+            self.samplerate = results["samplerate"]
+            self.playback_position = 0
+            self.is_playing = False
+            self.play_btn.setText("▶")
+        
         self.progress_bar.setVisible(False)
         self.analyze_btn.setEnabled(True)
         self.load_btn.setEnabled(True)
+        self.play_btn.setEnabled(True)
+        self.stop_btn.setEnabled(True)
         
         self.display_metrics(results)
         self.plot_series(results)
+        
+        # Ensure we have lines
+        self.cursors = []
+        for p in [self.p1, self.p2, self.p3]:
+            # Click event
+            p.scene().sigMouseClicked.connect(self.on_plot_clicked)
+            
+            # Add cursor
+            line = pg.InfiniteLine(pos=0, angle=90, pen=pg.mkPen('y', width=2))
+            p.addItem(line)
+            self.cursors.append(line)
 
     def on_error(self, msg):
         self.progress_bar.setVisible(False)
@@ -627,7 +740,150 @@ class SoundQualityAnalyzerWidget(QWidget):
              t_r = np.arange(len(ch["roughness_series"])) * ch["roughness_step"]
              p3.plot(t_r, ch["roughness_series"], pen=c, name=name)
 
+        self.p1 = p1
+        self.p2 = p2
+        self.p3 = p3 
+
         layout.addWidget(p1)
         layout.addWidget(p2)
         layout.addWidget(p3)
+
+    # --- Playback Logic ---
+
+    def toggle_playback(self):
+        if not hasattr(self, 'audio_data') or self.audio_data is None:
+            return
+
+        if self.is_playing:
+            # Pause
+            self.is_playing = False
+            self.play_btn.setText("▶")
+            if self.callback_id is not None:
+                self.module.audio_engine.unregister_callback(self.callback_id)
+                self.callback_id = None
+            self.playback_timer.stop()
+        else:
+            # Play
+            # Check end
+            if self.playback_position >= len(self.audio_data):
+                self.playback_position = 0
+                
+            self.is_playing = True
+            self.play_btn.setText("⏸")
+            self.callback_id = self.module.audio_engine.register_callback(self.audio_callback)
+            self.playback_timer.start()
+
+    def stop_playback(self):
+        self.is_playing = False
+        self.play_btn.setText("▶")
+        if self.callback_id is not None:
+             self.module.audio_engine.unregister_callback(self.callback_id)
+             self.callback_id = None
+        self.playback_timer.stop()
+        self.playback_position = 0
+        self.update_playback_cursor()
+
+    def audio_callback(self, indata, outdata, frames, time, status):
+        if not self.is_playing or self.audio_data is None:
+            outdata.fill(0)
+            return
+            
+        # Write to outdata
+        # audio_data can be mono (N,) or stereo (N, 2)
+        # outdata is (frames, 2) usually (depending on engine config, but we target stereo)
+        
+        remaining = len(self.audio_data) - self.playback_position
+        if remaining <= 0:
+            outdata.fill(0)
+            # Stop? Can't call GUI from thread easily.
+            # handled by timer check or just silence until timer stops it?
+            # ideally we just signal stop.
+            return
+            
+        n = min(frames, remaining)
+        
+        chunk = self.audio_data[self.playback_position : self.playback_position + n]
+        
+        # Map to output
+        # outdata shape is (frames, output_channels)
+        out_ch = outdata.shape[1]
+        
+        if chunk.ndim == 1:
+            # Mono to all ch
+            for c in range(out_ch):
+                outdata[:n, c] = chunk
+        else:
+            # Stereo input
+            in_ch = chunk.shape[1]
+            if in_ch >= out_ch:
+                outdata[:n, :] = chunk[:, :out_ch]
+            else:
+                outdata[:n, :in_ch] = chunk
+                # Fill rest with 0 or copy? 0 is safer.
+                outdata[:n, in_ch:] = 0
+                
+        if n < frames:
+             outdata[n:, :] = 0
+             
+        self.playback_position += n
+
+    def update_playback_cursor(self):
+        if self.audio_data is None: return
+        
+        # Check if finished
+        if self.playback_position >= len(self.audio_data):
+             self.stop_playback()
+             return
+             
+        t = self.playback_position / self.samplerate
+        
+        # Update lines
+        for line in self.cursors:
+            line.setValue(t)
+            
+        # Follow
+        if self.chk_follow.isChecked() and self.is_playing:
+            # Center view if out of range?
+            # Or just ensure visible.
+            # Simple: setXRange centered? That prevents manual pan.
+            # Just verify it's in view?
+            # pg plot auto-range might fight.
+            # Let's just do nothing for now, or maybe simple pan if continuous.
+            pass
+
+    def on_plot_clicked(self, event):
+        if self.audio_data is None: return
+        
+        # Map mouse to x
+        # event is GraphicsSceneMouseEvent
+        # We need to map to plot coordinates.
+        # This is tricky with multiple plots.
+        # simpler: use the plot widget that sent it?
+        
+        # We connected scene signal, so sender is scene.
+        # But we don't know which ViewBox.
+        # Actually ViewBox has sigClicked?
+        
+        # Let's try getting the position from event.scenePos() mapped to view.
+        # But we have 3 plots.
+        # Easier: capture which plot was clicked or just use event position if they are aligned vertically.
+        
+        # Better approach: 
+        # All plots share X axis.
+        # Just use the X coordinate of the mouse click in the scene, map to first plot's ViewBox.
+        
+        items = self.p1.scene().items(event.scenePos())
+        # Check if one of our plots is determining this.
+        # Simplified: Just grab X from the first plot assuming full width alignment
+        
+        pos = self.p1.plotItem.vb.mapSceneToView(event.scenePos())
+        t = pos.x()
+        
+        if t < 0: t = 0
+        max_t = len(self.audio_data) / self.samplerate
+        if t > max_t: t = max_t
+        
+        self.playback_position = int(t * self.samplerate)
+        self.update_playback_cursor()
+
 
