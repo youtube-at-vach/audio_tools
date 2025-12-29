@@ -36,6 +36,10 @@ class SignalParameters:
     noise_amplitude: float = 0.1
     phase_offset: float = 0.0 # Degrees
     
+    # PRBS Parameters
+    prbs_order: int = 15
+    prbs_seed: int = 1
+    
     # Internal state (not shared/copied usually, but kept here for simplicity per channel)
     _phase: float = 0.0
     _sweep_time: float = 0.0
@@ -216,6 +220,42 @@ class SignalGenerator(MeasurementModule):
         
         return sine * envelope
 
+    def _generate_prbs(self, params: SignalParameters, sample_rate):
+        """Generates a Pseudo-Random Binary Sequence (PRBS/MLS) with a seed."""
+        # PRBS is essentially MLS. We use scipy.signal.max_len_seq
+        # The 'seed' controls the initial state.
+        
+        order = params.prbs_order
+        if order < 2: order = 2
+        if order > 30: order = 30 # Limit for sanity
+        
+        try:
+            import scipy.signal
+            # state must be length 'order'
+            # We construct a state from the seed
+            if params.prbs_seed == 0:
+                # Avoid all-zero state which is invalid for LFSR (unless XNOR, but typically XOR)
+                # max_len_seq assumes default state is all 1s if not provided.
+                # Let's ensure we have a valid state.
+                state = np.ones(order, dtype=np.int8)
+            else:
+                np.random.seed(params.prbs_seed)
+                # Ensure at least one non-zero
+                state = np.random.randint(0, 2, size=order, dtype=np.int8)
+                if np.sum(state) == 0:
+                    state[0] = 1
+            
+            seq, _ = scipy.signal.max_len_seq(order, state=state)
+            signal = seq.astype(float) * 2 - 1
+            return signal
+            
+        except ImportError:
+            print("scipy not found, cannot generate PRBS efficiently")
+            return np.zeros(100)
+        except Exception as e:
+            print(f"Error generating PRBS: {e}")
+            return np.zeros(100)
+
     def _prepare_buffer(self, params: SignalParameters, sample_rate):
         if params.waveform == 'noise':
             params._buffer = self._generate_noise_buffer(params, sample_rate)
@@ -225,6 +265,8 @@ class SignalGenerator(MeasurementModule):
             params._buffer = self._generate_mls(params, sample_rate)
         elif params.waveform == 'burst':
             params._buffer = self._generate_burst(params, sample_rate)
+        elif params.waveform == 'prbs':
+            params._buffer = self._generate_prbs(params, sample_rate)
         else:
             params._buffer = None
         params._buffer_index = 0
@@ -435,7 +477,7 @@ class SignalGeneratorWidget(QWidget):
         
         # Waveform
         self.wave_combo = QComboBox()
-        self.wave_combo.addItems(['sine', 'square', 'triangle', 'sawtooth', 'pulse', 'tone_noise', 'noise', 'multitone', 'mls', 'burst'])
+        self.wave_combo.addItems(['sine', 'square', 'triangle', 'sawtooth', 'pulse', 'tone_noise', 'noise', 'multitone', 'mls', 'burst', 'prbs'])
         self.wave_combo.currentTextChanged.connect(self.on_wave_changed)
         basic_layout.addRow(tr("Waveform:"), self.wave_combo)
         
@@ -508,6 +550,26 @@ class SignalGeneratorWidget(QWidget):
         self.saw_type_combo.addItems(['Raising', 'Falling'])
         self.saw_type_combo.currentTextChanged.connect(lambda v: self.update_param('sawtooth_type', v))
         saw_form.addRow(tr("Type:"), self.saw_type_combo)
+
+        # 8. PRBS Params
+        self.prbs_widget = QWidget()
+        prbs_form = QFormLayout(self.prbs_widget)
+        
+        self.prbs_order_combo = QComboBox()
+        # Common PRBS orders: 7, 9, 11, 15, 20, 23, 31 (31 might be too large for buffer? 2GB buffer.. let's limit to 20 ~1M samples)
+        self.prbs_order_combo.addItems([str(i) for i in [7, 9, 10, 11, 15, 17, 20, 23]])
+        self.prbs_order_combo.setCurrentText("15")
+        self.prbs_order_combo.currentTextChanged.connect(lambda v: self.update_param('prbs_order', int(v)))
+        prbs_form.addRow(tr("Order (N):"), self.prbs_order_combo)
+        
+        self.prbs_seed_spin = QDoubleSpinBox() # Using DoubleSpinBox for int as it's often more flexible or just use SpinBox
+        # Actually QSpinBox is better for ints
+        from PyQt6.QtWidgets import QSpinBox
+        self.prbs_seed_spin = QSpinBox()
+        self.prbs_seed_spin.setRange(0, 999999)
+        self.prbs_seed_spin.setValue(1)
+        self.prbs_seed_spin.valueChanged.connect(lambda v: self.update_param('prbs_seed', v))
+        prbs_form.addRow(tr("Seed:"), self.prbs_seed_spin)
         
         self.param_layout.addWidget(self.noise_widget)
         self.param_layout.addWidget(self.multitone_widget)
@@ -516,6 +578,7 @@ class SignalGeneratorWidget(QWidget):
         self.param_layout.addWidget(self.pulse_widget)
         self.param_layout.addWidget(self.tn_widget)
         self.param_layout.addWidget(self.sawtooth_widget)
+        self.param_layout.addWidget(self.prbs_widget)
         self.noise_widget.hide()
         self.multitone_widget.hide()
         self.mls_widget.hide()
@@ -523,6 +586,7 @@ class SignalGeneratorWidget(QWidget):
         self.pulse_widget.hide()
         self.tn_widget.hide()
         self.sawtooth_widget.hide()
+        self.prbs_widget.hide()
         
         basic_layout.addRow(self.param_stack)
         
@@ -643,11 +707,12 @@ class SignalGeneratorWidget(QWidget):
         self.mt_count_spin.setValue(params.multitone_count)
         self.mls_order_combo.setCurrentText(str(params.mls_order))
         self.burst_on_spin.setValue(params.burst_on_cycles)
-        self.burst_on_spin.setValue(params.burst_on_cycles)
         self.burst_off_spin.setValue(params.burst_off_cycles)
         self.pulse_width_spin.setValue(params.pulse_width)
         self.saw_type_combo.setCurrentText(params.sawtooth_type)
         self.noise_amp_spin.setValue(params.noise_amplitude)
+        self.prbs_order_combo.setCurrentText(str(params.prbs_order))
+        if hasattr(self, 'prbs_seed_spin'): self.prbs_seed_spin.setValue(params.prbs_seed)
         
         self.freq_spin.setValue(params.frequency)
         self.freq_slider.setValue(self._freq_to_slider(params.frequency))
@@ -671,6 +736,7 @@ class SignalGeneratorWidget(QWidget):
         widgets = [
             self.wave_combo, self.noise_combo, self.mt_count_spin, self.mls_order_combo,
             self.burst_on_spin, self.burst_off_spin, self.pulse_width_spin, self.saw_type_combo, self.noise_amp_spin,
+            self.prbs_order_combo, self.prbs_seed_spin,
             self.freq_spin, self.freq_slider, self.phase_spin, self.phase_slider,
             self.amp_spin, self.amp_slider, self.sweep_group, self.start_freq_spin,
             self.end_freq_spin, self.duration_spin, self.log_check
@@ -711,6 +777,8 @@ class SignalGeneratorWidget(QWidget):
         dst.sawtooth_type = src.sawtooth_type
         dst.noise_amplitude = src.noise_amplitude
         dst.phase_offset = src.phase_offset
+        dst.prbs_order = src.prbs_order
+        dst.prbs_seed = src.prbs_seed
 
     def on_route_changed(self, btn):
         if self.route_l.isChecked():
@@ -730,7 +798,9 @@ class SignalGeneratorWidget(QWidget):
         self.burst_widget.hide()
         self.pulse_widget.hide()
         self.tn_widget.hide()
+        self.tn_widget.hide()
         self.sawtooth_widget.hide()
+        self.prbs_widget.hide()
         
         if val == 'noise': self.noise_widget.show()
         elif val == 'multitone': self.multitone_widget.show()
@@ -739,8 +809,9 @@ class SignalGeneratorWidget(QWidget):
         elif val == 'pulse': self.pulse_widget.show()
         elif val == 'tone_noise': self.tn_widget.show()
         elif val == 'sawtooth': self.sawtooth_widget.show()
+        elif val == 'prbs': self.prbs_widget.show()
         
-        use_freq = val not in ['noise', 'mls']
+        use_freq = val not in ['noise', 'mls', 'prbs']
         self.freq_spin.setEnabled(use_freq)
         self.freq_slider.setEnabled(use_freq)
 
