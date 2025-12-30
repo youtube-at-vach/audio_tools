@@ -117,6 +117,10 @@ def _load_module_class(module_key: str):
         from src.gui.widgets.sound_quality_analyzer import SoundQualityAnalyzer
 
         return SoundQualityAnalyzer
+    if module_key == "Timecode Monitor & Generator":
+        from src.gui.widgets.timecode_monitor import TimecodeMonitor
+
+        return TimecodeMonitor
 
     raise KeyError(f"Unknown module key: {module_key}")
 
@@ -242,6 +246,7 @@ class MainWindow(QMainWindow):
             "Inverse Filter",
             "Transient Analyzer",
             "Sound Quality Analyzer",
+            "Timecode Monitor & Generator",
         ]
         self.modules = [None] * len(self._module_keys)
         self.module_widgets = [None] * len(self._module_keys)
