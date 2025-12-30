@@ -50,44 +50,49 @@ class LTCEncoder:
                 bits[idx] = 1 if val else 0
                 
         # Timecode Data (BCD)
+        # IMPORTANT: these are BCD digits, not binary values.
+
         # Frame
-        set_b(0, ff & 1)
-        set_b(1, ff & 2)
-        set_b(2, ff & 4)
-        set_b(3, ff & 8)
-        set_b(8, (ff // 10) & 1)
-        set_b(9, (ff // 10) & 2)
+        ff_u = int(ff) % 10
+        ff_t = int(ff) // 10
+        set_b(0, ff_u & 1)
+        set_b(1, ff_u & 2)
+        set_b(2, ff_u & 4)
+        set_b(3, ff_u & 8)
+        set_b(8, ff_t & 1)
+        set_b(9, ff_t & 2)
         
         # Seconds
-        set_b(16, ss & 1)
-        set_b(17, ss & 2)
-        set_b(18, ss & 4)
-        set_b(19, ss & 8)
-        set_b(24, (ss // 10) & 1)
-        set_b(25, (ss // 10) & 2)
-        set_b(26, (ss // 10) & 4)
+        ss_u = int(ss) % 10
+        ss_t = int(ss) // 10
+        set_b(16, ss_u & 1)
+        set_b(17, ss_u & 2)
+        set_b(18, ss_u & 4)
+        set_b(19, ss_u & 8)
+        set_b(24, ss_t & 1)
+        set_b(25, ss_t & 2)
+        set_b(26, ss_t & 4)
         
         # Minutes
-        set_b(32, mm & 1)
-        set_b(33, mm & 2)
-        set_b(34, mm & 4)
-        set_b(35, mm & 8)
-        set_b(40, (mm // 10) & 1)
-        set_b(41, (mm // 10) & 2)
-        set_b(42, (mm // 10) & 4)
+        mm_u = int(mm) % 10
+        mm_t = int(mm) // 10
+        set_b(32, mm_u & 1)
+        set_b(33, mm_u & 2)
+        set_b(34, mm_u & 4)
+        set_b(35, mm_u & 8)
+        set_b(40, mm_t & 1)
+        set_b(41, mm_t & 2)
+        set_b(42, mm_t & 4)
         
         # Hours
-        set_b(48, hh & 1)
-        set_b(49, hh & 2)
-        set_b(50, hh & 4)
-        set_b(51, hh & 8) # Bit 51 is technically BGF0 but often used for Hours tens bit 2 (10+20=30? no max 23)
-                          # SMPTE: Bits 56,57 are Hours tens (wait, looking at spec)
-                          # Bits 0-3: Frame unit, 8-9: Frame tens
-                          # Bits 16-19: Sec unit, 24-26: Sec tens
-                          # Bits 32-35: Min unit, 40-42: Min tens
-                          # Bits 48-51: Hour unit, 56-57: Hour tens
-        set_b(56, (hh // 10) & 1)
-        set_b(57, (hh // 10) & 2)
+        hh_u = int(hh) % 10
+        hh_t = int(hh) // 10
+        set_b(48, hh_u & 1)
+        set_b(49, hh_u & 2)
+        set_b(50, hh_u & 4)
+        set_b(51, hh_u & 8)
+        set_b(56, hh_t & 1)
+        set_b(57, hh_t & 2)
         
         # Sync Word (Bits 64-79): 0011 1111 1111 1101
         sync_pattern = [0,0,1,1, 1,1,1,1, 1,1,1,1, 1,1,0,1]
@@ -169,6 +174,7 @@ class LTCDecoder:
         self.sample_rate = sample_rate
         self.fps = fps
         self.samples_since_last_zc = 0
+        self._last_sign = None
         self.bit_stream = 0
         self.bits_count = 0
         self.current_bits = []
@@ -185,29 +191,58 @@ class LTCDecoder:
         
     def process_samples(self, samples: np.ndarray):
         """Process a chunk of audio samples. Returns True if a new frame was decoded."""
-        # Vectorized ZC detection
-        # Note: We assume samples is mono
-        signs = np.signbit(samples)
-        diffs = np.diff(signs)
-        zero_crossings = np.where(diffs)[0]
-        
-        frames_in_chunk = len(samples)
+        # Vectorized zero-crossing (sign change) detection.
+        # IMPORTANT: we must not miss a transition that occurs exactly at the
+        # buffer boundary. We therefore track the sign of the last sample from
+        # the previous call and synthesize a crossing at position 0 if needed.
+        if samples is None:
+            return False
+
+        samples = np.asarray(samples)
+        frames_in_chunk = int(samples.shape[0])
+        if frames_in_chunk <= 0:
+            return False
+
         decoded_any = False
-        
-        if len(zero_crossings) > 0:
-            # Handle first ZC relative to last buffer residual
-            first_dist = zero_crossings[0] + self.samples_since_last_zc
-            dists = np.diff(zero_crossings)
-            dists = np.insert(dists, 0, first_dist)
-            
-            self.samples_since_last_zc = frames_in_chunk - 1 - zero_crossings[-1]
-            
-            for d in dists:
-                if self._process_pulse(d):
+
+        signs = np.signbit(samples)
+        if self._last_sign is None:
+            self._last_sign = bool(signs[0])
+
+        crossing_positions = []
+
+        # Boundary crossing between last sample of previous chunk and first sample of this chunk.
+        if bool(signs[0]) != bool(self._last_sign):
+            crossing_positions.append(0)
+
+        # Intra-chunk crossings: position i means crossing between i-1 and i.
+        intra = np.nonzero(signs[1:] != signs[:-1])[0]
+        if intra.size:
+            crossing_positions.extend((intra + 1).tolist())
+
+        if crossing_positions:
+            crossing_positions.sort()
+
+            # Convert crossing positions into pulse widths.
+            prev_pos = None
+            for pos in crossing_positions:
+                if prev_pos is None:
+                    d = pos + self.samples_since_last_zc
+                else:
+                    d = pos - prev_pos
+
+                if d > 0 and self._process_pulse(float(d)):
                     decoded_any = True
+
+                prev_pos = pos
+
+            # Residual samples since the last crossing within this chunk.
+            last_pos = crossing_positions[-1]
+            self.samples_since_last_zc = frames_in_chunk - last_pos
         else:
             self.samples_since_last_zc += frames_in_chunk
-            
+
+        self._last_sign = bool(signs[-1])
         return decoded_any
 
     def _process_pulse(self, d: float) -> bool:
@@ -336,6 +371,7 @@ class TimecodeMonitor(MeasurementModule):
         self._gen_current = None
         self._gen_pos = 0
         self.frames_generated = 0
+        self._tod_epoch_base = None
         
         # Decoder State
         self.decoder = LTCDecoder(48000, 30.0)
@@ -358,6 +394,7 @@ class TimecodeMonitor(MeasurementModule):
         self._gen_pos = 0
         self.frames_generated = 0
         self.free_run_start_time = 0.0
+        self._tod_epoch_base = None
 
     @property
     def name(self) -> str:
@@ -386,6 +423,9 @@ class TimecodeMonitor(MeasurementModule):
         self.is_running = True
         self.encoder.sample_rate = self.audio_engine.sample_rate
         self.encoder.set_fps(self.fps)
+
+        # Reset TOD generator epoch base for a stable timebase.
+        self._tod_epoch_base = None
         
         # Reset Decoder
         self.decoder = LTCDecoder(self.audio_engine.sample_rate, self.fps)
@@ -462,16 +502,10 @@ class TimecodeMonitor(MeasurementModule):
         return out
 
     def _generate_next_frame(self):
-        # Determine time
-        t_now = time.time()
-        
-        # Apply output offset (advance time)
-        t_target = t_now + (self.gen_offset_ms / 1000.0)
-        
         if self.generator_mode == 'free':
             # Relative to start
             if self.free_run_start_time == 0:
-                self.free_run_start_time = t_now
+                self.free_run_start_time = time.time()
             
             # Simple frame counter
             total_frames = self.frames_generated
@@ -492,20 +526,36 @@ class TimecodeMonitor(MeasurementModule):
             ff = int(rem % fps)
             
             self.frames_generated += 1
-            
+
         else:
-            # Time of Day (UTC)
-            # Keep internal time base consistent (UTC). Display-time conversion is handled separately.
-            dt = time.gmtime(t_target)
-            hh = dt.tm_hour
-            mm = dt.tm_min
-            ss = dt.tm_sec
-            # Calculate frame from fractional second
-            frac = t_target - int(t_target)
-            ff = int(frac * self.fps)
-            
-            # Frame continuity is tricky with TOD if we just jump.
-            # But TOD generator usually just encodes current time.
+            # Time of Day (system local time).
+            # Use a stable epoch base + frame counter so we don't jitter/jump due
+            # to callback scheduling or buffer prefill.
+            if self._tod_epoch_base is None:
+                self._tod_epoch_base = time.time()
+
+            fps = float(self.fps) if self.fps else 30.0
+            if fps <= 0:
+                fps = 30.0
+
+            t_target = self._tod_epoch_base + (self.frames_generated / fps) + (self.gen_offset_ms / 1000.0)
+            dt = datetime.fromtimestamp(t_target).astimezone()
+
+            hh = dt.hour
+            mm = dt.minute
+            ss = dt.second
+
+            frac = t_target - math.floor(t_target)
+            ff = int(frac * fps)
+            nominal_fps = int(round(fps))
+            if nominal_fps <= 0:
+                nominal_fps = 30
+            if ff < 0:
+                ff = 0
+            elif ff >= nominal_fps:
+                ff = nominal_fps - 1
+
+            self.frames_generated += 1
             
         samples = self.encoder.generate_frame(hh, mm, ss, ff)
         self.gen_buffer.append(samples)
@@ -547,10 +597,10 @@ class TimecodeMonitor(MeasurementModule):
     def _get_display_timecode(self) -> str:
         """Return display timecode string.
 
-        If enabled, we interpret the decoded time-of-day as UTC and convert for display only.
-        (LTC does not carry a date; we use today's UTC date for conversion.)
+        Applies optional input delay compensation and optional timezone display conversion.
+        (LTC does not carry a date; we use today's local date for conversion.)
         """
-        if not self.display_tz_enabled:
+        if (not self.display_tz_enabled) and (abs(float(self.input_offset_ms)) < 1e-9):
             return self.decoded_tc
 
         parsed = self._parse_tc(self.decoded_tc)
@@ -563,39 +613,47 @@ class TimecodeMonitor(MeasurementModule):
             fps = 30.0
 
         try:
-            utc_today = datetime.now(timezone.utc).date()
+            local_today = datetime.now().astimezone().date()
             base = datetime(
-                utc_today.year,
-                utc_today.month,
-                utc_today.day,
+                local_today.year,
+                local_today.month,
+                local_today.day,
                 hh,
                 mm,
                 min(ss, 59),
                 0,
-                tzinfo=timezone.utc,
+                tzinfo=datetime.now().astimezone().tzinfo,
             )
-            dt_utc = base + timedelta(seconds=(ff / fps))
 
-            tz_name = (self.display_tz_name or "System").strip()
-            if tz_name.lower() == "utc":
-                tz = timezone.utc
-            elif tz_name.lower() == "system":
-                tz = datetime.now().astimezone().tzinfo
-            else:
-                if ZoneInfo is None:
+            dt_src = base + timedelta(seconds=(ff / fps)) + timedelta(milliseconds=float(self.input_offset_ms))
+
+            if self.display_tz_enabled:
+                tz_name = (self.display_tz_name or "System").strip()
+                if tz_name.lower() == "utc":
+                    tz = timezone.utc
+                elif tz_name.lower() == "system":
                     tz = datetime.now().astimezone().tzinfo
                 else:
-                    tz = ZoneInfo(tz_name)
+                    if ZoneInfo is None:
+                        tz = datetime.now().astimezone().tzinfo
+                    else:
+                        tz = ZoneInfo(tz_name)
 
-            dt_local = dt_utc.astimezone(tz)
-            frac = dt_local.microsecond / 1_000_000.0
-            ff_local = int(frac * fps)
-            if ff_local < 0:
-                ff_local = 0
-            elif ff_local >= int(round(fps)):
-                ff_local = int(round(fps)) - 1
+                dt_disp = dt_src.astimezone(tz)
+            else:
+                dt_disp = dt_src
 
-            return f"{dt_local.hour:02}:{dt_local.minute:02}:{dt_local.second:02}:{ff_local:02}"
+            nominal_fps = int(round(fps))
+            if nominal_fps <= 0:
+                nominal_fps = 30
+            frac = dt_disp.microsecond / 1_000_000.0
+            ff_disp = int(frac * fps)
+            if ff_disp < 0:
+                ff_disp = 0
+            elif ff_disp >= nominal_fps:
+                ff_disp = nominal_fps - 1
+
+            return f"{dt_disp.hour:02}:{dt_disp.minute:02}:{dt_disp.second:02}:{ff_disp:02}"
         except Exception:
             return self.decoded_tc
 
