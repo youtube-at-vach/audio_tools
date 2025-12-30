@@ -598,9 +598,14 @@ class TimecodeMonitor(MeasurementModule):
         """Return display timecode string.
 
         Applies optional input delay compensation and optional timezone display conversion.
-        (LTC does not carry a date; we use today's local date for conversion.)
+        (LTC does not carry a date; we use today's UTC date for TZ conversion.)
         """
-        if (not self.display_tz_enabled) and (abs(float(self.input_offset_ms)) < 1e-9):
+        try:
+            input_offset_ms = float(self.input_offset_ms)
+        except Exception:
+            input_offset_ms = 0.0
+
+        if (not self.display_tz_enabled) and (abs(input_offset_ms) < 1e-9):
             return self.decoded_tc
 
         parsed = self._parse_tc(self.decoded_tc)
@@ -613,39 +618,56 @@ class TimecodeMonitor(MeasurementModule):
             fps = 30.0
 
         try:
-            local_today = datetime.now().astimezone().date()
-            base = datetime(
-                local_today.year,
-                local_today.month,
-                local_today.day,
-                hh,
-                mm,
-                min(ss, 59),
-                0,
-                tzinfo=datetime.now().astimezone().tzinfo,
-            )
-
-            dt_src = base + timedelta(seconds=(ff / fps)) + timedelta(milliseconds=float(self.input_offset_ms))
-
-            if self.display_tz_enabled:
-                tz_name = (self.display_tz_name or "System").strip()
-                if tz_name.lower() == "utc":
-                    tz = timezone.utc
-                elif tz_name.lower() == "system":
-                    tz = datetime.now().astimezone().tzinfo
-                else:
-                    if ZoneInfo is None:
-                        tz = datetime.now().astimezone().tzinfo
-                    else:
-                        tz = ZoneInfo(tz_name)
-
-                dt_disp = dt_src.astimezone(tz)
-            else:
-                dt_disp = dt_src
-
             nominal_fps = int(round(fps))
             if nominal_fps <= 0:
                 nominal_fps = 30
+
+            # Seconds-of-day from decoded LTC.
+            total_seconds = (hh * 3600.0) + (mm * 60.0) + float(min(ss, 59)) + (float(ff) / fps)
+            total_seconds += (input_offset_ms / 1000.0)
+
+            if not self.display_tz_enabled:
+                # Pure offset + wrap within 24h.
+                total_seconds = total_seconds % 86400.0
+                disp_h = int(total_seconds // 3600)
+                total_seconds -= disp_h * 3600
+                disp_m = int(total_seconds // 60)
+                total_seconds -= disp_m * 60
+                disp_s = int(total_seconds)
+                frac = total_seconds - disp_s
+                disp_f = int(frac * fps)
+                if disp_f < 0:
+                    disp_f = 0
+                elif disp_f >= nominal_fps:
+                    disp_f = nominal_fps - 1
+                return f"{disp_h:02}:{disp_m:02}:{disp_s:02}:{disp_f:02}"
+
+            # TZ display enabled: interpret decoded time-of-day as UTC.
+            utc_today = datetime.now(timezone.utc).date()
+            base_utc = datetime(
+                utc_today.year,
+                utc_today.month,
+                utc_today.day,
+                0,
+                0,
+                0,
+                0,
+                tzinfo=timezone.utc,
+            )
+            dt_utc = base_utc + timedelta(seconds=total_seconds)
+
+            tz_name = (self.display_tz_name or "System").strip()
+            if tz_name.lower() == "utc":
+                tz = timezone.utc
+            elif tz_name.lower() == "system":
+                tz = datetime.now().astimezone().tzinfo
+            else:
+                if ZoneInfo is None:
+                    tz = datetime.now().astimezone().tzinfo
+                else:
+                    tz = ZoneInfo(tz_name)
+
+            dt_disp = dt_utc.astimezone(tz)
             frac = dt_disp.microsecond / 1_000_000.0
             ff_disp = int(frac * fps)
             if ff_disp < 0:
@@ -742,6 +764,7 @@ class TimecodeMonitorWidget(QWidget):
         self.tz_combo.setCurrentText(self.module.display_tz_name or "System")
         self.tz_combo.currentTextChanged.connect(self.on_display_tz_changed)
         c_layout.addWidget(self.tz_combo, 1, 6)
+        self.tz_combo.setEnabled(bool(self.module.display_tz_enabled))
         
         # Offsets
         c_layout.addWidget(QLabel(tr("In Delay (ms):")), 0, 3)
@@ -803,6 +826,7 @@ class TimecodeMonitorWidget(QWidget):
 
     def on_display_tz_toggled(self, checked: bool):
         self.module.display_tz_enabled = bool(checked)
+        self.tz_combo.setEnabled(bool(checked))
 
     def on_display_tz_changed(self, text: str):
         self.module.display_tz_name = str(text).strip() if text else "System"
