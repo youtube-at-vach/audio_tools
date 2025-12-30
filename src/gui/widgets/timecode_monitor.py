@@ -830,6 +830,13 @@ class TimecodeMonitorWidget(QWidget):
         
     def on_gen_toggle(self, checked):
         self.module.generator_enabled = checked
+        if checked:
+            # Generator再開時に状態をリセット
+            self.module.frames_generated = 0
+            self.module.gen_buffer.clear()
+            self.module._gen_current = None
+            self.module._gen_pos = 0
+            self.module._tod_epoch_base = None
         self.gen_btn.setText(tr("Stop Generator") if checked else tr("Enable Generator"))
 
     def on_display_tz_toggled(self, checked: bool):
