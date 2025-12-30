@@ -494,8 +494,9 @@ class TimecodeMonitor(MeasurementModule):
             self.frames_generated += 1
             
         else:
-            # Time of Day
-            dt = time.localtime(t_target)
+            # Time of Day (UTC)
+            # Keep internal time base consistent (UTC). Display-time conversion is handled separately.
+            dt = time.gmtime(t_target)
             hh = dt.tm_hour
             mm = dt.tm_min
             ss = dt.tm_sec
