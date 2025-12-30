@@ -430,6 +430,12 @@ class TimecodeMonitor(MeasurementModule):
         # Reset Decoder
         self.decoder = LTCDecoder(self.audio_engine.sample_rate, self.fps)
         
+        # Reset Generator State to prevent drift
+        self.frames_generated = 0
+        self.gen_buffer.clear()
+        self._gen_current = None
+        self._gen_pos = 0
+        
         def callback(indata, outdata, frames, time_info, status):
             sr = self.audio_engine.sample_rate
 
@@ -539,7 +545,9 @@ class TimecodeMonitor(MeasurementModule):
                 fps = 30.0
 
             t_target = self._tod_epoch_base + (self.frames_generated / fps) + (self.gen_offset_ms / 1000.0)
-            dt = datetime.fromtimestamp(t_target).astimezone()
+            t_target = self._tod_epoch_base + (self.frames_generated / fps) + (self.gen_offset_ms / 1000.0)
+            # Use UTC for LTC generation always. Display converts to Local if needed.
+            dt = datetime.fromtimestamp(t_target, timezone.utc)
 
             hh = dt.hour
             mm = dt.minute
