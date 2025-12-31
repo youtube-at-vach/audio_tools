@@ -441,10 +441,31 @@ class TimecodeMonitor(MeasurementModule):
         self._cal_lock = threading.Lock()
         self._cal_active = False
         self._cal_key = "L"
+        self._cal_prev_gen_enabled: Optional[bool] = None
         self._cal_samples: deque = deque()
         self._cal_need = 30
         self._cal_started_at = 0.0
         self._cal_result = None
+
+    def _cal_stop_generator_if_needed(self, key: str) -> None:
+        prev = self._cal_prev_gen_enabled
+        if prev is None:
+            prev = False
+
+        ch = self.channels.get(key)
+        if ch is None:
+            return
+
+        if not bool(prev):
+            ch.generator_enabled = False
+            ch.gen.frames_generated = 0
+            ch.gen.gen_buffer.clear()
+            ch.gen.gen_current = None
+            ch.gen.gen_pos = 0
+            ch.gen.tod_epoch_base = None
+            ch.gen.free_run_start_time = 0.0
+            ch.gen.jam_base_total_frames = None
+            ch.gen.jam_base_fps = None
 
     def set_fps(self, fps: float):
         fps = float(fps)
@@ -889,6 +910,7 @@ class TimecodeMonitor(MeasurementModule):
         with self._cal_lock:
             self._cal_active = True
             self._cal_key = k
+            self._cal_prev_gen_enabled = bool(self.channels[k].generator_enabled)
             self._cal_samples.clear()
             self._cal_need = int(n)
             self._cal_started_at = time.time()
@@ -901,12 +923,14 @@ class TimecodeMonitor(MeasurementModule):
             samples = list(self._cal_samples)
             need = int(self._cal_need)
             started = float(self._cal_started_at)
+            key = str(self._cal_key)
 
         if (time.time() - started) > 8.0:
             with self._cal_lock:
                 self._cal_active = False
                 if self._cal_result is None:
                     self._cal_result = {"ok": False, "reason": "timeout"}
+            self._cal_stop_generator_if_needed(key)
             return self._cal_result
 
         if len(samples) < need:
@@ -924,7 +948,6 @@ class TimecodeMonitor(MeasurementModule):
         mid2 = len(out_lat) // 2
         out_sec = float(out_lat[mid2]) if (len(out_lat) % 2 == 1) else float((out_lat[mid2 - 1] + out_lat[mid2]) / 2.0)
 
-        key = self._cal_key
         ch = self.channels[key]
         fps = float(ch.fps) if ch.fps else 30.0
         if fps <= 0:
@@ -933,8 +956,12 @@ class TimecodeMonitor(MeasurementModule):
         out_frames = int(round(float(out_sec) * float(fps)))
         in_frames = int(total_delay_frames) - int(out_frames)
 
-        ch.gen_offset_frames = int(out_frames)
-        ch.input_offset_frames = int(in_frames)
+        for dst_key in ("L", "R"):
+            dst = self.channels.get(dst_key)
+            if dst is None:
+                continue
+            dst.gen_offset_frames = int(out_frames)
+            dst.input_offset_frames = int(in_frames)
 
         with self._cal_lock:
             self._cal_active = False
@@ -946,7 +973,9 @@ class TimecodeMonitor(MeasurementModule):
                 "in_delay_frames": int(in_frames),
                 "out_delay_frames": int(out_frames),
             }
-            return self._cal_result
+
+        self._cal_stop_generator_if_needed(key)
+        return self._cal_result
 
     def jam_capture(self, key: str, slot: int) -> bool:
         if key not in self.channels:
@@ -1517,12 +1546,16 @@ class TimecodeMonitorWidget(QWidget):
                 if not bool(res.get("ok", False)):
                     self._cal_status.setText(tr("Calibration failed"))
                 else:
-                    k = str(res.get("key", ""))
-                    if k in ("L", "R"):
+                    for k in ("L", "R"):
                         if self._in_delay_spins.get(k) is not None:
                             self._in_delay_spins[k].setValue(int(res.get("in_delay_frames", 0)))
                         if self._out_delay_spins.get(k) is not None:
                             self._out_delay_spins[k].setValue(int(res.get("out_delay_frames", 0)))
+                        btn = self._gen_buttons.get(k)
+                        ch = self.module.channels.get(k)
+                        if btn is not None and ch is not None:
+                            btn.setChecked(bool(ch.generator_enabled))
+                            btn.setText(tr("Stop Generator") if ch.generator_enabled else tr("Enable Generator"))
                     self._cal_status.setText(
                         tr("Done: In={0}fr Out={1}fr Total={2}fr").format(
                             str(int(res.get("in_delay_frames", 0))),
@@ -1844,6 +1877,7 @@ class TimecodeMonitorWidget(QWidget):
             key = "L"
 
         ch = self.module.channels.get(key, self.module.channels["L"])
+        self.module.calibration_start(key)
         ch.generator_mode = "tod"
         ch.generator_enabled = True
         ch.gen.frames_generated = 0
@@ -1854,7 +1888,5 @@ class TimecodeMonitorWidget(QWidget):
         ch.gen.free_run_start_time = 0.0
         ch.gen.jam_base_total_frames = None
         ch.gen.jam_base_fps = None
-
-        self.module.calibration_start(key)
         if getattr(self, "_cal_status", None) is not None:
             self._cal_status.setText(tr("Calibrating..."))
