@@ -70,6 +70,7 @@ class _TimecodeChannelState:
     gen: _LTCGenState = None
     estimated_fps: float = 0.0
     last_frame_time: Optional[float] = None
+    last_decoded_epoch: Optional[float] = None
     fps_intervals: deque = field(default_factory=deque)
     jam_history: deque = field(default_factory=deque)
     last_input_latency_sec: float = 0.0
@@ -239,6 +240,9 @@ class LTCDecoder:
         self.decoded_bits = []
         self.decoded_tc = "--:--:--:--"
         self.locked = False
+
+        self.total_samples = 0
+        self.last_frame_offset_in_chunk: Optional[int] = None
         
     def process_samples(self, samples: np.ndarray):
         """Process a chunk of audio samples. Returns True if a new frame was decoded."""
@@ -255,6 +259,8 @@ class LTCDecoder:
             return False
 
         decoded_any = False
+        chunk_base = int(self.total_samples)
+        self.last_frame_offset_in_chunk = None
 
         signs = np.signbit(samples)
         if self._last_sign is None:
@@ -283,6 +289,7 @@ class LTCDecoder:
                     d = pos - prev_pos
 
                 if d > 0 and self._process_pulse(float(d)):
+                    self.last_frame_offset_in_chunk = int(pos)
                     decoded_any = True
 
                 prev_pos = pos
@@ -294,6 +301,7 @@ class LTCDecoder:
             self.samples_since_last_zc += frames_in_chunk
 
         self._last_sign = bool(signs[-1])
+        self.total_samples = int(chunk_base) + int(frames_in_chunk)
         return decoded_any
 
     def _process_pulse(self, d: float) -> bool:
@@ -447,6 +455,8 @@ class TimecodeMonitor(MeasurementModule):
         self._cal_started_at = 0.0
         self._cal_result = None
 
+        self._last_stream_epoch: Optional[float] = None
+
     def _cal_stop_generator_if_needed(self, key: str) -> None:
         prev = self._cal_prev_gen_enabled
         if prev is None:
@@ -573,21 +583,12 @@ class TimecodeMonitor(MeasurementModule):
                         else:
                             process_sig = np.zeros_like(in_sig)
 
-                        if ch.decoder.process_samples(process_sig):
+                        decoded = ch.decoder.process_samples(process_sig)
+                        if decoded:
                             ch.decoded_tc = ch.decoder.decoded_tc
                             ch.locked = bool(ch.decoder.locked)
 
                             now = time.time()
-                            if ch.last_frame_time is not None:
-                                dt = float(now - ch.last_frame_time)
-                                if 0.015 <= dt <= 0.08:
-                                    ch.fps_intervals.append(dt)
-                                    if len(ch.fps_intervals) > 32:
-                                        ch.fps_intervals.popleft()
-                                    avg = float(sum(ch.fps_intervals)) / float(len(ch.fps_intervals))
-                                    if avg > 0:
-                                        ch.estimated_fps = 1.0 / avg
-                            ch.last_frame_time = now
 
                             input_adc = None
                             current_t = None
@@ -631,6 +632,8 @@ class TimecodeMonitor(MeasurementModule):
                                 except Exception:
                                     output_dac_epoch = None
 
+                            self._last_stream_epoch = float(output_dac_epoch) if output_dac_epoch is not None else float(current_t_epoch)
+
                             if input_adc_epoch is not None:
                                 try:
                                     ch.last_input_latency_sec = float(current_t_epoch) - float(input_adc_epoch)
@@ -641,6 +644,27 @@ class TimecodeMonitor(MeasurementModule):
                                     ch.last_output_latency_sec = float(output_dac_epoch) - float(current_t_epoch)
                                 except Exception:
                                     pass
+
+                            frame_t_epoch = float(now)
+                            try:
+                                off = getattr(ch.decoder, "last_frame_offset_in_chunk", None)
+                                sr = int(getattr(self.audio_engine, "sample_rate", 48000))
+                                if sr > 0 and input_adc_epoch is not None and off is not None:
+                                    frame_t_epoch = float(input_adc_epoch) + (float(off) / float(sr))
+                            except Exception:
+                                frame_t_epoch = float(now)
+
+                            if ch.last_frame_time is not None:
+                                dt = float(frame_t_epoch - ch.last_frame_time)
+                                if 0.015 <= dt <= 0.08:
+                                    ch.fps_intervals.append(dt)
+                                    if len(ch.fps_intervals) > 32:
+                                        ch.fps_intervals.popleft()
+                                    avg = float(sum(ch.fps_intervals)) / float(len(ch.fps_intervals))
+                                    if avg > 0:
+                                        ch.estimated_fps = 1.0 / avg
+                            ch.last_frame_time = float(frame_t_epoch)
+                            ch.last_decoded_epoch = float(frame_t_epoch)
 
                             if self._cal_active and ch.key == self._cal_key:
                                 parsed_dec = self._parse_tc(ch.decoded_tc)
@@ -688,7 +712,7 @@ class TimecodeMonitor(MeasurementModule):
                                     nominal_fps = 30
                                 hh, mm, ss, ff = parsed
                                 total_frames = ((hh * 3600 + mm * 60 + ss) * nominal_fps) + int(ff)
-                                ch.jam_history.append((float(now), int(total_frames)))
+                                ch.jam_history.append((float(frame_t_epoch), int(total_frames)))
                                 if len(ch.jam_history) > 256:
                                     ch.jam_history.popleft()
 
@@ -781,11 +805,12 @@ class TimecodeMonitor(MeasurementModule):
                         gen_nominal_fps = 30
 
                     base_seconds = float(mem.total_frames) / float(mem_nominal_fps)
-                    elapsed_seconds = time.time() - float(mem.captured_at)
+                    now_epoch = float(getattr(self, "_last_stream_epoch", None) or time.time())
+                    elapsed_seconds = float(now_epoch) - float(mem.captured_at)
                     current_seconds = base_seconds + float(elapsed_seconds)
                     current_seconds = current_seconds % 86400.0
 
-                    base = int(round(current_seconds * float(gen_nominal_fps)))
+                    base = int(math.floor(current_seconds * float(gen_nominal_fps)))
                 ch.gen.jam_base_total_frames = int(base)
                 ch.gen.jam_base_fps = float(fps)
 
@@ -1009,7 +1034,7 @@ class TimecodeMonitor(MeasurementModule):
         mem = self.jam_memories[s]
         mem.valid = True
         mem.tc_raw = ch.decoded_tc
-        mem.captured_at = time.time()
+        mem.captured_at = float(getattr(ch, "last_decoded_epoch", None) or time.time())
         mem.fps = float(fps)
         mem.total_frames = int(total_frames)
         self.jam_memories[s] = mem
@@ -1171,7 +1196,7 @@ class TimecodeMonitor(MeasurementModule):
             nominal_fps = 30
 
         now = time.time()
-        elapsed_frames = int(round((now - float(mem.captured_at)) * float(fps)))
+        elapsed_frames = int(math.floor((float(now) - float(mem.captured_at)) * float(fps)))
         total_frames = int(mem.total_frames) + int(elapsed_frames)
         frames_per_day = 24 * 3600 * nominal_fps
         if frames_per_day > 0:
