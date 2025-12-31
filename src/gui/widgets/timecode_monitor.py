@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import time
 import math
+import threading
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -14,7 +15,7 @@ except Exception:  # pragma: no cover
     ZoneInfo = None
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, 
                              QComboBox, QPushButton, QFrame, QGridLayout, QCheckBox, 
-                             QGroupBox, QTabWidget)
+                             QGroupBox, QTabWidget, QSpinBox)
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QFont, QColor
 
@@ -59,18 +60,20 @@ class _TimecodeChannelState:
     decoded_tc: str = "--:--:--:--"
     locked: bool = False
     input_level_db: float = -100.0
-    input_offset_ms: float = 0.0
+    input_offset_frames: int = 0
     display_tz_enabled: bool = False
     display_tz_name: str = "System"
     generator_enabled: bool = False
     generator_mode: str = "tod"
     generator_jam_slot: int = 0
-    gen_offset_ms: float = 0.0
+    gen_offset_frames: int = 0
     gen: _LTCGenState = None
     estimated_fps: float = 0.0
     last_frame_time: Optional[float] = None
     fps_intervals: deque = field(default_factory=deque)
     jam_history: deque = field(default_factory=deque)
+    last_input_latency_sec: float = 0.0
+    last_output_latency_sec: float = 0.0
 
 class LTCEncoder:
     """Generates LTC audio samples."""
@@ -435,6 +438,14 @@ class TimecodeMonitor(MeasurementModule):
 
         self.jam_memories: list[_JamMemory] = [_JamMemory() for _ in range(5)]
 
+        self._cal_lock = threading.Lock()
+        self._cal_active = False
+        self._cal_key = "L"
+        self._cal_samples: deque = deque()
+        self._cal_need = 30
+        self._cal_started_at = 0.0
+        self._cal_result = None
+
     def set_fps(self, fps: float):
         fps = float(fps)
         if fps <= 0:
@@ -557,6 +568,97 @@ class TimecodeMonitor(MeasurementModule):
                                         ch.estimated_fps = 1.0 / avg
                             ch.last_frame_time = now
 
+                            input_adc = None
+                            current_t = None
+                            output_dac = None
+                            try:
+                                input_adc = getattr(time_info, "inputBufferAdcTime", None)
+                                current_t = getattr(time_info, "currentTime", None)
+                                output_dac = getattr(time_info, "outputBufferDacTime", None)
+                            except Exception:
+                                input_adc = None
+                                current_t = None
+                                output_dac = None
+
+                            # IMPORTANT: PortAudio time_info times are in the stream timebase
+                            # (not guaranteed to be Unix epoch). Convert them to an epoch-like
+                            # timebase by estimating an offset from time.time().
+                            epoch_now = float(now)
+                            epoch_offset = 0.0
+                            if current_t is not None:
+                                try:
+                                    epoch_offset = float(epoch_now) - float(current_t)
+                                except Exception:
+                                    epoch_offset = 0.0
+
+                            if current_t is None:
+                                current_t_epoch = float(epoch_now)
+                            else:
+                                current_t_epoch = float(current_t) + float(epoch_offset)
+
+                            input_adc_epoch = None
+                            if input_adc is not None:
+                                try:
+                                    input_adc_epoch = float(input_adc) + float(epoch_offset)
+                                except Exception:
+                                    input_adc_epoch = None
+
+                            output_dac_epoch = None
+                            if output_dac is not None:
+                                try:
+                                    output_dac_epoch = float(output_dac) + float(epoch_offset)
+                                except Exception:
+                                    output_dac_epoch = None
+
+                            if input_adc_epoch is not None:
+                                try:
+                                    ch.last_input_latency_sec = float(current_t_epoch) - float(input_adc_epoch)
+                                except Exception:
+                                    pass
+                            if output_dac_epoch is not None:
+                                try:
+                                    ch.last_output_latency_sec = float(output_dac_epoch) - float(current_t_epoch)
+                                except Exception:
+                                    pass
+
+                            if self._cal_active and ch.key == self._cal_key:
+                                parsed_dec = self._parse_tc(ch.decoded_tc)
+                                if parsed_dec is not None:
+                                    fps = float(ch.fps) if ch.fps else 30.0
+                                    if fps <= 0:
+                                        fps = 30.0
+                                    nominal_fps = int(round(fps))
+                                    if nominal_fps <= 0:
+                                        nominal_fps = 30
+
+                                    sr = int(getattr(self.audio_engine, "sample_rate", 48000))
+                                    if sr <= 0:
+                                        sr = 48000
+
+                                    # Reference time for expected TC: input buffer mid-point time.
+                                    # If PortAudio ADC time isn't available, fall back to callback time.
+                                    ref_t = float(current_t_epoch)
+                                    if input_adc_epoch is not None:
+                                        ref_t = float(input_adc_epoch) + (float(frames) / (2.0 * float(sr)))
+
+                                    exp_tc = self._tc_from_timestamp(float(ref_t), float(fps))
+                                    parsed_exp = self._parse_tc(exp_tc)
+                                    if parsed_exp is not None:
+                                        hh, mm, ss, ff = parsed_dec
+                                        dec_total = ((hh * 3600 + mm * 60 + ss) * nominal_fps) + int(ff)
+                                        eh, em, es, ef = parsed_exp
+                                        exp_total = ((eh * 3600 + em * 60 + es) * nominal_fps) + int(ef)
+                                        frames_per_day = 24 * 3600 * nominal_fps
+                                        if frames_per_day > 0:
+                                            diff = (int(exp_total) - int(dec_total)) % int(frames_per_day)
+                                        else:
+                                            diff = int(exp_total) - int(dec_total)
+
+                                        with self._cal_lock:
+                                            self._cal_samples.append((float(ref_t), int(diff), float(getattr(ch, "last_input_latency_sec", 0.0)), float(getattr(ch, "last_output_latency_sec", 0.0))))
+                                            while len(self._cal_samples) > 256:
+                                                self._cal_samples.popleft()
+
                             parsed = self._parse_tc(ch.decoded_tc)
                             if parsed is not None:
                                 fps = float(ch.fps) if ch.fps else 30.0
@@ -666,7 +768,7 @@ class TimecodeMonitor(MeasurementModule):
                 ch.gen.jam_base_total_frames = int(base)
                 ch.gen.jam_base_fps = float(fps)
 
-            offset_frames = int(round((float(ch.gen_offset_ms) / 1000.0) * float(fps))) if ch.gen_offset_ms else 0
+            offset_frames = int(getattr(ch, "gen_offset_frames", 0) or 0)
             total_frames = int(ch.gen.jam_base_total_frames) + int(ch.gen.frames_generated) + int(offset_frames)
 
             nominal_fps = int(round(fps))
@@ -722,7 +824,8 @@ class TimecodeMonitor(MeasurementModule):
             if fps <= 0:
                 fps = 30.0
 
-            t_target = ch.gen.tod_epoch_base + (ch.gen.frames_generated / fps) + (ch.gen_offset_ms / 1000.0)
+            offset_frames = int(getattr(ch, "gen_offset_frames", 0) or 0)
+            t_target = ch.gen.tod_epoch_base + ((ch.gen.frames_generated + offset_frames) / fps)
             # Use UTC for LTC generation always. Display converts to Local if needed.
             dt = datetime.fromtimestamp(t_target, timezone.utc)
 
@@ -759,7 +862,7 @@ class TimecodeMonitor(MeasurementModule):
             "L": {
                 "fps": float(l.fps),
                 "fps_est": float(l.estimated_fps),
-                "tc": self._get_display_timecode(l.decoded_tc, l.input_offset_ms, key="L"),
+                "tc": self._get_display_timecode(l.decoded_tc, l.input_offset_frames, key="L"),
                 "tc_raw": l.decoded_tc,
                 "locked": bool(l.locked),
                 "level": float(l.input_level_db),
@@ -767,12 +870,83 @@ class TimecodeMonitor(MeasurementModule):
             "R": {
                 "fps": float(r.fps),
                 "fps_est": float(r.estimated_fps),
-                "tc": self._get_display_timecode(r.decoded_tc, r.input_offset_ms, key="R"),
+                "tc": self._get_display_timecode(r.decoded_tc, r.input_offset_frames, key="R"),
                 "tc_raw": r.decoded_tc,
                 "locked": bool(r.locked),
                 "level": float(r.input_level_db),
             },
         }
+
+    def calibration_start(self, key: str, need_frames: Optional[int] = None) -> None:
+        k = str(key) if key in self.channels else "L"
+        fps = float(self.channels[k].fps) if self.channels[k].fps else 30.0
+        if fps <= 0:
+            fps = 30.0
+        n = int(round(fps)) if need_frames is None else int(need_frames)
+        if n <= 0:
+            n = 30
+
+        with self._cal_lock:
+            self._cal_active = True
+            self._cal_key = k
+            self._cal_samples.clear()
+            self._cal_need = int(n)
+            self._cal_started_at = time.time()
+            self._cal_result = None
+
+    def calibration_poll(self):
+        with self._cal_lock:
+            if not self._cal_active:
+                return self._cal_result
+            samples = list(self._cal_samples)
+            need = int(self._cal_need)
+            started = float(self._cal_started_at)
+
+        if (time.time() - started) > 8.0:
+            with self._cal_lock:
+                self._cal_active = False
+                if self._cal_result is None:
+                    self._cal_result = {"ok": False, "reason": "timeout"}
+            return self._cal_result
+
+        if len(samples) < need:
+            return None
+
+        diffs = [int(s[1]) for s in samples[-need:]]
+        in_lat = [float(s[2]) for s in samples[-need:]]
+        out_lat = [float(s[3]) for s in samples[-need:]]
+
+        diffs.sort()
+        mid = len(diffs) // 2
+        total_delay_frames = int(diffs[mid]) if (len(diffs) % 2 == 1) else int(round((diffs[mid - 1] + diffs[mid]) / 2.0))
+
+        out_lat.sort()
+        mid2 = len(out_lat) // 2
+        out_sec = float(out_lat[mid2]) if (len(out_lat) % 2 == 1) else float((out_lat[mid2 - 1] + out_lat[mid2]) / 2.0)
+
+        key = self._cal_key
+        ch = self.channels[key]
+        fps = float(ch.fps) if ch.fps else 30.0
+        if fps <= 0:
+            fps = 30.0
+
+        out_frames = int(round(float(out_sec) * float(fps)))
+        in_frames = int(total_delay_frames) - int(out_frames)
+
+        ch.gen_offset_frames = int(out_frames)
+        ch.input_offset_frames = int(in_frames)
+
+        with self._cal_lock:
+            self._cal_active = False
+            self._cal_result = {
+                "ok": True,
+                "key": str(key),
+                "samples": int(need),
+                "total_delay_frames": int(total_delay_frames),
+                "in_delay_frames": int(in_frames),
+                "out_delay_frames": int(out_frames),
+            }
+            return self._cal_result
 
     def jam_capture(self, key: str, slot: int) -> bool:
         if key not in self.channels:
@@ -986,6 +1160,25 @@ class TimecodeMonitor(MeasurementModule):
             return None
         return hh, mm, ss, ff
 
+    def _tc_from_timestamp(self, t: float, fps: float) -> str:
+        if fps <= 0:
+            fps = 30.0
+        nominal_fps = int(round(fps))
+        if nominal_fps <= 0:
+            nominal_fps = 30
+
+        dt = datetime.fromtimestamp(float(t), timezone.utc)
+        hh = dt.hour
+        mm = dt.minute
+        ss = dt.second
+        frac = float(t) - math.floor(float(t))
+        ff = int(frac * float(fps))
+        if ff < 0:
+            ff = 0
+        elif ff >= nominal_fps:
+            ff = nominal_fps - 1
+        return f"{hh:02}:{mm:02}:{ss:02}:{ff:02}"
+
     def _get_display_timecode(self, tc: Optional[str] = None, input_offset_ms: Optional[float] = None, key: str = "L") -> str:
         """Return display timecode string.
 
@@ -999,11 +1192,11 @@ class TimecodeMonitor(MeasurementModule):
 
         if input_offset_ms is None:
             try:
-                input_offset_ms = float(ch.input_offset_ms)
+                input_offset_ms = float(ch.input_offset_frames)
             except Exception:
                 input_offset_ms = 0.0
 
-        if (not ch.display_tz_enabled) and (abs(input_offset_ms) < 1e-9):
+        if (not ch.display_tz_enabled) and (abs(float(input_offset_ms)) < 1e-9):
             return tc
 
         parsed = self._parse_tc(tc)
@@ -1020,9 +1213,11 @@ class TimecodeMonitor(MeasurementModule):
             if nominal_fps <= 0:
                 nominal_fps = 30
 
+            offset_seconds = (float(input_offset_ms) / float(fps))
+
             # Seconds-of-day from decoded LTC.
             total_seconds = (hh * 3600.0) + (mm * 60.0) + float(min(ss, 59)) + (float(ff) / fps)
-            total_seconds += (input_offset_ms / 1000.0)
+            total_seconds += float(offset_seconds)
 
             if not ch.display_tz_enabled:
                 # Pure offset + wrap within 24h.
@@ -1087,19 +1282,35 @@ class TimecodeMonitor(MeasurementModule):
 
     @property
     def input_offset_ms(self) -> float:
-        return float(self.channels["L"].input_offset_ms)
+        ch = self.channels["L"]
+        fps = float(ch.fps) if ch.fps else 30.0
+        if fps <= 0:
+            fps = 30.0
+        return (float(ch.input_offset_frames) / float(fps)) * 1000.0
 
     @input_offset_ms.setter
     def input_offset_ms(self, v: float):
-        self.channels["L"].input_offset_ms = float(v)
+        ch = self.channels["L"]
+        fps = float(ch.fps) if ch.fps else 30.0
+        if fps <= 0:
+            fps = 30.0
+        ch.input_offset_frames = int(round((float(v) / 1000.0) * float(fps)))
 
     @property
     def gen_offset_ms(self) -> float:
-        return float(self.channels["L"].gen_offset_ms)
+        ch = self.channels["L"]
+        fps = float(ch.fps) if ch.fps else 30.0
+        if fps <= 0:
+            fps = 30.0
+        return (float(ch.gen_offset_frames) / float(fps)) * 1000.0
 
     @gen_offset_ms.setter
     def gen_offset_ms(self, v: float):
-        self.channels["L"].gen_offset_ms = float(v)
+        ch = self.channels["L"]
+        fps = float(ch.fps) if ch.fps else 30.0
+        if fps <= 0:
+            fps = 30.0
+        ch.gen_offset_frames = int(round((float(v) / 1000.0) * float(fps)))
 
     @property
     def generator_enabled(self) -> bool:
@@ -1139,6 +1350,8 @@ class TimecodeMonitorWidget(QWidget):
         self.module = module
         self._gen_buttons: Dict[str, QPushButton] = {}
         self._tz_combos: Dict[str, QComboBox] = {}
+        self._in_delay_spins: Dict[str, QSpinBox] = {}
+        self._out_delay_spins: Dict[str, QSpinBox] = {}
         self.init_ui()
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_ui)
@@ -1233,6 +1446,7 @@ class TimecodeMonitorWidget(QWidget):
         self.tabs.addTab(self._build_channel_tab("L"), tr("Left"))
         self.tabs.addTab(self._build_channel_tab("R"), tr("Right"))
         self.tabs.addTab(self._build_jam_tab(), tr("JAM"))
+        self.tabs.addTab(self._build_calibration_tab(), tr("Calibration"))
         layout.addWidget(self.tabs)
         
         layout.addStretch()
@@ -1296,6 +1510,26 @@ class TimecodeMonitorWidget(QWidget):
             if (now - float(self._jam_last_update)) >= 0.5:
                 self._jam_last_update = now
                 self.update_jam_ui()
+
+        if getattr(self, "_cal_tab_index", None) is not None and self.tabs.currentIndex() == self._cal_tab_index:
+            res = self.module.calibration_poll()
+            if res is not None and getattr(self, "_cal_status", None) is not None:
+                if not bool(res.get("ok", False)):
+                    self._cal_status.setText(tr("Calibration failed"))
+                else:
+                    k = str(res.get("key", ""))
+                    if k in ("L", "R"):
+                        if self._in_delay_spins.get(k) is not None:
+                            self._in_delay_spins[k].setValue(int(res.get("in_delay_frames", 0)))
+                        if self._out_delay_spins.get(k) is not None:
+                            self._out_delay_spins[k].setValue(int(res.get("out_delay_frames", 0)))
+                    self._cal_status.setText(
+                        tr("Done: In={0}fr Out={1}fr Total={2}fr").format(
+                            str(int(res.get("in_delay_frames", 0))),
+                            str(int(res.get("out_delay_frames", 0))),
+                            str(int(res.get("total_delay_frames", 0))),
+                        )
+                    )
 
     def _on_jam_capture_auto(self, key: str):
         idx = self.module.jam_capture_auto_precise(key)
@@ -1386,19 +1620,21 @@ class TimecodeMonitorWidget(QWidget):
         gl.addWidget(gen_btn, 0, 2, 2, 1)
         self._gen_buttons[key] = gen_btn
 
-        gl.addWidget(QLabel(tr("In Delay (ms):")), 1, 0)
-        in_spin = QDoubleSpinBox()
-        in_spin.setRange(-1000, 1000)
-        in_spin.setValue(float(ch.input_offset_ms))
-        in_spin.valueChanged.connect(lambda v=0.0, k=key: self._set_in_offset(k, v))
+        gl.addWidget(QLabel(tr("In Delay (fr):")), 1, 0)
+        in_spin = QSpinBox()
+        in_spin.setRange(-100000, 100000)
+        in_spin.setValue(int(ch.input_offset_frames))
+        in_spin.valueChanged.connect(lambda v=0, k=key: self._set_in_offset(k, v))
         gl.addWidget(in_spin, 1, 1)
+        self._in_delay_spins[key] = in_spin
 
-        gl.addWidget(QLabel(tr("Out Delay (ms):")), 2, 0)
-        out_spin = QDoubleSpinBox()
-        out_spin.setRange(-1000, 1000)
-        out_spin.setValue(float(ch.gen_offset_ms))
-        out_spin.valueChanged.connect(lambda v=0.0, k=key: self._set_out_offset(k, v))
+        gl.addWidget(QLabel(tr("Out Delay (fr):")), 2, 0)
+        out_spin = QSpinBox()
+        out_spin.setRange(-100000, 100000)
+        out_spin.setValue(int(ch.gen_offset_frames))
+        out_spin.valueChanged.connect(lambda v=0, k=key: self._set_out_offset(k, v))
         gl.addWidget(out_spin, 2, 1)
+        self._out_delay_spins[key] = out_spin
 
         g.setLayout(gl)
         top_row.addWidget(g, 3)
@@ -1565,7 +1801,60 @@ class TimecodeMonitorWidget(QWidget):
         return self._format_fps_option(float(fps_est), drop_frame)
 
     def _set_in_offset(self, key: str, v: float):
-        self.module.channels[key].input_offset_ms = float(v)
+        self.module.channels[key].input_offset_frames = int(round(float(v)))
 
     def _set_out_offset(self, key: str, v: float):
-        self.module.channels[key].gen_offset_ms = float(v)
+        self.module.channels[key].gen_offset_frames = int(round(float(v)))
+
+    def _build_calibration_tab(self) -> QWidget:
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.setContentsMargins(6, 6, 6, 6)
+        v.setSpacing(6)
+
+        box = QGroupBox(tr("TC I/O Delay Calibration"))
+        gl = QGridLayout()
+
+        gl.addWidget(QLabel(tr("Channel:")), 0, 0)
+        self._cal_ch = QComboBox()
+        self._cal_ch.addItem(tr("Left"), "L")
+        self._cal_ch.addItem(tr("Right"), "R")
+        gl.addWidget(self._cal_ch, 0, 1)
+
+        self._cal_btn = QPushButton(tr("Run Calibration"))
+        self._cal_btn.clicked.connect(self._on_run_calibration)
+        gl.addWidget(self._cal_btn, 1, 0, 1, 2)
+
+        self._cal_status = QLabel(tr("Connect output to input and run."))
+        self._cal_status.setStyleSheet("color: #888;")
+        gl.addWidget(self._cal_status, 2, 0, 1, 2)
+
+        box.setLayout(gl)
+        v.addWidget(box)
+        v.addStretch()
+
+        self._cal_tab_index = 3
+        return w
+
+    def _on_run_calibration(self):
+        key = "L"
+        try:
+            key = self._cal_ch.currentData() or "L"
+        except Exception:
+            key = "L"
+
+        ch = self.module.channels.get(key, self.module.channels["L"])
+        ch.generator_mode = "tod"
+        ch.generator_enabled = True
+        ch.gen.frames_generated = 0
+        ch.gen.gen_buffer.clear()
+        ch.gen.gen_current = None
+        ch.gen.gen_pos = 0
+        ch.gen.tod_epoch_base = None
+        ch.gen.free_run_start_time = 0.0
+        ch.gen.jam_base_total_frames = None
+        ch.gen.jam_base_fps = None
+
+        self.module.calibration_start(key)
+        if getattr(self, "_cal_status", None) is not None:
+            self._cal_status.setText(tr("Calibrating..."))
