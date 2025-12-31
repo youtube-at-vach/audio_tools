@@ -631,15 +631,24 @@ class TimecodeMonitor(MeasurementModule):
             base_fps = ch.gen.jam_base_fps
             if base is None or base_fps is None or abs(float(base_fps) - float(fps)) > 1e-6:
                 mem = self.jam_memories[slot] if 0 <= slot < len(self.jam_memories) else None
-                parsed = self._parse_tc(mem.tc_raw) if (mem is not None and mem.valid) else None
-                if parsed is None:
+                if mem is None or (not mem.valid):
                     base = 0
                 else:
-                    hh, mm, ss, ff = parsed
-                    nominal_fps = int(round(fps))
-                    if nominal_fps <= 0:
-                        nominal_fps = 30
-                    base = ((hh * 3600 + mm * 60 + ss) * nominal_fps) + int(ff)
+                    mem_fps = float(mem.fps) if mem.fps else 30.0
+                    mem_nominal_fps = int(round(mem_fps))
+                    if mem_nominal_fps <= 0:
+                        mem_nominal_fps = 30
+
+                    gen_nominal_fps = int(round(fps))
+                    if gen_nominal_fps <= 0:
+                        gen_nominal_fps = 30
+
+                    base_seconds = float(mem.total_frames) / float(mem_nominal_fps)
+                    elapsed_seconds = time.time() - float(mem.captured_at)
+                    current_seconds = base_seconds + float(elapsed_seconds)
+                    current_seconds = current_seconds % 86400.0
+
+                    base = int(round(current_seconds * float(gen_nominal_fps)))
                 ch.gen.jam_base_total_frames = int(base)
                 ch.gen.jam_base_fps = float(fps)
 
