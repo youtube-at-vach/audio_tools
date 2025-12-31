@@ -55,6 +55,7 @@ class _TimecodeChannelState:
     output_channel: int
     decoder: LTCDecoder
     fps: float = 30.0
+    fps_drop_frame: bool = False
     decoded_tc: str = "--:--:--:--"
     locked: bool = False
     input_level_db: float = -100.0
@@ -1158,8 +1159,8 @@ class TimecodeMonitorWidget(QWidget):
 
         fpsl = float(l.get("fps_est", 0.0))
         fpsr = float(r.get("fps_est", 0.0))
-        self.fps_est_label_L.setText(tr("FPS: {0}").format("--" if fpsl <= 0 else f"{fpsl:.2f}"))
-        self.fps_est_label_R.setText(tr("FPS: {0}").format("--" if fpsr <= 0 else f"{fpsr:.2f}"))
+        self.fps_est_label_L.setText(tr("FPS: {0}").format(self._format_fps_est("L", fpsl)))
+        self.fps_est_label_R.setText(tr("FPS: {0}").format(self._format_fps_est("R", fpsr)))
 
         if getattr(self, "_jam_tab_index", None) is not None and self.tabs.currentIndex() == self._jam_tab_index:
             now = time.time()
@@ -1191,8 +1192,8 @@ class TimecodeMonitorWidget(QWidget):
 
         sl.addWidget(QLabel(tr("Frame Rate:")), 0, 0)
         fps_combo = QComboBox()
-        fps_combo.addItems(["23.976", "24", "25", "29.97", "30"])
-        fps_combo.setCurrentText(self._format_fps_option(float(ch.fps)))
+        fps_combo.addItems(["23.98", "24.00", "25.00", "30.0D", "30.0", "29.97D", "29.97"])
+        fps_combo.setCurrentText(self._format_fps_option(float(ch.fps), bool(getattr(ch, "fps_drop_frame", False))))
         fps_combo.currentTextChanged.connect(lambda t="", k=key: self._on_fps_changed(k, t))
         sl.addWidget(fps_combo, 0, 1)
 
@@ -1371,12 +1372,11 @@ class TimecodeMonitorWidget(QWidget):
                 self._jam_labels[(slot, "cur")].setText(cur)
 
     def _on_fps_changed(self, key: str, text: str):
-        try:
-            fps = float(text)
-        except Exception:
+        fps, drop_frame = self._parse_fps_option(text)
+        if fps is None or float(fps) <= 0:
             return
-
-        self.module.set_channel_fps(key, fps)
+        self.module.channels[key].fps_drop_frame = bool(drop_frame)
+        self.module.set_channel_fps(key, float(fps))
 
     def _on_tz_toggled(self, key: str, checked: bool):
         ch = self.module.channels[key]
@@ -1388,19 +1388,54 @@ class TimecodeMonitorWidget(QWidget):
         ch = self.module.channels[key]
         ch.display_tz_name = str(text).strip() if text else "System"
 
-    def _format_fps_option(self, fps: float) -> str:
-        presets = [23.976, 24.0, 25.0, 29.97, 30.0]
-        labels = ["23.976", "24", "25", "29.97", "30"]
+    def _parse_fps_option(self, text: str) -> tuple[Optional[float], bool]:
+        t = (text or "").strip()
+        drop_frame = False
+        if t.endswith("D"):
+            drop_frame = True
+            t = t[:-1]
+
+        mapping = {
+            "23.98": 23.976,
+            "24.00": 24.0,
+            "25.00": 25.0,
+            "30.0": 30.0,
+            "29.97": 29.97,
+        }
+
+        if t in mapping:
+            return float(mapping[t]), drop_frame
+
+        try:
+            return float(t), drop_frame
+        except Exception:
+            return None, drop_frame
+
+    def _format_fps_option(self, fps: float, drop_frame: bool = False) -> str:
+        presets = [23.976, 24.0, 25.0, 30.0, 29.97]
+        labels = ["23.98", "24.00", "25.00", "30.0", "29.97"]
         if fps <= 0:
-            return "30"
-        best_i = 0
-        best_d = float("inf")
-        for i, p in enumerate(presets):
-            d = abs(float(fps) - float(p))
-            if d < best_d:
-                best_d = d
-                best_i = i
-        return labels[best_i]
+            base = "30.0"
+        else:
+            best_i = 0
+            best_d = float("inf")
+            for i, p in enumerate(presets):
+                d = abs(float(fps) - float(p))
+                if d < best_d:
+                    best_d = d
+                    best_i = i
+            base = labels[best_i]
+
+        if base in ("29.97", "30.0") and drop_frame:
+            return f"{base}D"
+        return base
+
+    def _format_fps_est(self, key: str, fps_est: float) -> str:
+        if float(fps_est) <= 0:
+            return "--"
+        ch = self.module.channels.get(key)
+        drop_frame = bool(getattr(ch, "fps_drop_frame", False)) if ch is not None else False
+        return self._format_fps_option(float(fps_est), drop_frame)
 
     def _set_in_offset(self, key: str, v: float):
         self.module.channels[key].input_offset_ms = float(v)
