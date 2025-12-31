@@ -70,6 +70,7 @@ class _TimecodeChannelState:
     estimated_fps: float = 0.0
     last_frame_time: Optional[float] = None
     fps_intervals: deque = field(default_factory=deque)
+    jam_history: deque = field(default_factory=deque)
 
 class LTCEncoder:
     """Generates LTC audio samples."""
@@ -556,6 +557,18 @@ class TimecodeMonitor(MeasurementModule):
                                         ch.estimated_fps = 1.0 / avg
                             ch.last_frame_time = now
 
+                            parsed = self._parse_tc(ch.decoded_tc)
+                            if parsed is not None:
+                                fps = float(ch.fps) if ch.fps else 30.0
+                                nominal_fps = int(round(fps))
+                                if nominal_fps <= 0:
+                                    nominal_fps = 30
+                                hh, mm, ss, ff = parsed
+                                total_frames = ((hh * 3600 + mm * 60 + ss) * nominal_fps) + int(ff)
+                                ch.jam_history.append((float(now), int(total_frames)))
+                                if len(ch.jam_history) > 256:
+                                    ch.jam_history.popleft()
+
             if self.link_enabled:
                 src_key = self.link_source if self.link_source in self.channels else "L"
                 src = self.channels[src_key]
@@ -809,6 +822,120 @@ class TimecodeMonitor(MeasurementModule):
 
         idx = int(free_idx) if free_idx is not None else int(oldest_idx)
         ok = self.jam_capture(key, idx)
+        return idx if ok else -1
+
+    def jam_capture_precise(self, key: str, slot: int, window_seconds: float = 0.8, min_samples: int = 12) -> bool:
+        if key not in self.channels:
+            return False
+
+        s = int(slot)
+        if s < 0:
+            s = 0
+        elif s > 4:
+            s = 4
+
+        ch = self.channels[key]
+        if not ch.jam_history:
+            return False
+
+        fps = float(ch.fps) if ch.fps else 30.0
+        if fps <= 0:
+            fps = 30.0
+        nominal_fps = int(round(fps))
+        if nominal_fps <= 0:
+            nominal_fps = 30
+
+        now = time.time()
+        window = float(window_seconds)
+        if window <= 0:
+            window = 0.8
+
+        samples = [(t, f) for (t, f) in list(ch.jam_history) if (float(now) - float(t)) <= window]
+        if len(samples) < int(min_samples):
+            samples = list(ch.jam_history)[-max(int(min_samples), 1):]
+        if len(samples) < int(min_samples):
+            return False
+
+        samples.sort(key=lambda x: float(x[0]))
+        frames_per_day = int(24 * 3600 * nominal_fps)
+        unwrapped: list[tuple[float, int]] = []
+        prev = int(samples[0][1])
+        offset = 0
+        unwrapped.append((float(samples[0][0]), int(prev)))
+        for t, f in samples[1:]:
+            f_i = int(f)
+            if frames_per_day > 0:
+                d = f_i - prev
+                if d < -(frames_per_day // 2):
+                    offset += frames_per_day
+                elif d > (frames_per_day // 2):
+                    offset -= frames_per_day
+            f_u = int(f_i + offset)
+            unwrapped.append((float(t), f_u))
+            prev = f_i
+
+        offsets = [float(f) - (float(fps) * float(t)) for (t, f) in unwrapped]
+        offsets.sort()
+        if not offsets:
+            return False
+        mid = len(offsets) // 2
+        med = float(offsets[mid]) if (len(offsets) % 2 == 1) else float((offsets[mid - 1] + offsets[mid]) / 2.0)
+
+        abs_dev = [abs(o - med) for o in offsets]
+        abs_dev.sort()
+        mad_mid = len(abs_dev) // 2
+        mad = float(abs_dev[mad_mid]) if (len(abs_dev) % 2 == 1) else float((abs_dev[mad_mid - 1] + abs_dev[mad_mid]) / 2.0)
+        if mad <= 1e-9:
+            mad = 0.0
+
+        keep: list[tuple[float, int]] = []
+        for (t, f) in unwrapped:
+            o = float(f) - (float(fps) * float(t))
+            if mad == 0.0:
+                keep.append((float(t), int(f)))
+            else:
+                if abs(o - med) <= (3.0 * mad):
+                    keep.append((float(t), int(f)))
+        if len(keep) < int(min_samples):
+            keep = unwrapped
+
+        offsets2 = [float(f) - (float(fps) * float(t)) for (t, f) in keep]
+        offsets2.sort()
+        mid2 = len(offsets2) // 2
+        b = float(offsets2[mid2]) if (len(offsets2) % 2 == 1) else float((offsets2[mid2 - 1] + offsets2[mid2]) / 2.0)
+
+        t_last, f_last = keep[-1]
+        if float(fps) <= 0:
+            return False
+        captured_at = (float(f_last) - float(b)) / float(fps)
+
+        mem = self.jam_memories[s]
+        mem.valid = True
+        mem.tc_raw = ch.decoded_tc
+        mem.captured_at = float(captured_at)
+        mem.fps = float(fps)
+        mem.total_frames = int(f_last)
+        self.jam_memories[s] = mem
+        return True
+
+    def jam_capture_auto_precise(self, key: str) -> int:
+        if key not in self.channels:
+            return -1
+
+        free_idx = None
+        oldest_idx = 0
+        oldest_ts = float("inf")
+        for i, m in enumerate(self.jam_memories):
+            if not m.valid and free_idx is None:
+                free_idx = i
+            if m.valid and float(m.captured_at) < oldest_ts:
+                oldest_ts = float(m.captured_at)
+                oldest_idx = i
+
+        idx = int(free_idx) if free_idx is not None else int(oldest_idx)
+        ok = self.jam_capture_precise(key, idx)
+        if not ok:
+            ok = self.jam_capture(key, idx)
         return idx if ok else -1
 
     def jam_get_current_tc(self, slot: int) -> str:
@@ -1171,7 +1298,7 @@ class TimecodeMonitorWidget(QWidget):
                 self.update_jam_ui()
 
     def _on_jam_capture_auto(self, key: str):
-        idx = self.module.jam_capture_auto(key)
+        idx = self.module.jam_capture_auto_precise(key)
         if idx >= 0 and self._jam_capture_msg.get(key) is not None:
             self._jam_capture_msg[key].setText(tr("Saved: Mem {0}").format(str(idx + 1)))
         elif self._jam_capture_msg.get(key) is not None:
