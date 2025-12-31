@@ -711,11 +711,11 @@ class TimecodeMonitorWidget(QWidget):
         display_layout.addWidget(self.tc_label)
         
         status_line = QHBoxLayout()
-        self.sync_led = QLabel("SYNC")
+        self.sync_led = QLabel(tr("SYNC"))
         self.sync_led.setStyleSheet("color: #333; font-weight: bold; border: 1px solid #333; padding: 2px 5px; border-radius:4px;")
         status_line.addWidget(self.sync_led)
         
-        self.fps_label = QLabel("FPS: --")
+        self.fps_label = QLabel(tr("FPS: {0}").format("--"))
         self.fps_label.setStyleSheet("color: #888;")
         status_line.addWidget(self.fps_label)
         
@@ -742,8 +742,8 @@ class TimecodeMonitorWidget(QWidget):
         # Generator Mode
         c_layout.addWidget(QLabel(tr("Gen Mode:")), 1, 0)
         self.mode_combo = QComboBox()
-        self.mode_combo.addItem("Time of Day", "tod")
-        self.mode_combo.addItem("Free Run", "free")
+        self.mode_combo.addItem(tr("Time of Day"), "tod")
+        self.mode_combo.addItem(tr("Free Run"), "free")
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         c_layout.addWidget(self.mode_combo, 1, 1)
         
@@ -850,7 +850,7 @@ class TimecodeMonitorWidget(QWidget):
         data = self.module.process()
         self.tc_label.setText(data['tc'])
 
-        self.fps_label.setText(f"FPS: {data['fps']:.3g}")
+        self.fps_label.setText(tr("FPS: {0}").format(f"{data['fps']:.3g}"))
         
         if data['locked']:
             self.sync_led.setStyleSheet("color: #0f0; font-weight: bold; border: 1px solid #0f0; background-color: #003300; padding: 2px 5px; border-radius:4px;")
@@ -858,4 +858,4 @@ class TimecodeMonitorWidget(QWidget):
         else:
              self.sync_led.setStyleSheet("color: #555; font-weight: normal; border: 1px solid #555; padding: 2px 5px; border-radius:4px;")
              
-        self.level_label.setText(f"{data['level']:.1f} dB")
+        self.level_label.setText(tr("{0} dB").format(f"{data['level']:.1f}"))
