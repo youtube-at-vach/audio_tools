@@ -44,10 +44,13 @@ class _TimecodeChannelState:
     input_channel: int
     output_channel: int
     decoder: LTCDecoder
+    fps: float = 30.0
     decoded_tc: str = "--:--:--:--"
     locked: bool = False
     input_level_db: float = -100.0
     input_offset_ms: float = 0.0
+    display_tz_enabled: bool = False
+    display_tz_name: str = "System"
     generator_enabled: bool = False
     generator_mode: str = "tod"
     gen_offset_ms: float = 0.0
@@ -371,17 +374,18 @@ class TimecodeMonitor(MeasurementModule):
         self.audio_engine = audio_engine
         self.is_running = False
         self.callback_id = None
-        
-        # Settings
+
+        # Settings (legacy convenience, maps to Left channel)
         self.fps = 30.0
         
         # Audio Gate
         self.gate_threshold_db = -50.0
 
-        self.display_tz_enabled = False
-        # Display TZ: 'System', 'UTC', or IANA tz database name (e.g. 'Asia/Tokyo')
-        self.display_tz_name = "System"
         self.detected_fps = 0.0
+
+        # Output linking
+        self.link_enabled = False
+        self.link_source = "L"  # 'L' or 'R'
 
         sr = int(getattr(self.audio_engine, "sample_rate", 48000))
 
@@ -396,6 +400,9 @@ class TimecodeMonitor(MeasurementModule):
                 input_channel=0,
                 output_channel=0,
                 decoder=dec_l,
+                fps=self.fps,
+                display_tz_enabled=False,
+                display_tz_name="System",
                 gen=_LTCGenState(encoder=enc_l),
             ),
             "R": _TimecodeChannelState(
@@ -403,6 +410,9 @@ class TimecodeMonitor(MeasurementModule):
                 input_channel=1,
                 output_channel=1,
                 decoder=dec_r,
+                fps=self.fps,
+                display_tz_enabled=False,
+                display_tz_name="System",
                 gen=_LTCGenState(encoder=enc_r),
             ),
         }
@@ -412,11 +422,13 @@ class TimecodeMonitor(MeasurementModule):
         if fps <= 0:
             return
 
+        # Legacy behavior: update both channels.
         self.fps = fps
         self.detected_fps = 0.0
 
         sr = int(getattr(self.audio_engine, "sample_rate", 48000))
         for ch in self.channels.values():
+            ch.fps = fps
             ch.decoder = LTCDecoder(sr, fps)
             ch.decoded_tc = "--:--:--:--"
             ch.locked = False
@@ -428,6 +440,29 @@ class TimecodeMonitor(MeasurementModule):
             ch.gen.frames_generated = 0
             ch.gen.tod_epoch_base = None
             ch.gen.free_run_start_time = 0.0
+
+    def set_channel_fps(self, key: str, fps: float):
+        fps = float(fps)
+        if fps <= 0:
+            return
+
+        sr = int(getattr(self.audio_engine, "sample_rate", 48000))
+        ch = self.channels[key]
+        ch.fps = fps
+        ch.decoder = LTCDecoder(sr, fps)
+        ch.decoded_tc = "--:--:--:--"
+        ch.locked = False
+        ch.gen.encoder.sample_rate = sr
+        ch.gen.encoder.set_fps(fps)
+        ch.gen.gen_buffer.clear()
+        ch.gen.gen_current = None
+        ch.gen.gen_pos = 0
+        ch.gen.frames_generated = 0
+        ch.gen.tod_epoch_base = None
+        ch.gen.free_run_start_time = 0.0
+
+        if key == "L":
+            self.fps = fps
 
     @property
     def name(self) -> str:
@@ -458,10 +493,10 @@ class TimecodeMonitor(MeasurementModule):
         sr = int(getattr(self.audio_engine, "sample_rate", 48000))
         for ch in self.channels.values():
             ch.gen.encoder.sample_rate = sr
-            ch.gen.encoder.set_fps(self.fps)
+            ch.gen.encoder.set_fps(ch.fps)
             ch.gen.tod_epoch_base = None
 
-            ch.decoder = LTCDecoder(sr, self.fps)
+            ch.decoder = LTCDecoder(sr, ch.fps)
             ch.decoded_tc = "--:--:--:--"
             ch.locked = False
 
@@ -474,7 +509,7 @@ class TimecodeMonitor(MeasurementModule):
         def callback(indata, outdata, frames, time_info, status):
             # Always start from silence for this module's output.
             outdata.fill(0)
-            
+
             for ch in self.channels.values():
                 if indata is not None and getattr(indata, "shape", None) is not None:
                     if indata.shape[1] > ch.input_channel:
@@ -492,20 +527,36 @@ class TimecodeMonitor(MeasurementModule):
                             ch.decoded_tc = ch.decoder.decoded_tc
                             ch.locked = bool(ch.decoder.locked)
 
-                if ch.generator_enabled:
-                    gen = self._get_generator_samples(ch, frames)
+            if self.link_enabled:
+                src_key = self.link_source if self.link_source in self.channels else "L"
+                src = self.channels[src_key]
+                if src.generator_enabled:
+                    gen = self._get_generator_samples(src, frames)
                     if gen is not None and len(gen) == frames:
                         gen = gen * 0.5
-
                         out_ch = outdata.shape[1]
-                        if out_ch <= 0:
-                            continue
+                        if out_ch > 0:
+                            for dst_key in ("L", "R"):
+                                dst = self.channels[dst_key]
+                                out_idx = int(dst.output_channel)
+                                if 0 <= out_idx < out_ch:
+                                    outdata[:, out_idx] = gen
+            else:
+                for ch in self.channels.values():
+                    if ch.generator_enabled:
+                        gen = self._get_generator_samples(ch, frames)
+                        if gen is not None and len(gen) == frames:
+                            gen = gen * 0.5
 
-                        out_idx = int(ch.output_channel)
-                        if out_idx < 0 or out_idx >= out_ch:
-                            continue
+                            out_ch = outdata.shape[1]
+                            if out_ch <= 0:
+                                continue
 
-                        outdata[:, out_idx] = gen
+                            out_idx = int(ch.output_channel)
+                            if out_idx < 0 or out_idx >= out_ch:
+                                continue
+
+                            outdata[:, out_idx] = gen
         self.callback_id = self.audio_engine.register_callback(callback)
 
     def _get_generator_samples(self, ch: _TimecodeChannelState, frames: int) -> np.ndarray:
@@ -552,7 +603,7 @@ class TimecodeMonitor(MeasurementModule):
             
             # Calculate TC from total frames
             # fps
-            fps = self.fps
+            fps = float(ch.fps) if ch.fps else 30.0
             hh = int(total_frames / (fps * 3600)) % 24
             rem = total_frames % (int(fps * 3600))
             mm = int(rem / (fps * 60))
@@ -569,7 +620,7 @@ class TimecodeMonitor(MeasurementModule):
             if ch.gen.tod_epoch_base is None:
                 ch.gen.tod_epoch_base = time.time()
 
-            fps = float(self.fps) if self.fps else 30.0
+            fps = float(ch.fps) if ch.fps else 30.0
             if fps <= 0:
                 fps = 30.0
 
@@ -606,15 +657,17 @@ class TimecodeMonitor(MeasurementModule):
         l = self.channels["L"]
         r = self.channels["R"]
         return {
-            "fps": self.fps,
+            "fps": float(l.fps),
             "L": {
-                "tc": self._get_display_timecode(l.decoded_tc, l.input_offset_ms),
+                "fps": float(l.fps),
+                "tc": self._get_display_timecode(l.decoded_tc, l.input_offset_ms, key="L"),
                 "tc_raw": l.decoded_tc,
                 "locked": bool(l.locked),
                 "level": float(l.input_level_db),
             },
             "R": {
-                "tc": self._get_display_timecode(r.decoded_tc, r.input_offset_ms),
+                "fps": float(r.fps),
+                "tc": self._get_display_timecode(r.decoded_tc, r.input_offset_ms, key="R"),
                 "tc_raw": r.decoded_tc,
                 "locked": bool(r.locked),
                 "level": float(r.input_level_db),
@@ -638,22 +691,24 @@ class TimecodeMonitor(MeasurementModule):
             return None
         return hh, mm, ss, ff
 
-    def _get_display_timecode(self, tc: Optional[str] = None, input_offset_ms: Optional[float] = None) -> str:
+    def _get_display_timecode(self, tc: Optional[str] = None, input_offset_ms: Optional[float] = None, key: str = "L") -> str:
         """Return display timecode string.
 
         Applies optional input delay compensation and optional timezone display conversion.
         (LTC does not carry a date; we use today's UTC date for TZ conversion.)
         """
+        ch = self.channels.get(key, self.channels["L"])
+
         if tc is None:
-            tc = self.channels["L"].decoded_tc
+            tc = ch.decoded_tc
 
         if input_offset_ms is None:
             try:
-                input_offset_ms = float(self.channels["L"].input_offset_ms)
+                input_offset_ms = float(ch.input_offset_ms)
             except Exception:
                 input_offset_ms = 0.0
 
-        if (not self.display_tz_enabled) and (abs(input_offset_ms) < 1e-9):
+        if (not ch.display_tz_enabled) and (abs(input_offset_ms) < 1e-9):
             return tc
 
         parsed = self._parse_tc(tc)
@@ -661,7 +716,7 @@ class TimecodeMonitor(MeasurementModule):
             return tc
 
         hh, mm, ss, ff = parsed
-        fps = float(self.fps) if self.fps else 30.0
+        fps = float(ch.fps) if ch.fps else 30.0
         if fps <= 0:
             fps = 30.0
 
@@ -674,7 +729,7 @@ class TimecodeMonitor(MeasurementModule):
             total_seconds = (hh * 3600.0) + (mm * 60.0) + float(min(ss, 59)) + (float(ff) / fps)
             total_seconds += (input_offset_ms / 1000.0)
 
-            if not self.display_tz_enabled:
+            if not ch.display_tz_enabled:
                 # Pure offset + wrap within 24h.
                 total_seconds = total_seconds % 86400.0
                 disp_h = int(total_seconds // 3600)
@@ -704,7 +759,7 @@ class TimecodeMonitor(MeasurementModule):
             )
             dt_utc = base_utc + timedelta(seconds=total_seconds)
 
-            tz_name = (self.display_tz_name or "System").strip()
+            tz_name = (ch.display_tz_name or "System").strip()
             if tz_name.lower() == "utc":
                 tz = timezone.utc
             elif tz_name.lower() == "system":
@@ -767,10 +822,28 @@ class TimecodeMonitor(MeasurementModule):
     def generator_mode(self, v: str):
         self.channels["L"].generator_mode = str(v)
 
+    @property
+    def display_tz_enabled(self) -> bool:
+        return bool(self.channels["L"].display_tz_enabled)
+
+    @display_tz_enabled.setter
+    def display_tz_enabled(self, v: bool):
+        self.channels["L"].display_tz_enabled = bool(v)
+
+    @property
+    def display_tz_name(self) -> str:
+        return str(self.channels["L"].display_tz_name)
+
+    @display_tz_name.setter
+    def display_tz_name(self, v: str):
+        self.channels["L"].display_tz_name = str(v)
+
 class TimecodeMonitorWidget(QWidget):
     def __init__(self, module: TimecodeMonitor):
         super().__init__()
         self.module = module
+        self._gen_buttons: Dict[str, QPushButton] = {}
+        self._tz_combos: Dict[str, QComboBox] = {}
         self.init_ui()
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_ui)
@@ -818,37 +891,22 @@ class TimecodeMonitorWidget(QWidget):
         display_row.addWidget(build_display_frame(tr("Right"), self.tc_label_R, self.sync_led_R, self.level_label_R))
         layout.addLayout(display_row)
         
-        controls_group = QGroupBox(tr("Settings"))
+        controls_group = QGroupBox(tr("Output"))
         c_layout = QGridLayout()
-        
-        # FPS Selection
-        c_layout.addWidget(QLabel(tr("Frame Rate:")), 0, 0)
-        self.fps_combo = QComboBox()
-        self.fps_combo.addItems(["23.976", "24", "25", "29.97", "30"])
-        self.fps_combo.setCurrentText("30")
-        self.fps_combo.currentTextChanged.connect(self.on_fps_changed)
-        c_layout.addWidget(self.fps_combo, 0, 1)
-        
-        # Display timezone (display-only)
-        self.display_tz_check = QCheckBox(tr("Display Local Time"))
-        self.display_tz_check.setChecked(bool(self.module.display_tz_enabled))
-        self.display_tz_check.toggled.connect(self.on_display_tz_toggled)
-        c_layout.addWidget(self.display_tz_check, 0, 2)
 
-        c_layout.addWidget(QLabel(tr("Display TZ:")), 1, 2)
-        self.tz_combo = QComboBox()
-        self.tz_combo.setEditable(True)
-        self.tz_combo.addItems([
-            "System",
-            "UTC",
-            "Asia/Tokyo",
-            "Europe/London",
-            "America/New_York",
-        ])
-        self.tz_combo.setCurrentText(self.module.display_tz_name or "System")
-        self.tz_combo.currentTextChanged.connect(self.on_display_tz_changed)
-        c_layout.addWidget(self.tz_combo, 1, 3)
-        self.tz_combo.setEnabled(bool(self.module.display_tz_enabled))
+        self.link_check = QCheckBox(tr("Link Stereo Output"))
+        self.link_check.setChecked(bool(self.module.link_enabled))
+        self.link_check.toggled.connect(self.on_link_toggled)
+        c_layout.addWidget(self.link_check, 0, 0, 1, 2)
+
+        c_layout.addWidget(QLabel(tr("Link Source:")), 1, 0)
+        self.link_src_combo = QComboBox()
+        self.link_src_combo.addItem(tr("Left"), "L")
+        self.link_src_combo.addItem(tr("Right"), "R")
+        self.link_src_combo.setCurrentIndex(0 if self.module.link_source == "L" else 1)
+        self.link_src_combo.currentIndexChanged.connect(self.on_link_source_changed)
+        c_layout.addWidget(self.link_src_combo, 1, 1)
+        self.link_src_combo.setEnabled(bool(self.module.link_enabled))
         
         controls_group.setLayout(c_layout)
         layout.addWidget(controls_group)
@@ -864,19 +922,27 @@ class TimecodeMonitorWidget(QWidget):
         # Start module
         QTimer.singleShot(100, self.module.start_analysis)
         
-    def on_fps_changed(self, text):
-        try:
-            fps = float(text)
-            self.module.set_fps(fps)
-        except:
-            pass
+    def on_link_toggled(self, checked: bool):
+        self.module.link_enabled = bool(checked)
+        self.link_src_combo.setEnabled(bool(checked))
+        if checked:
+            src = self.module.link_source if self.module.link_source in ("L", "R") else "L"
+            other = "R" if src == "L" else "L"
+            if self.module.channels[other].generator_enabled:
+                self.module.channels[other].generator_enabled = False
+            if self._gen_buttons.get(other) is not None:
+                self._gen_buttons[other].setChecked(False)
+                self._gen_buttons[other].setText(tr("Enable Generator"))
 
-    def on_display_tz_toggled(self, checked: bool):
-        self.module.display_tz_enabled = bool(checked)
-        self.tz_combo.setEnabled(bool(checked))
-
-    def on_display_tz_changed(self, text: str):
-        self.module.display_tz_name = str(text).strip() if text else "System"
+    def on_link_source_changed(self):
+        self.module.link_source = self.link_src_combo.currentData() or "L"
+        if self.module.link_enabled:
+            for key in ("L", "R"):
+                if self.module.channels[key].generator_enabled:
+                    self.module.channels[key].generator_enabled = False
+                if self._gen_buttons.get(key) is not None:
+                    self._gen_buttons[key].setChecked(False)
+                    self._gen_buttons[key].setText(tr("Enable Generator"))
         
     def update_ui(self):
         data = self.module.process()
@@ -905,6 +971,40 @@ class TimecodeMonitorWidget(QWidget):
 
         ch = self.module.channels[key]
 
+        settings = QGroupBox(tr("Channel Settings"))
+        sl = QGridLayout()
+
+        sl.addWidget(QLabel(tr("Frame Rate:")), 0, 0)
+        fps_combo = QComboBox()
+        fps_combo.addItems(["23.976", "24", "25", "29.97", "30"])
+        fps_combo.setCurrentText(self._format_fps_option(float(ch.fps)))
+        fps_combo.currentTextChanged.connect(lambda t="", k=key: self._on_fps_changed(k, t))
+        sl.addWidget(fps_combo, 0, 1)
+
+        tz_check = QCheckBox(tr("Display Local Time"))
+        tz_check.setChecked(bool(ch.display_tz_enabled))
+        tz_check.toggled.connect(lambda checked=False, k=key: self._on_tz_toggled(k, checked))
+        sl.addWidget(tz_check, 0, 2)
+
+        sl.addWidget(QLabel(tr("Display TZ:")), 1, 2)
+        tz_combo = QComboBox()
+        tz_combo.setEditable(True)
+        tz_combo.addItems([
+            "System",
+            "UTC",
+            "Asia/Tokyo",
+            "Europe/London",
+            "America/New_York",
+        ])
+        tz_combo.setCurrentText(ch.display_tz_name or "System")
+        tz_combo.currentTextChanged.connect(lambda text="", k=key: self._on_tz_changed(k, text))
+        tz_combo.setEnabled(bool(ch.display_tz_enabled))
+        sl.addWidget(tz_combo, 1, 3)
+        self._tz_combos[key] = tz_combo
+
+        settings.setLayout(sl)
+        v.addWidget(settings)
+
         g = QGroupBox(tr("Generator"))
         gl = QGridLayout()
 
@@ -922,6 +1022,7 @@ class TimecodeMonitorWidget(QWidget):
         gen_btn.clicked.connect(lambda checked=False, k=key, b=gen_btn: self._on_gen_toggle(k, checked, b))
         gen_btn.setText(tr("Stop Generator") if ch.generator_enabled else tr("Enable Generator"))
         gl.addWidget(gen_btn, 0, 2, 2, 1)
+        self._gen_buttons[key] = gen_btn
 
         gl.addWidget(QLabel(tr("In Delay (ms):")), 1, 0)
         in_spin = QDoubleSpinBox()
@@ -953,6 +1054,18 @@ class TimecodeMonitorWidget(QWidget):
         ch.gen.tod_epoch_base = None
 
     def _on_gen_toggle(self, key: str, checked: bool, btn: QPushButton):
+        if self.module.link_enabled:
+            # In link mode, only one side should generate; choose the side that was toggled.
+            other = "R" if key == "L" else "L"
+            self.module.link_source = key
+            if self.link_src_combo.currentData() != key:
+                self.link_src_combo.setCurrentIndex(0 if key == "L" else 1)
+
+            self.module.channels[other].generator_enabled = False
+            if self._gen_buttons.get(other) is not None:
+                self._gen_buttons[other].setChecked(False)
+                self._gen_buttons[other].setText(tr("Enable Generator"))
+
         ch = self.module.channels[key]
         ch.generator_enabled = bool(checked)
         if checked:
@@ -963,6 +1076,38 @@ class TimecodeMonitorWidget(QWidget):
             ch.gen.tod_epoch_base = None
             ch.gen.free_run_start_time = 0.0
         btn.setText(tr("Stop Generator") if checked else tr("Enable Generator"))
+
+    def _on_fps_changed(self, key: str, text: str):
+        try:
+            fps = float(text)
+        except Exception:
+            return
+
+        self.module.set_channel_fps(key, fps)
+
+    def _on_tz_toggled(self, key: str, checked: bool):
+        ch = self.module.channels[key]
+        ch.display_tz_enabled = bool(checked)
+        if self._tz_combos.get(key) is not None:
+            self._tz_combos[key].setEnabled(bool(checked))
+
+    def _on_tz_changed(self, key: str, text: str):
+        ch = self.module.channels[key]
+        ch.display_tz_name = str(text).strip() if text else "System"
+
+    def _format_fps_option(self, fps: float) -> str:
+        presets = [23.976, 24.0, 25.0, 29.97, 30.0]
+        labels = ["23.976", "24", "25", "29.97", "30"]
+        if fps <= 0:
+            return "30"
+        best_i = 0
+        best_d = float("inf")
+        for i, p in enumerate(presets):
+            d = abs(float(fps) - float(p))
+            if d < best_d:
+                best_d = d
+                best_i = i
+        return labels[best_i]
 
     def _set_in_offset(self, key: str, v: float):
         self.module.channels[key].input_offset_ms = float(v)
