@@ -37,6 +37,16 @@ class _LTCGenState:
     frames_generated: int = 0
     tod_epoch_base: Optional[float] = None
     free_run_start_time: float = 0.0
+    jam_base_total_frames: Optional[int] = None
+    jam_base_fps: Optional[float] = None
+
+@dataclass
+class _JamMemory:
+    valid: bool = False
+    tc_raw: str = "--:--:--:--"
+    captured_at: float = 0.0
+    fps: float = 30.0
+    total_frames: int = 0
 
 @dataclass
 class _TimecodeChannelState:
@@ -53,8 +63,12 @@ class _TimecodeChannelState:
     display_tz_name: str = "System"
     generator_enabled: bool = False
     generator_mode: str = "tod"
+    generator_jam_slot: int = 0
     gen_offset_ms: float = 0.0
     gen: _LTCGenState = None
+    estimated_fps: float = 0.0
+    last_frame_time: Optional[float] = None
+    fps_intervals: deque = field(default_factory=deque)
 
 class LTCEncoder:
     """Generates LTC audio samples."""
@@ -417,6 +431,8 @@ class TimecodeMonitor(MeasurementModule):
             ),
         }
 
+        self.jam_memories: list[_JamMemory] = [_JamMemory() for _ in range(5)]
+
     def set_fps(self, fps: float):
         fps = float(fps)
         if fps <= 0:
@@ -527,6 +543,18 @@ class TimecodeMonitor(MeasurementModule):
                             ch.decoded_tc = ch.decoder.decoded_tc
                             ch.locked = bool(ch.decoder.locked)
 
+                            now = time.time()
+                            if ch.last_frame_time is not None:
+                                dt = float(now - ch.last_frame_time)
+                                if 0.015 <= dt <= 0.08:
+                                    ch.fps_intervals.append(dt)
+                                    if len(ch.fps_intervals) > 32:
+                                        ch.fps_intervals.popleft()
+                                    avg = float(sum(ch.fps_intervals)) / float(len(ch.fps_intervals))
+                                    if avg > 0:
+                                        ch.estimated_fps = 1.0 / avg
+                            ch.last_frame_time = now
+
             if self.link_enabled:
                 src_key = self.link_source if self.link_source in self.channels else "L"
                 src = self.channels[src_key]
@@ -588,7 +616,54 @@ class TimecodeMonitor(MeasurementModule):
         return out
 
     def _generate_next_frame(self, ch: _TimecodeChannelState):
-        if ch.generator_mode == 'free':
+        if ch.generator_mode == 'jam':
+            fps = float(ch.fps) if ch.fps else 30.0
+            if fps <= 0:
+                fps = 30.0
+
+            slot = int(ch.generator_jam_slot) if ch.generator_jam_slot is not None else 0
+            if slot < 0:
+                slot = 0
+            elif slot > 4:
+                slot = 4
+
+            base = ch.gen.jam_base_total_frames
+            base_fps = ch.gen.jam_base_fps
+            if base is None or base_fps is None or abs(float(base_fps) - float(fps)) > 1e-6:
+                mem = self.jam_memories[slot] if 0 <= slot < len(self.jam_memories) else None
+                parsed = self._parse_tc(mem.tc_raw) if (mem is not None and mem.valid) else None
+                if parsed is None:
+                    base = 0
+                else:
+                    hh, mm, ss, ff = parsed
+                    nominal_fps = int(round(fps))
+                    if nominal_fps <= 0:
+                        nominal_fps = 30
+                    base = ((hh * 3600 + mm * 60 + ss) * nominal_fps) + int(ff)
+                ch.gen.jam_base_total_frames = int(base)
+                ch.gen.jam_base_fps = float(fps)
+
+            offset_frames = int(round((float(ch.gen_offset_ms) / 1000.0) * float(fps))) if ch.gen_offset_ms else 0
+            total_frames = int(ch.gen.jam_base_total_frames) + int(ch.gen.frames_generated) + int(offset_frames)
+
+            nominal_fps = int(round(fps))
+            if nominal_fps <= 0:
+                nominal_fps = 30
+
+            frames_per_day = 24 * 3600 * nominal_fps
+            if frames_per_day > 0:
+                total_frames = total_frames % frames_per_day
+
+            hh = int(total_frames // (3600 * nominal_fps))
+            rem = int(total_frames % (3600 * nominal_fps))
+            mm = int(rem // (60 * nominal_fps))
+            rem = int(rem % (60 * nominal_fps))
+            ss = int(rem // nominal_fps)
+            ff = int(rem % nominal_fps)
+
+            ch.gen.frames_generated += 1
+
+        elif ch.generator_mode == 'free':
             # Relative to start
             if ch.gen.free_run_start_time == 0:
                 ch.gen.free_run_start_time = time.time()
@@ -660,6 +735,7 @@ class TimecodeMonitor(MeasurementModule):
             "fps": float(l.fps),
             "L": {
                 "fps": float(l.fps),
+                "fps_est": float(l.estimated_fps),
                 "tc": self._get_display_timecode(l.decoded_tc, l.input_offset_ms, key="L"),
                 "tc_raw": l.decoded_tc,
                 "locked": bool(l.locked),
@@ -667,12 +743,94 @@ class TimecodeMonitor(MeasurementModule):
             },
             "R": {
                 "fps": float(r.fps),
+                "fps_est": float(r.estimated_fps),
                 "tc": self._get_display_timecode(r.decoded_tc, r.input_offset_ms, key="R"),
                 "tc_raw": r.decoded_tc,
                 "locked": bool(r.locked),
                 "level": float(r.input_level_db),
             },
         }
+
+    def jam_capture(self, key: str, slot: int) -> bool:
+        if key not in self.channels:
+            return False
+
+        s = int(slot)
+        if s < 0:
+            s = 0
+        elif s > 4:
+            s = 4
+
+        ch = self.channels[key]
+        parsed = self._parse_tc(ch.decoded_tc)
+        if parsed is None:
+            return False
+
+        fps = float(ch.fps) if ch.fps else 30.0
+        nominal_fps = int(round(fps))
+        if nominal_fps <= 0:
+            nominal_fps = 30
+
+        hh, mm, ss, ff = parsed
+        total_frames = ((hh * 3600 + mm * 60 + ss) * nominal_fps) + int(ff)
+
+        mem = self.jam_memories[s]
+        mem.valid = True
+        mem.tc_raw = ch.decoded_tc
+        mem.captured_at = time.time()
+        mem.fps = float(fps)
+        mem.total_frames = int(total_frames)
+        self.jam_memories[s] = mem
+        return True
+
+    def jam_capture_auto(self, key: str) -> int:
+        if key not in self.channels:
+            return -1
+
+        free_idx = None
+        oldest_idx = 0
+        oldest_ts = float("inf")
+        for i, m in enumerate(self.jam_memories):
+            if not m.valid and free_idx is None:
+                free_idx = i
+            if m.valid and float(m.captured_at) < oldest_ts:
+                oldest_ts = float(m.captured_at)
+                oldest_idx = i
+
+        idx = int(free_idx) if free_idx is not None else int(oldest_idx)
+        ok = self.jam_capture(key, idx)
+        return idx if ok else -1
+
+    def jam_get_current_tc(self, slot: int) -> str:
+        s = int(slot)
+        if s < 0:
+            s = 0
+        elif s > 4:
+            s = 4
+
+        mem = self.jam_memories[s]
+        if not mem.valid:
+            return "--:--:--:--"
+
+        fps = float(mem.fps) if mem.fps else 30.0
+        nominal_fps = int(round(fps))
+        if nominal_fps <= 0:
+            nominal_fps = 30
+
+        now = time.time()
+        elapsed_frames = int(round((now - float(mem.captured_at)) * float(fps)))
+        total_frames = int(mem.total_frames) + int(elapsed_frames)
+        frames_per_day = 24 * 3600 * nominal_fps
+        if frames_per_day > 0:
+            total_frames = total_frames % frames_per_day
+
+        hh = int(total_frames // (3600 * nominal_fps))
+        rem = int(total_frames % (3600 * nominal_fps))
+        mm = int(rem // (60 * nominal_fps))
+        rem = int(rem % (60 * nominal_fps))
+        ss = int(rem // nominal_fps)
+        ff = int(rem % nominal_fps)
+        return f"{hh:02}:{mm:02}:{ss:02}:{ff:02}"
 
     def _parse_tc(self, tc: str):
         """Parse 'HH:MM:SS:FF' into ints. Returns (hh, mm, ss, ff) or None."""
@@ -851,6 +1009,8 @@ class TimecodeMonitorWidget(QWidget):
         
     def init_ui(self):
         layout = QVBoxLayout()
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(6)
 
         display_row = QHBoxLayout()
 
@@ -858,13 +1018,17 @@ class TimecodeMonitorWidget(QWidget):
         self.tc_label_R = QLabel("--:--:--:--")
         self.sync_led_L = QLabel(tr("SYNC"))
         self.sync_led_R = QLabel(tr("SYNC"))
+        self.fps_est_label_L = QLabel(tr("FPS: --"))
+        self.fps_est_label_R = QLabel(tr("FPS: --"))
         self.level_label_L = QLabel("-- dB")
         self.level_label_R = QLabel("-- dB")
 
-        def build_display_frame(title: str, tc_label: QLabel, sync_led: QLabel, level_label: QLabel):
+        def build_display_frame(title: str, key: str, tc_label: QLabel, sync_led: QLabel, fps_label: QLabel, level_label: QLabel):
             frame = QFrame()
             frame.setStyleSheet("background-color: #111; border: 2px solid #555; border-radius: 8px;")
             v = QVBoxLayout(frame)
+            v.setContentsMargins(8, 6, 8, 6)
+            v.setSpacing(4)
 
             header = QHBoxLayout()
             hdr = QLabel(title)
@@ -874,21 +1038,38 @@ class TimecodeMonitorWidget(QWidget):
             v.addLayout(header)
 
             tc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            tc_label.setFont(QFont("Monospace", 48, QFont.Weight.Bold))
+            tc_label.setFont(QFont("Monospace", 44, QFont.Weight.Bold))
             tc_label.setStyleSheet("color: #ff3333;")
             v.addWidget(tc_label)
+
+            jam_row = QHBoxLayout()
+            jam_btn = QPushButton(tr("JAM"))
+            jam_btn.setMinimumHeight(26)
+            jam_btn.clicked.connect(lambda _=False, k=key: self._on_jam_capture_auto(k))
+            jam_row.addWidget(jam_btn)
+            jam_msg = QLabel("")
+            jam_msg.setStyleSheet("color: #888;")
+            jam_row.addWidget(jam_msg)
+            jam_row.addStretch()
+            v.addLayout(jam_row)
+
+            self._jam_capture_msg[key] = jam_msg
 
             status = QHBoxLayout()
             sync_led.setStyleSheet("color: #333; font-weight: bold; border: 1px solid #333; padding: 2px 5px; border-radius:4px;")
             status.addWidget(sync_led)
+
+            fps_label.setStyleSheet("color: #888;")
+            status.addWidget(fps_label)
             status.addStretch()
             level_label.setStyleSheet("color: #888;")
             status.addWidget(level_label)
             v.addLayout(status)
             return frame
 
-        display_row.addWidget(build_display_frame(tr("Left"), self.tc_label_L, self.sync_led_L, self.level_label_L))
-        display_row.addWidget(build_display_frame(tr("Right"), self.tc_label_R, self.sync_led_R, self.level_label_R))
+        self._jam_capture_msg = {}
+        display_row.addWidget(build_display_frame(tr("Left"), "L", self.tc_label_L, self.sync_led_L, self.fps_est_label_L, self.level_label_L))
+        display_row.addWidget(build_display_frame(tr("Right"), "R", self.tc_label_R, self.sync_led_R, self.fps_est_label_R, self.level_label_R))
         layout.addLayout(display_row)
         
         controls_group = QGroupBox(tr("Output"))
@@ -914,6 +1095,7 @@ class TimecodeMonitorWidget(QWidget):
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_channel_tab("L"), tr("Left"))
         self.tabs.addTab(self._build_channel_tab("R"), tr("Right"))
+        self.tabs.addTab(self._build_jam_tab(), tr("JAM"))
         layout.addWidget(self.tabs)
         
         layout.addStretch()
@@ -965,11 +1147,35 @@ class TimecodeMonitorWidget(QWidget):
         self.level_label_L.setText(tr("{0} dB").format(f"{float(l.get('level', -100.0)):.1f}"))
         self.level_label_R.setText(tr("{0} dB").format(f"{float(r.get('level', -100.0)):.1f}"))
 
+        fpsl = float(l.get("fps_est", 0.0))
+        fpsr = float(r.get("fps_est", 0.0))
+        self.fps_est_label_L.setText(tr("FPS: {0}").format("--" if fpsl <= 0 else f"{fpsl:.2f}"))
+        self.fps_est_label_R.setText(tr("FPS: {0}").format("--" if fpsr <= 0 else f"{fpsr:.2f}"))
+
+        if getattr(self, "_jam_tab_index", None) is not None and self.tabs.currentIndex() == self._jam_tab_index:
+            now = time.time()
+            if not hasattr(self, "_jam_last_update"):
+                self._jam_last_update = 0.0
+            if (now - float(self._jam_last_update)) >= 0.5:
+                self._jam_last_update = now
+                self.update_jam_ui()
+
+    def _on_jam_capture_auto(self, key: str):
+        idx = self.module.jam_capture_auto(key)
+        if idx >= 0 and self._jam_capture_msg.get(key) is not None:
+            self._jam_capture_msg[key].setText(tr("Saved: Mem {0}").format(str(idx + 1)))
+        elif self._jam_capture_msg.get(key) is not None:
+            self._jam_capture_msg[key].setText(tr("JAM failed"))
+
     def _build_channel_tab(self, key: str) -> QWidget:
         w = QWidget()
         v = QVBoxLayout(w)
+        v.setContentsMargins(6, 6, 6, 6)
+        v.setSpacing(6)
 
         ch = self.module.channels[key]
+
+        top_row = QHBoxLayout()
 
         settings = QGroupBox(tr("Channel Settings"))
         sl = QGridLayout()
@@ -1003,7 +1209,7 @@ class TimecodeMonitorWidget(QWidget):
         self._tz_combos[key] = tz_combo
 
         settings.setLayout(sl)
-        v.addWidget(settings)
+        top_row.addWidget(settings, 2)
 
         g = QGroupBox(tr("Generator"))
         gl = QGridLayout()
@@ -1012,9 +1218,28 @@ class TimecodeMonitorWidget(QWidget):
         mode_combo = QComboBox()
         mode_combo.addItem(tr("Time of Day"), "tod")
         mode_combo.addItem(tr("Free Run"), "free")
-        mode_combo.setCurrentIndex(0 if ch.generator_mode == "tod" else 1)
+        mode_combo.addItem(tr("JAM"), "jam")
+        if ch.generator_mode == "tod":
+            mode_combo.setCurrentIndex(0)
+        elif ch.generator_mode == "free":
+            mode_combo.setCurrentIndex(1)
+        else:
+            mode_combo.setCurrentIndex(2)
         mode_combo.currentIndexChanged.connect(lambda _=0, k=key, c=mode_combo: self._on_mode_changed(k, c.currentData()))
         gl.addWidget(mode_combo, 0, 1)
+
+        gl.addWidget(QLabel(tr("JAM Mem:")), 3, 0)
+        jam_combo = QComboBox()
+        for i in range(5):
+            jam_combo.addItem(tr("Mem {0}").format(str(i + 1)), i)
+        cur_slot = int(ch.generator_jam_slot) if ch.generator_jam_slot is not None else 0
+        if cur_slot < 0:
+            cur_slot = 0
+        elif cur_slot > 4:
+            cur_slot = 4
+        jam_combo.setCurrentIndex(cur_slot)
+        jam_combo.currentIndexChanged.connect(lambda _=0, k=key, c=jam_combo: self._on_jam_slot_changed(k, int(c.currentData())))
+        gl.addWidget(jam_combo, 3, 1)
 
         gen_btn = QPushButton(tr("Enable Generator"))
         gen_btn.setCheckable(True)
@@ -1039,7 +1264,9 @@ class TimecodeMonitorWidget(QWidget):
         gl.addWidget(out_spin, 2, 1)
 
         g.setLayout(gl)
-        v.addWidget(g)
+        top_row.addWidget(g, 3)
+
+        v.addLayout(top_row)
         v.addStretch()
         return w
 
@@ -1052,6 +1279,14 @@ class TimecodeMonitorWidget(QWidget):
         ch.gen.gen_pos = 0
         ch.gen.free_run_start_time = 0.0
         ch.gen.tod_epoch_base = None
+        ch.gen.jam_base_total_frames = None
+        ch.gen.jam_base_fps = None
+
+    def _on_jam_slot_changed(self, key: str, slot: int):
+        ch = self.module.channels[key]
+        ch.generator_jam_slot = int(slot)
+        ch.gen.jam_base_total_frames = None
+        ch.gen.jam_base_fps = None
 
     def _on_gen_toggle(self, key: str, checked: bool, btn: QPushButton):
         if self.module.link_enabled:
@@ -1075,7 +1310,56 @@ class TimecodeMonitorWidget(QWidget):
             ch.gen.gen_pos = 0
             ch.gen.tod_epoch_base = None
             ch.gen.free_run_start_time = 0.0
+            ch.gen.jam_base_total_frames = None
+            ch.gen.jam_base_fps = None
         btn.setText(tr("Stop Generator") if checked else tr("Enable Generator"))
+
+    def _build_jam_tab(self) -> QWidget:
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.setContentsMargins(6, 6, 6, 6)
+        v.setSpacing(6)
+        grid_box = QGroupBox(tr("JAM Memories"))
+        gl = QGridLayout()
+
+        gl.addWidget(QLabel(tr("Slot")), 0, 0)
+        gl.addWidget(QLabel(tr("Captured")), 0, 1)
+        gl.addWidget(QLabel(tr("Current")), 0, 2)
+
+        self._jam_labels = {}
+        row = 1
+        for slot in range(5):
+            gl.addWidget(QLabel(str(slot + 1)), row, 0)
+            cap = QLabel("--:--:--:--")
+            cur = QLabel("--:--:--:--")
+            cap.setFont(QFont("Monospace", 10))
+            cur.setFont(QFont("Monospace", 10))
+            gl.addWidget(cap, row, 1)
+            gl.addWidget(cur, row, 2)
+            self._jam_labels[(slot, "cap")] = cap
+            self._jam_labels[(slot, "cur")] = cur
+            row += 1
+
+        grid_box.setLayout(gl)
+        v.addWidget(grid_box)
+        v.addStretch()
+
+        self._jam_tab_index = 2
+        self.update_jam_ui()
+        return w
+
+    def update_jam_ui(self):
+        if not hasattr(self, "_jam_labels"):
+            return
+
+        for slot in range(5):
+            mem = self.module.jam_memories[slot]
+            cap = mem.tc_raw if mem.valid else "--:--:--:--"
+            cur = self.module.jam_get_current_tc(slot) if mem.valid else "--:--:--:--"
+            if self._jam_labels.get((slot, "cap")) is not None:
+                self._jam_labels[(slot, "cap")].setText(cap)
+            if self._jam_labels.get((slot, "cur")) is not None:
+                self._jam_labels[(slot, "cur")].setText(cur)
 
     def _on_fps_changed(self, key: str, text: str):
         try:
