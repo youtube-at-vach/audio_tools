@@ -1000,6 +1000,12 @@ class TimecodeMonitor(MeasurementModule):
         hh, mm, ss, ff = parsed
         total_frames = ((hh * 3600 + mm * 60 + ss) * nominal_fps) + int(ff)
 
+        # Apply input delay compensation (if any)
+        try:
+            total_frames += int(ch.input_offset_frames)
+        except Exception:
+            pass
+
         mem = self.jam_memories[s]
         mem.valid = True
         mem.tc_raw = ch.decoded_tc
@@ -1112,12 +1118,19 @@ class TimecodeMonitor(MeasurementModule):
             return False
         captured_at = (float(f_last) - float(b)) / float(fps)
 
+        # Apply input delay compensation (if any)
+        final_total_frames = int(f_last)
+        try:
+            final_total_frames += int(ch.input_offset_frames)
+        except Exception:
+            pass
+
         mem = self.jam_memories[s]
         mem.valid = True
         mem.tc_raw = ch.decoded_tc
         mem.captured_at = float(captured_at)
         mem.fps = float(fps)
-        mem.total_frames = int(f_last)
+        mem.total_frames = int(final_total_frames)
         self.jam_memories[s] = mem
         return True
 
