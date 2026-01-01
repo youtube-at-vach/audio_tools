@@ -92,6 +92,26 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         self.last_map_update_dsse = float('nan')
         self.last_map_update_sse_std = float('nan')
 
+        self.map_update_last_action = ""
+        self.map_update_last_skip_reason = ""
+        self._map_update_initial_map = None
+        self.map_update_map_diff_rms = float('nan')
+        self.map_update_map_diff_max = float('nan')
+
+    def _refresh_map_update_diff_metrics(self):
+        n = int(self.period_samples)
+        if n <= 0 or self.memory_map.size != n:
+            self.map_update_map_diff_rms = float('nan')
+            self.map_update_map_diff_max = float('nan')
+            return
+        if self._map_update_initial_map is None or getattr(self._map_update_initial_map, 'size', 0) != n:
+            self.map_update_map_diff_rms = float('nan')
+            self.map_update_map_diff_max = float('nan')
+            return
+        d = np.asarray(self.memory_map, dtype=np.float64) - np.asarray(self._map_update_initial_map, dtype=np.float64)
+        self.map_update_map_diff_rms = float(np.sqrt(np.mean(d * d)))
+        self.map_update_map_diff_max = float(np.max(np.abs(d)))
+
     @staticmethod
     def _wrap_indices(start: int, length: int, n: int) -> np.ndarray:
         if n <= 0 or length <= 0:
@@ -99,21 +119,32 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         return (np.arange(length, dtype=np.int64) + int(start)) % int(n)
 
     def _maybe_update_memory_map(self):
+        self.map_update_last_action = ""
+        self.map_update_last_skip_reason = ""
+
         if not bool(self.map_update_enabled):
             return
 
         n = int(self.period_samples)
         if n <= 0 or self.memory_map.size != n:
+            self.map_update_last_action = "skip"
+            self.map_update_last_skip_reason = "bad N/memory"
             return
 
         if self.normalized_dutin.size != n or self.error_signal.size != n:
+            self.map_update_last_action = "skip"
+            self.map_update_last_skip_reason = "no residual yet"
             return
 
         if not np.isfinite(self.last_filled_ratio) or float(self.last_filled_ratio) < 0.95:
+            self.map_update_last_action = "skip"
+            self.map_update_last_skip_reason = "insufficient fill"
             return
 
         mu = float(self.map_update_mu)
         if not np.isfinite(mu) or mu <= 0.0:
+            self.map_update_last_action = "skip"
+            self.map_update_last_skip_reason = "mu invalid"
             return
 
         # Keep mu conservative.
@@ -121,6 +152,8 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
 
         window_pct = float(self.map_update_window_pct)
         if not np.isfinite(window_pct) or window_pct <= 0.0:
+            self.map_update_last_action = "skip"
+            self.map_update_last_skip_reason = "window invalid"
             return
         window_pct = float(min(window_pct, 100.0))
 
@@ -140,6 +173,8 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         dut = np.asarray(self.normalized_dutin, dtype=np.float64)
         m = np.isfinite(dut) & np.isfinite(mem0)
         if not np.any(m[idx]):
+            self.map_update_last_action = "skip"
+            self.map_update_last_skip_reason = "window empty"
             return
 
         err = dut - mem0
@@ -149,6 +184,8 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         seg_m = m[idx]
         n_w = int(np.count_nonzero(seg_m))
         if n_w < 8:
+            self.map_update_last_action = "skip"
+            self.map_update_last_skip_reason = "too few samples"
             return
         err_w = err[idx][seg_m]
         sse_before = float(np.dot(err_w, err_w))
@@ -171,6 +208,7 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
 
         # Count this as an update attempt (all preconditions satisfied)
         self.map_update_attempts += 1
+        self.map_update_last_action = "attempt"
 
         # Save old segment for rollback.
         old_seg = mem[idx].copy()
@@ -218,6 +256,7 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
 
             self.map_update_reverts += 1
             self.last_map_update_delta_rms = float(self._nan_rms(delta[seg_m])) if np.any(seg_m) else float('nan')
+            self.map_update_last_action = "revert"
 
             # Restore residual metrics for the reverted map.
             mem_dc3 = float(np.mean(mem)) if mem.size else 0.0
@@ -242,6 +281,7 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
 
         self.map_update_accepts += 1
         self.last_map_update_delta_rms = float(self._nan_rms(delta[seg_m])) if np.any(seg_m) else float('nan')
+        self.map_update_last_action = "accept"
 
         # Track best observed RMS error (informational; no stop here to avoid noise sensitivity)
         if np.isfinite(rms_after):
@@ -359,7 +399,18 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         self.last_map_update_sigma2 = float('nan')
         self.last_map_update_dsse = float('nan')
         self.last_map_update_sse_std = float('nan')
+
+        self.map_update_last_action = ""
+        self.map_update_last_skip_reason = ""
+        self._map_update_initial_map = None
+        self.map_update_map_diff_rms = float('nan')
+        self.map_update_map_diff_max = float('nan')
         self._rebuild_memory_map()
+
+        # Baseline snapshot for confirming map changes
+        if self.memory_map.size == int(self.period_samples):
+            self._map_update_initial_map = np.array(self.memory_map, dtype=np.float64, copy=True)
+        self._refresh_map_update_diff_metrics()
 
         def callback(indata, outdata, frames, time, status):
             if status:
@@ -522,6 +573,7 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
 
         # Conservative partial update of memory map (optional)
         self._maybe_update_memory_map()
+        self._refresh_map_update_diff_metrics()
 
 
 class SelfCalibratingDistortionExtractorWidget(QWidget):
@@ -537,6 +589,8 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
         self._ts_t = []
         self._ts_rms = []
         self._ts_enabled = []
+        self._ts_mapdiff = []
+        self._ts_upd_deltarms = []
         self._ts_max_len = 2000
         self._prev_update_enabled = False
         self._ts_discard_initial_s = 1.0
@@ -664,6 +718,8 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
 
         self.res_curve = self.res_plot.plot(pen=pg.mkPen('m', width=1), name=tr('RMSerr'))
         self.res_enable_curve = self.res_plot.plot(pen=pg.mkPen('w', width=1), name=tr('Update enabled (scaled)'))
+        self.res_mapdiff_curve = self.res_plot.plot(pen=pg.mkPen('g', width=1), name=tr('Δmap (rms, scaled)'))
+        self.res_upd_deltarms_curve = self.res_plot.plot(pen=pg.mkPen('y', width=1), name=tr('Δupdate (rms, scaled)'))
         self.res_stop_scatter = pg.ScatterPlotItem(pen=pg.mkPen(None), brush=pg.mkBrush('r'), size=7)
         self.res_plot.addItem(self.res_stop_scatter)
 
@@ -729,6 +785,8 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
         self._ts_t = []
         self._ts_rms = []
         self._ts_enabled = []
+        self._ts_mapdiff = []
+        self._ts_upd_deltarms = []
         self._prev_update_enabled = bool(self.module.map_update_enabled)
         self.res_stop_scatter.setData([])
         self.timer.start()
@@ -757,11 +815,15 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
 
         # Update diagnostics text (helps confirm whether updates are actually happening)
         self.map_update_debug_label.setText(
-            tr("att={0}, ok={1}, rev={2} | Δrms={3:.2e} | win={4}+{5} (nw={6}) | σ²={7:.2e} | dSSE={8:.2e}, thr={9:.2e}").format(
+            tr("{0}{1} | att={2}, ok={3}, rev={4} | Δrms={5:.2e} | Δmap(rms,max)={6:.2e},{7:.2e} | win={8}+{9} (nw={10}) | σ²={11:.2e} | dSSE={12:.2e}, thr={13:.2e}").format(
+                str(self.module.map_update_last_action),
+                ("/" + str(self.module.map_update_last_skip_reason)) if self.module.map_update_last_skip_reason else "",
                 int(self.module.map_update_attempts),
                 int(self.module.map_update_accepts),
                 int(self.module.map_update_reverts),
                 float(self.module.last_map_update_delta_rms) if np.isfinite(self.module.last_map_update_delta_rms) else float('nan'),
+                float(self.module.map_update_map_diff_rms) if np.isfinite(self.module.map_update_map_diff_rms) else float('nan'),
+                float(self.module.map_update_map_diff_max) if np.isfinite(self.module.map_update_map_diff_max) else float('nan'),
                 int(self.module.last_map_update_win_start),
                 int(self.module.last_map_update_win_len),
                 int(self.module.last_map_update_nw),
@@ -794,12 +856,16 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
         self._ts_t.append(t)
         self._ts_rms.append(rms)
         self._ts_enabled.append(1.0 if enabled else 0.0)
+        self._ts_mapdiff.append(float(self.module.map_update_map_diff_rms))
+        self._ts_upd_deltarms.append(float(self.module.last_map_update_delta_rms))
 
         if len(self._ts_t) > int(self._ts_max_len):
             drop = len(self._ts_t) - int(self._ts_max_len)
             self._ts_t = self._ts_t[drop:]
             self._ts_rms = self._ts_rms[drop:]
             self._ts_enabled = self._ts_enabled[drop:]
+            self._ts_mapdiff = self._ts_mapdiff[drop:]
+            self._ts_upd_deltarms = self._ts_upd_deltarms[drop:]
 
         # Mark the moment auto-stop happens (enabled -> disabled with a reason)
         if prev_enabled and (not enabled) and bool(self.module.map_update_stop_reason):
@@ -825,6 +891,8 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
             tt = np.asarray(self._ts_t, dtype=np.float64)
             rr = np.asarray(self._ts_rms, dtype=np.float64)
             en = np.asarray(self._ts_enabled, dtype=np.float64)
+            md = np.asarray(self._ts_mapdiff, dtype=np.float64)
+            du = np.asarray(self._ts_upd_deltarms, dtype=np.float64)
 
             self.res_curve.setData(tt, rr)
 
@@ -832,6 +900,16 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
             rmax = float(np.nanmax(rr)) if rr.size else 0.0
             scale = 0.1 * rmax if np.isfinite(rmax) and rmax > 0 else 1.0
             self.res_enable_curve.setData(tt, en * scale)
+
+            # Scale map diff to be visible on the same axis (roughly the same scale as RMS)
+            mdv = float(np.nanmax(md)) if md.size else 0.0
+            md_scale = (0.1 * rmax / (mdv + 1e-30)) if np.isfinite(rmax) and rmax > 0 and np.isfinite(mdv) and mdv > 0 else 0.0
+            self.res_mapdiff_curve.setData(tt, md * md_scale)
+
+            # Scale per-step update magnitude similarly
+            duv = float(np.nanmax(du)) if du.size else 0.0
+            du_scale = (0.1 * rmax / (duv + 1e-30)) if np.isfinite(rmax) and rmax > 0 and np.isfinite(duv) and duv > 0 else 0.0
+            self.res_upd_deltarms_curve.setData(tt, du * du_scale)
 
         n = int(self.module.period_samples)
         if n <= 0 or self.module.memory_map.size != n or self.module.aligned_dutin.size != n:
