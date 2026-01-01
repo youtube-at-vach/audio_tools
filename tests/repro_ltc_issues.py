@@ -141,7 +141,7 @@ def test_ltc_issues():
     
     
     # Access private members for white-box testing
-    frames_gen = monitor.frames_generated
+    frames_gen = monitor.channels['L'].gen.frames_generated
     print(f"Frames Generated after restart (should be ~1): {frames_gen}")
     
     # If reset works, it should be 1 (generated 1 frame to fill buffer).

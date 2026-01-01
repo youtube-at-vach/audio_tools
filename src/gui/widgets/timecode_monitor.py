@@ -563,6 +563,8 @@ class TimecodeMonitor(MeasurementModule):
             ch.gen.encoder.sample_rate = sr
             ch.gen.encoder.set_fps(ch.fps)
             ch.gen.tod_epoch_base = None
+            ch.gen.jam_base_total_frames = None
+            ch.gen.jam_base_fps = None
 
             ch.decoder = LTCDecoder(sr, ch.fps)
             ch.decoded_tc = "--:--:--:--"
@@ -579,6 +581,51 @@ class TimecodeMonitor(MeasurementModule):
         def callback(indata, outdata, frames, time_info, status):
             # Always start from silence for this module's output.
             outdata.fill(0)
+
+            now = time.time()
+            input_adc = None
+            current_t = None
+            output_dac = None
+            try:
+                input_adc = getattr(time_info, "inputBufferAdcTime", None)
+                current_t = getattr(time_info, "currentTime", None)
+                output_dac = getattr(time_info, "outputBufferDacTime", None)
+            except Exception:
+                input_adc = None
+                current_t = None
+                output_dac = None
+
+            # IMPORTANT: PortAudio time_info times are in the stream timebase
+            # (not guaranteed to be Unix epoch). Convert them to an epoch-like
+            # timebase by estimating an offset from time.time().
+            epoch_now = float(now)
+            epoch_offset = 0.0
+            if current_t is not None:
+                try:
+                    epoch_offset = float(epoch_now) - float(current_t)
+                except Exception:
+                    epoch_offset = 0.0
+
+            if current_t is None:
+                current_t_epoch = float(epoch_now)
+            else:
+                current_t_epoch = float(current_t) + float(epoch_offset)
+
+            input_adc_epoch = None
+            if input_adc is not None:
+                try:
+                    input_adc_epoch = float(input_adc) + float(epoch_offset)
+                except Exception:
+                    input_adc_epoch = None
+
+            output_dac_epoch = None
+            if output_dac is not None:
+                try:
+                    output_dac_epoch = float(output_dac) + float(epoch_offset)
+                except Exception:
+                    output_dac_epoch = None
+
+            self._last_stream_epoch = float(output_dac_epoch) if output_dac_epoch is not None else float(current_t_epoch)
 
             for ch in self.channels.values():
                 if indata is not None and getattr(indata, "shape", None) is not None:
@@ -597,52 +644,6 @@ class TimecodeMonitor(MeasurementModule):
                         if decoded:
                             ch.decoded_tc = ch.decoder.decoded_tc
                             ch.locked = bool(ch.decoder.locked)
-
-                            now = time.time()
-
-                            input_adc = None
-                            current_t = None
-                            output_dac = None
-                            try:
-                                input_adc = getattr(time_info, "inputBufferAdcTime", None)
-                                current_t = getattr(time_info, "currentTime", None)
-                                output_dac = getattr(time_info, "outputBufferDacTime", None)
-                            except Exception:
-                                input_adc = None
-                                current_t = None
-                                output_dac = None
-
-                            # IMPORTANT: PortAudio time_info times are in the stream timebase
-                            # (not guaranteed to be Unix epoch). Convert them to an epoch-like
-                            # timebase by estimating an offset from time.time().
-                            epoch_now = float(now)
-                            epoch_offset = 0.0
-                            if current_t is not None:
-                                try:
-                                    epoch_offset = float(epoch_now) - float(current_t)
-                                except Exception:
-                                    epoch_offset = 0.0
-
-                            if current_t is None:
-                                current_t_epoch = float(epoch_now)
-                            else:
-                                current_t_epoch = float(current_t) + float(epoch_offset)
-
-                            input_adc_epoch = None
-                            if input_adc is not None:
-                                try:
-                                    input_adc_epoch = float(input_adc) + float(epoch_offset)
-                                except Exception:
-                                    input_adc_epoch = None
-
-                            output_dac_epoch = None
-                            if output_dac is not None:
-                                try:
-                                    output_dac_epoch = float(output_dac) + float(epoch_offset)
-                                except Exception:
-                                    output_dac_epoch = None
-
-                            self._last_stream_epoch = float(output_dac_epoch) if output_dac_epoch is not None else float(current_t_epoch)
 
                             if input_adc_epoch is not None:
                                 try:
