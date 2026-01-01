@@ -67,10 +67,10 @@ class WelcomeWidget(QWidget):
         features_layout.setSpacing(20)
         
         features = [
-            tr("Signal Generator"), tr("Spectrum Analyzer"), tr("LUFS Meter"),
-            tr("Loopback Finder"), tr("Distortion Analyzer"), tr("Network Analyzer"),
-            tr("Oscilloscope"), tr("Lock-in Amplifier"), tr("Frequency Counter"),
-            tr("Spectrogram"), tr("Boxcar Averager")
+            tr("Signal Generator"), tr("Spectrum Analyzer"),
+            tr("Distortion Analyzer"), tr("Network Analyzer"),
+            tr("Oscilloscope"), tr("Lock-in Amplifier"),
+            tr("Frequency Counter"), tr("Spectrogram")
         ]
         
         for feat in features:
