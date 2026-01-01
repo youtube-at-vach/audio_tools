@@ -526,17 +526,17 @@ class TimecodeMonitor(MeasurementModule):
 
     @property
     def name(self) -> str:
-        return "Timecode Monitor & Generator"
+        return tr("Timecode Monitor & Generator")
         
     @property
     def description(self) -> str:
-        return "LTC (Linear Timecode) Reader and Generator."
+        return tr("LTC (Linear Timecode) Reader and Generator.")
 
     def get_widget(self):
         return TimecodeMonitorWidget(self)
 
     def run(self, args):
-        print("Timecode Monitor running in CLI mode (not fully implemented)")
+        print(tr("Timecode Monitor running in CLI mode (not fully implemented)"))
         self.start_analysis()
         try:
             while True:
@@ -1637,15 +1637,23 @@ class TimecodeMonitorWidget(QWidget):
         sl.addWidget(QLabel(tr("Display TZ:")), 1, 2)
         tz_combo = QComboBox()
         tz_combo.setEditable(True)
-        tz_combo.addItems([
-            "System",
-            "UTC",
-            "Asia/Tokyo",
-            "Europe/London",
-            "America/New_York",
-        ])
-        tz_combo.setCurrentText(ch.display_tz_name or "System")
-        tz_combo.currentTextChanged.connect(lambda text="", k=key: self._on_tz_changed(k, text))
+        tz_options = [
+            ("System", tr("System")),
+            ("UTC", tr("UTC")),
+            ("Asia/Tokyo", tr("Asia/Tokyo")),
+            ("Europe/London", tr("Europe/London")),
+            ("America/New_York", tr("America/New_York")),
+        ]
+        for value, label in tz_options:
+            tz_combo.addItem(label, value)
+
+        current_value = ch.display_tz_name or "System"
+        idx = tz_combo.findData(current_value)
+        if idx < 0:
+            tz_combo.addItem(current_value, current_value)
+            idx = tz_combo.findData(current_value)
+        tz_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        tz_combo.currentTextChanged.connect(lambda text="", k=key, c=tz_combo: self._on_tz_changed(k, text, c.currentData()))
         tz_combo.setEnabled(bool(ch.display_tz_enabled))
         sl.addWidget(tz_combo, 1, 3)
         self._tz_combos[key] = tz_combo
@@ -1818,9 +1826,10 @@ class TimecodeMonitorWidget(QWidget):
         if self._tz_combos.get(key) is not None:
             self._tz_combos[key].setEnabled(bool(checked))
 
-    def _on_tz_changed(self, key: str, text: str):
+    def _on_tz_changed(self, key: str, text: str, data: Optional[str] = None):
         ch = self.module.channels[key]
-        ch.display_tz_name = str(text).strip() if text else "System"
+        value = data if data is not None else text
+        ch.display_tz_name = str(value).strip() if value else "System"
 
     def _parse_fps_option(self, text: str) -> tuple[Optional[float], bool]:
         t = (text or "").strip()
