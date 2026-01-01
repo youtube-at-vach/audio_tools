@@ -78,9 +78,14 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         # Keep UI responsive: limit how often we attempt updates.
         self.map_update_max_rate_hz = 5.0
         self._map_update_last_time = 0.0
+        # Noise-robust learning: low-pass the residual used for adaptation.
+        self.map_update_err_tau_s = 0.25
+        self._map_update_err_ema = None
+        self._map_update_err_ema_time = 0.0
         self._map_update_pos = 0
         self._map_update_best_rms_error = np.inf
         self._map_update_bad_count = 0
+        self._map_update_adaptive_mu_scale = 1.0
         self.map_update_stop_reason = ""
 
         # Update diagnostics (for debugging)
@@ -166,6 +171,9 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
             self.map_update_last_skip_reason = "mu invalid"
             return
 
+        # Apply adaptive scaling
+        mu *= float(self._map_update_adaptive_mu_scale)
+
         # Keep mu conservative.
         mu = float(min(mu, 1e-2))
 
@@ -217,6 +225,14 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         err = dut - mem0
         rms_before = self._nan_rms(err)
 
+        # Use EMA residual for the *update* direction to reduce noise sensitivity.
+        # Acceptance testing stays based on the true residual `err`.
+        err_upd = err
+        if isinstance(self._map_update_err_ema, np.ndarray) and self._map_update_err_ema.size == err.size:
+            e2 = np.asarray(self._map_update_err_ema, dtype=np.float64)
+            if np.any(np.isfinite(e2)):
+                err_upd = e2
+
         # Variance-aware (noise-robust) acceptance criterion uses SSE change in the updated window.
         seg_m = m[idx]
         n_w = int(np.count_nonzero(seg_m))
@@ -258,10 +274,20 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         clip = float(clip_k * sigma) if np.isfinite(sigma) and sigma > 0.0 else float('inf')
 
         delta = np.zeros((win,), dtype=np.float64)
-        e_seg = err[idx][seg_m]
+
+        # Compensate for partial-window updating: scale local step by N/win (capped).
+        cov = float(n) / float(win) if win > 0 else 1.0
+        if not np.isfinite(cov) or cov <= 0.0:
+            cov = 1.0
+        cov = float(min(max(cov, 1.0), 50.0))
+
+        mu_local = float(mu * cov)
+        mu_local = float(min(mu_local, 5e-2))
+
+        e_seg = err_upd[idx][seg_m]
         if np.isfinite(clip):
             e_seg = np.clip(e_seg, -clip, clip)
-        delta[seg_m] = mu * e_seg
+        delta[seg_m] = mu_local * e_seg
 
         # Keep DC from drifting by forcing zero-mean delta within the updated window.
         if np.any(seg_m):
@@ -350,8 +376,12 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
                 rms_ref3 = self._nan_rms(mem03)
                 self.last_rms_error_ratio = float(rms3 / (rms_ref3 + 1e-15)) if np.isfinite(rms3) and np.isfinite(rms_ref3) else float('nan')
 
+            # Adaptive backoff: reduce mu scale on failure
+            self._map_update_adaptive_mu_scale = max(0.01, self._map_update_adaptive_mu_scale * 0.5)
+
             self._map_update_bad_count += 1
-            if self._map_update_bad_count >= 5:
+            # Increased tolerance for bad counts (was 5)
+            if self._map_update_bad_count >= 20:
                 self.map_update_enabled = False
                 self.map_update_stop_reason = "Significant residual increase (auto-stopped)"
                 self._map_update_bad_count = 0
@@ -360,6 +390,9 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         # Not significantly worse: gradually forgive previous bad counts.
         if self._map_update_bad_count > 0:
             self._map_update_bad_count -= 1
+        
+        # Adaptive recovery: slowly increase mu scale on success
+        self._map_update_adaptive_mu_scale = min(1.0, self._map_update_adaptive_mu_scale * 1.05)
 
         self.map_update_accepts += 1
         self.last_map_update_delta_rms = float(self._nan_rms(delta[seg_m])) if np.any(seg_m) else float('nan')
@@ -467,9 +500,12 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         self.is_running = True
         self.global_sample_counter = 0
         self._map_update_last_time = 0.0
+        self._map_update_err_ema = None
+        self._map_update_err_ema_time = 0.0
         self._map_update_pos = 0
         self._map_update_best_rms_error = np.inf
         self._map_update_bad_count = 0
+        self._map_update_adaptive_mu_scale = 1.0
         self.map_update_stop_reason = ""
 
         self.map_update_attempts = 0
@@ -653,6 +689,34 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         thd_percent, thd_db = self._compute_thd_from_one_period(dut_norm)
         self.last_thd_percent = float(thd_percent)
         self.last_thd_db = float(thd_db)
+
+        # Internal EMA of the residual for noise-robust adaptation.
+        try:
+            now = float(time.perf_counter())
+        except Exception:
+            now = 0.0
+
+        tau = float(self.map_update_err_tau_s)
+        if not np.isfinite(tau) or tau <= 0.0:
+            tau = 0.25
+
+        if self._map_update_err_ema is None or (isinstance(self._map_update_err_ema, np.ndarray) and self._map_update_err_ema.size != err.size):
+            self._map_update_err_ema = np.array(err, dtype=np.float64, copy=True)
+            self._map_update_err_ema_time = float(now) if np.isfinite(now) else 0.0
+        else:
+            t_prev = float(self._map_update_err_ema_time)
+            dt = float(now - t_prev) if np.isfinite(now) and np.isfinite(t_prev) and t_prev > 0.0 else 0.0
+            alpha = float(1.0 - np.exp(-dt / tau)) if dt > 0.0 else 1.0
+
+            ema = np.asarray(self._map_update_err_ema, dtype=np.float64)
+            cur = np.asarray(err, dtype=np.float64)
+            m_ema = np.isfinite(cur)
+            if np.any(m_ema):
+                ema[m_ema] = (1.0 - alpha) * ema[m_ema] + alpha * cur[m_ema]
+            ema[~m_ema] = np.nan
+            self._map_update_err_ema = ema
+            if np.isfinite(now):
+                self._map_update_err_ema_time = float(now)
 
         # Conservative partial update of memory map (optional)
         self._maybe_update_memory_map()
