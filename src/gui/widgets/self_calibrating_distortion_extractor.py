@@ -69,24 +69,16 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         self.last_thd_percent = np.nan
         self.last_filled_ratio = 0.0
 
-        # Conservative memory-map correction (partial, sliding updates)
+        # Memory-map update: simplest behavior.
+        # When enabled, the memory map is rewritten back to the ideal cosine waveform,
+        # starting from index 0 and advancing a write pointer (sliding update).
         self.map_update_enabled = False
-        self.map_update_mu = 1e-4
-        self.map_update_window_pct = 10.0
-        # Noise-robust guard: larger => less sensitive to noise
-        self.map_update_guard_z = 3.0
-        # Keep UI responsive: limit how often we attempt updates.
-        self.map_update_max_rate_hz = 5.0
-        self._map_update_last_time = 0.0
-        # Noise-robust learning: low-pass the residual used for adaptation.
-        self.map_update_err_tau_s = 0.25
-        self._map_update_err_ema = None
-        self._map_update_err_ema_time = 0.0
-        self._map_update_pos = 0
-        self._map_update_best_rms_error = np.inf
-        self._map_update_bad_count = 0
-        self._map_update_adaptive_mu_scale = 1.0
         self.map_update_stop_reason = ""
+        self._ideal_unit_cos = np.zeros((0,), dtype=np.float64)
+        self._ideal_update_pos = 0
+        self._ideal_update_step = 256
+        # Blend factor for "learn" updates (smaller = slower). Kept internal.
+        self._map_learn_alpha = 0.2
 
         # Update diagnostics (for debugging)
         self.map_update_attempts = 0
@@ -106,6 +98,9 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         self.map_update_map_diff_rms = float('nan')
         self.map_update_map_diff_max = float('nan')
 
+        # Simple deterministic update counter ("100% counter" style)
+        self.map_update_counter = 0
+
     def _refresh_map_update_diff_metrics(self):
         n = int(self.period_samples)
         if n <= 0 or self.memory_map.size != n:
@@ -120,31 +115,20 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         self.map_update_map_diff_rms = float(np.sqrt(np.mean(d * d)))
         self.map_update_map_diff_max = float(np.max(np.abs(d)))
 
-    @staticmethod
-    def _wrap_indices(start: int, length: int, n: int) -> np.ndarray:
-        if n <= 0 or length <= 0:
-            return np.zeros((0,), dtype=np.int64)
-        return (np.arange(length, dtype=np.int64) + int(start)) % int(n)
+    def _update_memory_map_simple(self):
+        """Aggressive memory-map update: learn the latest one-period waveform.
 
-    def _maybe_update_memory_map(self):
+        When enabled, this replaces the memory map with the most recent folded
+        1-period input waveform (DUTIN), after:
+        - DC removal
+        - RMS normalization to the requested output amplitude
+
+        This is intentionally "bold" so residual/output changes are obvious.
+        """
         self.map_update_last_action = ""
         self.map_update_last_skip_reason = ""
 
         if not bool(self.map_update_enabled):
-            return
-
-        # Rate limit to avoid monopolizing the UI thread.
-        try:
-            now = float(time.perf_counter())
-        except Exception:
-            now = 0.0
-        max_hz = float(self.map_update_max_rate_hz)
-        if not np.isfinite(max_hz) or max_hz <= 0.0:
-            max_hz = 5.0
-        min_dt = 1.0 / float(max_hz)
-        if np.isfinite(now) and self._map_update_last_time and (now - float(self._map_update_last_time)) < float(min_dt):
-            self.map_update_last_action = "skip"
-            self.map_update_last_skip_reason = "rate limit"
             return
 
         n = int(self.period_samples)
@@ -153,254 +137,87 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
             self.map_update_last_skip_reason = "bad N/memory"
             return
 
-        # We recompute normalized DUTIN and residual inside this method to keep
-        # acceptance testing consistent even after the map changes.
         if self.aligned_dutin.size != n:
             self.map_update_last_action = "skip"
             self.map_update_last_skip_reason = "no aligned period"
             return
 
+        # Check fill ratio
         if not np.isfinite(self.last_filled_ratio) or float(self.last_filled_ratio) < 0.95:
             self.map_update_last_action = "skip"
             self.map_update_last_skip_reason = "insufficient fill"
             return
 
-        mu = float(self.map_update_mu)
-        if not np.isfinite(mu) or mu <= 0.0:
-            self.map_update_last_action = "skip"
-            self.map_update_last_skip_reason = "mu invalid"
-            return
-
-        # Apply adaptive scaling
-        mu *= float(self._map_update_adaptive_mu_scale)
-
-        # Keep mu conservative.
-        mu = float(min(mu, 1e-2))
-
-        window_pct = float(self.map_update_window_pct)
-        if not np.isfinite(window_pct) or window_pct <= 0.0:
-            self.map_update_last_action = "skip"
-            self.map_update_last_skip_reason = "window invalid"
-            return
-        window_pct = float(min(window_pct, 100.0))
-
-        win = int(max(16, min(n, int(np.round(n * window_pct / 100.0)))))
-        stride = int(max(1, win // 2))
-
-        idx = self._wrap_indices(self._map_update_pos, win, n).astype(np.intp, copy=False)
-        self.last_map_update_win_start = int(self._map_update_pos)
-        self.last_map_update_win_len = int(win)
-        self._map_update_pos = int((int(self._map_update_pos) + stride) % n)
-
-        # Build error relative to current memory map with DC removed (matching Phase 2).
-        mem = np.asarray(self.memory_map, dtype=np.float64)
-        mem_dc = float(np.mean(mem)) if mem.size else 0.0
-        mem0 = mem - mem_dc
+        self.map_update_attempts += 1
 
         aligned = np.asarray(self.aligned_dutin, dtype=np.float64)
-        m = np.isfinite(aligned) & np.isfinite(mem0)
+        m = np.isfinite(aligned)
         if not np.any(m):
             self.map_update_last_action = "skip"
-            self.map_update_last_skip_reason = "no residual yet"
+            self.map_update_last_skip_reason = "aligned all NaN"
             return
 
-        if not np.any(m[idx]):
-            self.map_update_last_action = "skip"
-            self.map_update_last_skip_reason = "window empty"
-            return
-
-        # Use the same DC definition as Phase 2 (mean of aligned over finite bins).
+        # DC removal on available samples
         dc = float(np.mean(aligned[m]))
-        dut0 = aligned - dc
-        denom = float(np.dot(dut0[m], dut0[m]))
-        if not np.isfinite(denom) or denom <= 1e-24:
+        x0 = aligned - dc
+
+        # RMS normalize to requested output amplitude (cosine peak = amplitude)
+        rms = float(self._nan_rms(x0))
+        if not np.isfinite(rms) or rms <= 1e-12:
             self.map_update_last_action = "skip"
-            self.map_update_last_skip_reason = "gain denom"
-            return
-        gain = float(np.dot(dut0[m], mem0[m]) / denom)
-        if not np.isfinite(gain):
-            gain = 0.0
-
-        dut = dut0 * gain
-        err = dut - mem0
-        rms_before = self._nan_rms(err)
-
-        # Use EMA residual for the *update* direction to reduce noise sensitivity.
-        # Acceptance testing stays based on the true residual `err`.
-        err_upd = err
-        if isinstance(self._map_update_err_ema, np.ndarray) and self._map_update_err_ema.size == err.size:
-            e2 = np.asarray(self._map_update_err_ema, dtype=np.float64)
-            if np.any(np.isfinite(e2)):
-                err_upd = e2
-
-        # Variance-aware (noise-robust) acceptance criterion uses SSE change in the updated window.
-        seg_m = m[idx]
-        n_w = int(np.count_nonzero(seg_m))
-        if n_w < 8:
-            self.map_update_last_action = "skip"
-            self.map_update_last_skip_reason = "too few samples"
-            return
-        err_w = err[idx][seg_m]
-        sse_before = float(np.dot(err_w, err_w))
-
-        # Estimate residual noise variance from the full-period residual.
-        sigma2 = float(np.nanvar(err[m])) if np.any(m) else float('nan')
-        if not np.isfinite(sigma2) or sigma2 < 0.0:
-            sigma2 = float(rms_before * rms_before) if np.isfinite(rms_before) else 0.0
-
-        self.last_map_update_nw = int(n_w)
-        self.last_map_update_sigma2 = float(sigma2)
-
-        z = float(self.map_update_guard_z)
-        if not np.isfinite(z) or z <= 0.0:
-            z = 3.0
-        z = float(min(max(z, 0.5), 10.0))
-        # For Gaussian noise, SSE stddev ~ sqrt(2N)*sigma^2
-        sse_std = float(np.sqrt(2.0 * float(n_w)) * sigma2)
-        self.last_map_update_sse_std = float(sse_std)
-
-        # Count this as an update attempt (all preconditions satisfied)
-        self.map_update_attempts += 1
-        self.map_update_last_action = "attempt"
-        if np.isfinite(now):
-            self._map_update_last_time = float(now)
-
-        # Save old segment for rollback.
-        old_seg = mem[idx].copy()
-
-        # Noise-robust shaping: clip residual by estimated sigma.
-        sigma = float(np.sqrt(max(sigma2, 0.0))) if np.isfinite(sigma2) else 0.0
-        clip_k = float(max(1.0, min(10.0, z)))
-        clip = float(clip_k * sigma) if np.isfinite(sigma) and sigma > 0.0 else float('inf')
-
-        delta = np.zeros((win,), dtype=np.float64)
-
-        # Compensate for partial-window updating: scale local step by N/win (capped).
-        cov = float(n) / float(win) if win > 0 else 1.0
-        if not np.isfinite(cov) or cov <= 0.0:
-            cov = 1.0
-        cov = float(min(max(cov, 1.0), 50.0))
-
-        mu_local = float(mu * cov)
-        mu_local = float(min(mu_local, 5e-2))
-
-        e_seg = err_upd[idx][seg_m]
-        if np.isfinite(clip):
-            e_seg = np.clip(e_seg, -clip, clip)
-        delta[seg_m] = mu_local * e_seg
-
-        # Keep DC from drifting by forcing zero-mean delta within the updated window.
-        if np.any(seg_m):
-            delta_mean = float(np.mean(delta[seg_m]))
-            if np.isfinite(delta_mean):
-                delta[seg_m] -= delta_mean
-
-        mem[idx] = mem[idx] + delta
-
-        # Safety: hard clip to audio-safe range.
-        np.clip(mem, -1.0, 1.0, out=mem)
-
-        # Commit tentative update.
-        self.memory_map = mem
-
-        # Re-evaluate error on the same captured period with updated DC/gain.
-        mem_dc2 = float(np.mean(mem)) if mem.size else 0.0
-        mem02 = mem - mem_dc2
-        m2 = np.isfinite(aligned) & np.isfinite(mem02)
-        if not np.any(m2):
-            mem[idx] = old_seg
-            self.memory_map = mem
-            self.map_update_reverts += 1
-            self.map_update_last_action = "revert"
-            self.map_update_last_skip_reason = "post residual"
+            self.map_update_last_skip_reason = "rms invalid"
             return
 
-        # Keep the same DC estimate; only gain changes with mem.
-        denom2 = float(np.dot(dut0[m2], dut0[m2]))
-        if not np.isfinite(denom2) or denom2 <= 1e-24:
-            gain2 = 0.0
-        else:
-            gain2 = float(np.dot(dut0[m2], mem02[m2]) / denom2)
-            if not np.isfinite(gain2):
-                gain2 = 0.0
+        target_amp = float(self.amplitude)
+        if not np.isfinite(target_amp) or target_amp <= 0.0:
+            target_amp = 0.5
+        target_rms = target_amp / float(np.sqrt(2.0))
+        scale = float(target_rms / rms)
 
-        dut2 = dut0 * gain2
-        err2 = dut2 - mem02
-        rms_after = self._nan_rms(err2)
+        alpha = float(self._map_learn_alpha)
+        if not np.isfinite(alpha) or alpha <= 0.0:
+            alpha = 0.05
+        if alpha > 1.0:
+            alpha = 1.0
 
-        err2_w = err2[idx][seg_m]
-        sse_after = float(np.dot(err2_w, err2_w))
-        d_sse = float(sse_after - sse_before)
-        self.last_map_update_dsse = float(d_sse)
+        # Copy-and-swap: build a new map and replace reference.
+        old = np.asarray(self.memory_map, dtype=np.float64)
+        new_map = np.array(old, dtype=np.float64, copy=True)
+        learned = x0 * scale
+        # Slow down by blending toward the learned waveform.
+        new_map[m] = (1.0 - alpha) * new_map[m] + alpha * learned[m]
 
-        # Update stored normalization/residual to match the current memory map.
-        self.normalized_dutin = dut2
-        self.error_signal = err2
-        self.last_dc_offset = float(dc)
-        self.last_gain = float(gain2)
-        self.last_rms_error = float(rms_after)
-        rms_ref2 = self._nan_rms(mem02)
-        self.last_rms_error_ratio = float(rms_after / (rms_ref2 + 1e-15)) if np.isfinite(rms_after) and np.isfinite(rms_ref2) else float('nan')
+        # Hard clip for safety
+        np.clip(new_map, -2.0, 2.0, out=new_map)
 
-        # Reject only if the worsening is statistically significant relative to residual variance.
-        # This avoids stopping on small noise-induced fluctuations.
-        if np.isfinite(d_sse) and d_sse > (z * sse_std):
-            # Roll back; stop only after repeated significant worsenings.
-            mem[idx] = old_seg
-            self.memory_map = mem
-
-            self.map_update_reverts += 1
-            self.last_map_update_delta_rms = float(self._nan_rms(delta[seg_m])) if np.any(seg_m) else float('nan')
-            self.map_update_last_action = "revert"
-
-            # Restore residual metrics for the reverted map (with consistent DC/gain).
-            mem_dc3 = float(np.mean(mem)) if mem.size else 0.0
-            mem03 = mem - mem_dc3
-            m3 = np.isfinite(aligned) & np.isfinite(mem03)
-            if np.any(m3):
-                denom3 = float(np.dot(dut0[m3], dut0[m3]))
-                if not np.isfinite(denom3) or denom3 <= 1e-24:
-                    gain3 = 0.0
-                else:
-                    gain3 = float(np.dot(dut0[m3], mem03[m3]) / denom3)
-                    if not np.isfinite(gain3):
-                        gain3 = 0.0
-                dut3 = dut0 * gain3
-                err3 = dut3 - mem03
-                rms3 = self._nan_rms(err3)
-                self.normalized_dutin = dut3
-                self.error_signal = err3
-                self.last_dc_offset = float(dc)
-                self.last_gain = float(gain3)
-                self.last_rms_error = float(rms3)
-                rms_ref3 = self._nan_rms(mem03)
-                self.last_rms_error_ratio = float(rms3 / (rms_ref3 + 1e-15)) if np.isfinite(rms3) and np.isfinite(rms_ref3) else float('nan')
-
-            # Adaptive backoff: reduce mu scale on failure
-            self._map_update_adaptive_mu_scale = max(0.01, self._map_update_adaptive_mu_scale * 0.5)
-
-            self._map_update_bad_count += 1
-            # Increased tolerance for bad counts (was 5)
-            if self._map_update_bad_count >= 20:
-                self.map_update_enabled = False
-                self.map_update_stop_reason = "Significant residual increase (auto-stopped)"
-                self._map_update_bad_count = 0
-            return
-
-        # Not significantly worse: gradually forgive previous bad counts.
-        if self._map_update_bad_count > 0:
-            self._map_update_bad_count -= 1
-        
-        # Adaptive recovery: slowly increase mu scale on success
-        self._map_update_adaptive_mu_scale = min(1.0, self._map_update_adaptive_mu_scale * 1.05)
+        self.memory_map = new_map
 
         self.map_update_accepts += 1
-        self.last_map_update_delta_rms = float(self._nan_rms(delta[seg_m])) if np.any(seg_m) else float('nan')
-        self.map_update_last_action = "accept"
+        self.map_update_counter += 1
+        self.map_update_last_action = f"learn#{int(self.map_update_counter)}"
 
-        # Track best observed RMS error (informational; no stop here to avoid noise sensitivity)
-        if np.isfinite(rms_after):
-            self._map_update_best_rms_error = float(min(self._map_update_best_rms_error, float(rms_after)))
+        d = new_map - old
+        self.last_map_update_delta_rms = float(self._nan_rms(d))
+        self.last_map_update_win_start = 0
+        self.last_map_update_win_len = int(n)
+        self.last_map_update_nw = int(np.count_nonzero(m))
+        self.last_map_update_sigma2 = float('nan')
+        self.last_map_update_dsse = float('nan')
+        self.last_map_update_sse_std = float('nan')
+
+    def _maybe_update_memory_map(self):
+        # Single entry point for memory-map update (kept minimal on purpose)
+        self._update_memory_map_simple()
+
+    @staticmethod
+    def _wrap_indices(start: int, length: int, n: int) -> np.ndarray:
+        if n <= 0 or length <= 0:
+            return np.zeros((0,), dtype=np.int64)
+        return (np.arange(length, dtype=np.int64) + int(start)) % int(n)
+
+    def _update_memory_map_robust(self):
+        # Backward-compatible alias: keep callers working, but use the minimal updater.
+        self._update_memory_map_simple()
 
     @staticmethod
     def _nan_rms(x: np.ndarray) -> float:
@@ -479,7 +296,9 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         self.actual_frequency_hz = sr / float(n)
 
         k = np.arange(n, dtype=np.float64)
-        self.memory_map = float(self.amplitude) * np.cos(2.0 * np.pi * k / float(n))
+        self._ideal_unit_cos = np.cos(2.0 * np.pi * k / float(n))
+        self.memory_map = float(self.amplitude) * np.asarray(self._ideal_unit_cos, dtype=np.float64)
+        self._ideal_update_pos = 0
 
         # Allocate ring: at least 2 seconds or 2 periods.
         ring_len = int(max(2 * sr, 2 * n))
@@ -499,13 +318,6 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
 
         self.is_running = True
         self.global_sample_counter = 0
-        self._map_update_last_time = 0.0
-        self._map_update_err_ema = None
-        self._map_update_err_ema_time = 0.0
-        self._map_update_pos = 0
-        self._map_update_best_rms_error = np.inf
-        self._map_update_bad_count = 0
-        self._map_update_adaptive_mu_scale = 1.0
         self.map_update_stop_reason = ""
 
         self.map_update_attempts = 0
@@ -521,6 +333,7 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
 
         self.map_update_last_action = ""
         self.map_update_last_skip_reason = ""
+        self.map_update_counter = 0
         self._map_update_initial_map = None
         self.map_update_map_diff_rms = float('nan')
         self.map_update_map_diff_max = float('nan')
@@ -565,9 +378,10 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
             # --- Output generation from memory map (stereo) ---
             outdata.fill(0)
             n = int(self.period_samples)
-            if n > 0 and self.memory_map.size == n:
+            mem = self.memory_map
+            if n > 0 and getattr(mem, 'size', 0) == n:
                 idx = (np.arange(frames, dtype=np.int64) + abs_start) % n
-                sig = self.memory_map[idx.astype(np.intp, copy=False)]
+                sig = mem[idx.astype(np.intp, copy=False)]
                 if outdata.shape[1] >= 1:
                     outdata[:, 0] = sig
                 if outdata.shape[1] >= 2:
@@ -690,35 +504,7 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         self.last_thd_percent = float(thd_percent)
         self.last_thd_db = float(thd_db)
 
-        # Internal EMA of the residual for noise-robust adaptation.
-        try:
-            now = float(time.perf_counter())
-        except Exception:
-            now = 0.0
-
-        tau = float(self.map_update_err_tau_s)
-        if not np.isfinite(tau) or tau <= 0.0:
-            tau = 0.25
-
-        if self._map_update_err_ema is None or (isinstance(self._map_update_err_ema, np.ndarray) and self._map_update_err_ema.size != err.size):
-            self._map_update_err_ema = np.array(err, dtype=np.float64, copy=True)
-            self._map_update_err_ema_time = float(now) if np.isfinite(now) else 0.0
-        else:
-            t_prev = float(self._map_update_err_ema_time)
-            dt = float(now - t_prev) if np.isfinite(now) and np.isfinite(t_prev) and t_prev > 0.0 else 0.0
-            alpha = float(1.0 - np.exp(-dt / tau)) if dt > 0.0 else 1.0
-
-            ema = np.asarray(self._map_update_err_ema, dtype=np.float64)
-            cur = np.asarray(err, dtype=np.float64)
-            m_ema = np.isfinite(cur)
-            if np.any(m_ema):
-                ema[m_ema] = (1.0 - alpha) * ema[m_ema] + alpha * cur[m_ema]
-            ema[~m_ema] = np.nan
-            self._map_update_err_ema = ema
-            if np.isfinite(now):
-                self._map_update_err_ema_time = float(now)
-
-        # Conservative partial update of memory map (optional)
+        # Memory-map update (optional) - minimal full-period update
         self._maybe_update_memory_map()
         self._refresh_map_update_diff_metrics()
 
@@ -809,27 +595,12 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
         self.map_update_enable_check = QCheckBox(tr("Enable memory-map update"))
         self.map_update_enable_check.setChecked(bool(self.module.map_update_enabled))
 
-        self.map_update_mu_spin = QDoubleSpinBox()
-        self.map_update_mu_spin.setRange(1e-8, 1e-2)
-        self.map_update_mu_spin.setDecimals(8)
-        self.map_update_mu_spin.setSingleStep(1e-5)
-        self.map_update_mu_spin.setValue(float(self.module.map_update_mu))
-
-        self.map_update_window_spin = QDoubleSpinBox()
-        self.map_update_window_spin.setRange(1.0, 100.0)
-        self.map_update_window_spin.setDecimals(1)
-        self.map_update_window_spin.setSingleStep(1.0)
-        self.map_update_window_spin.setValue(float(self.module.map_update_window_pct))
-        self.map_update_window_spin.setSuffix(" %")
-
         self.map_update_status_label = QLabel(tr("Disabled"))
 
         self.map_update_debug_label = QLabel(tr(""))
         self.map_update_debug_label.setWordWrap(True)
 
         update_form.addRow(tr("Enable"), self.map_update_enable_check)
-        update_form.addRow(tr("μ"), self.map_update_mu_spin)
-        update_form.addRow(tr("Window"), self.map_update_window_spin)
         update_form.addRow(tr("Status"), self.map_update_status_label)
         update_form.addRow(tr("Stats"), self.map_update_debug_label)
 
@@ -885,22 +656,16 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
         self.avg_tau_spin.valueChanged.connect(self._apply_avg_settings)
 
         self.map_update_enable_check.toggled.connect(self._apply_update_settings)
-        self.map_update_mu_spin.valueChanged.connect(self._apply_update_settings)
-        self.map_update_window_spin.valueChanged.connect(self._apply_update_settings)
 
         self._apply_plot_mode()
         self._apply_avg_settings()
         self._apply_update_settings()
 
     def _apply_update_settings(self):
-        self.module.map_update_mu = float(self.map_update_mu_spin.value())
-        self.module.map_update_window_pct = float(self.map_update_window_spin.value())
-
         want_enable = bool(self.map_update_enable_check.isChecked())
         if want_enable and not bool(self.module.map_update_enabled):
             self.module.map_update_stop_reason = ""
-            self.module._map_update_bad_count = 0
-            self.module._map_update_best_rms_error = np.inf
+            self.module._ideal_update_pos = 0
         self.module.map_update_enabled = want_enable
 
     def _apply_plot_mode(self):
@@ -962,23 +727,17 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
 
         # Update diagnostics text (helps confirm whether updates are actually happening)
         self.map_update_debug_label.setText(
-            tr("{0}{1} | att={2}, ok={3}, rev={4} | Δrms={5:.2e} | Δmap(rms,max)={6:.2e},{7:.2e} | win={8}+{9} (nw={10}) | σ²={11:.2e} | dSSE={12:.2e}, thr={13:.2e}").format(
+            tr("{0}{1} | att={2}, ok={3}, rev={4} | Δmap(rms,max)={5:.2e},{6:.2e} | write={7}+{8} (nw={9})").format(
                 str(self.module.map_update_last_action),
                 ("/" + str(self.module.map_update_last_skip_reason)) if self.module.map_update_last_skip_reason else "",
                 int(self.module.map_update_attempts),
                 int(self.module.map_update_accepts),
                 int(self.module.map_update_reverts),
-                float(self.module.last_map_update_delta_rms) if np.isfinite(self.module.last_map_update_delta_rms) else float('nan'),
                 float(self.module.map_update_map_diff_rms) if np.isfinite(self.module.map_update_map_diff_rms) else float('nan'),
                 float(self.module.map_update_map_diff_max) if np.isfinite(self.module.map_update_map_diff_max) else float('nan'),
                 int(self.module.last_map_update_win_start),
                 int(self.module.last_map_update_win_len),
                 int(self.module.last_map_update_nw),
-                float(self.module.last_map_update_sigma2) if np.isfinite(self.module.last_map_update_sigma2) else float('nan'),
-                float(self.module.last_map_update_dsse) if np.isfinite(self.module.last_map_update_dsse) else float('nan'),
-                float(self.module.map_update_guard_z) * float(self.module.last_map_update_sse_std)
-                if np.isfinite(self.module.last_map_update_sse_std)
-                else float('nan'),
             )
         )
 
