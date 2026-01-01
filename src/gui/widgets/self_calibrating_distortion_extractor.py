@@ -1,4 +1,5 @@
 import argparse
+from collections import deque
 import numpy as np
 import pyqtgraph as pg
 import time
@@ -57,6 +58,10 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         self.aligned_dutin = np.zeros((0,), dtype=np.float64)
         self.last_phase_rad = 0.0
         self.last_shift_samples = 0
+        self._phi_filt = None
+        self._phi_lpf_alpha = 0.25
+        self._shift_hist = deque(maxlen=7)
+        self._align_is_stable = True
 
         # Phase 2: normalization + error/metrics (do NOT update memory map)
         self.normalized_dutin = np.zeros((0,), dtype=np.float64)
@@ -78,7 +83,10 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         self._ideal_update_pos = 0
         self._ideal_update_step = 256
         # Blend factor for "learn" updates (smaller = slower). Kept internal.
-        self._map_learn_alpha = 0.2
+        self._map_learn_alpha = 0.1
+        # Additional smoothing on the learned waveform itself (damps occasional bad folds)
+        self._learned_ema = None
+        self._learned_ema_alpha = 0.25
 
         # Update diagnostics (for debugging)
         self.map_update_attempts = 0
@@ -129,6 +137,11 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         self.map_update_last_skip_reason = ""
 
         if not bool(self.map_update_enabled):
+            return
+
+        if not bool(self._align_is_stable):
+            self.map_update_last_action = "skip"
+            self.map_update_last_skip_reason = "unstable align"
             return
 
         n = int(self.period_samples)
@@ -184,8 +197,26 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         old = np.asarray(self.memory_map, dtype=np.float64)
         new_map = np.array(old, dtype=np.float64, copy=True)
         learned = x0 * scale
+
+        # Smooth the learned waveform over time (EMA) to suppress occasional bad folds.
+        eta = float(self._learned_ema_alpha)
+        if not np.isfinite(eta) or eta <= 0.0:
+            eta = 0.25
+        if eta > 1.0:
+            eta = 1.0
+        if self._learned_ema is None or (isinstance(self._learned_ema, np.ndarray) and self._learned_ema.size != learned.size):
+            self._learned_ema = np.array(learned, dtype=np.float64, copy=True)
+        else:
+            ema = np.asarray(self._learned_ema, dtype=np.float64)
+            mm = np.isfinite(learned)
+            if np.any(mm):
+                ema[mm] = (1.0 - eta) * ema[mm] + eta * learned[mm]
+            ema[~mm] = np.nan
+            self._learned_ema = ema
+
+        learned_use = np.asarray(self._learned_ema, dtype=np.float64)
         # Slow down by blending toward the learned waveform.
-        new_map[m] = (1.0 - alpha) * new_map[m] + alpha * learned[m]
+        new_map[m] = (1.0 - alpha) * new_map[m] + alpha * learned_use[m]
 
         # Hard clip for safety
         np.clip(new_map, -2.0, 2.0, out=new_map)
@@ -299,6 +330,10 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         self._ideal_unit_cos = np.cos(2.0 * np.pi * k / float(n))
         self.memory_map = float(self.amplitude) * np.asarray(self._ideal_unit_cos, dtype=np.float64)
         self._ideal_update_pos = 0
+        self._learned_ema = None
+        self._shift_hist.clear()
+        self._phi_filt = None
+        self._align_is_stable = True
 
         # Allocate ring: at least 2 seconds or 2 periods.
         ring_len = int(max(2 * sr, 2 * n))
@@ -334,6 +369,10 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         self.map_update_last_action = ""
         self.map_update_last_skip_reason = ""
         self.map_update_counter = 0
+        self._learned_ema = None
+        self._shift_hist.clear()
+        self._phi_filt = None
+        self._align_is_stable = True
         self._map_update_initial_map = None
         self.map_update_map_diff_rms = float('nan')
         self.map_update_map_diff_max = float('nan')
@@ -442,8 +481,39 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         f = float(self.actual_frequency_hz)
 
         abs_start = int(abs_idx[0]) if abs_idx.size else 0
-        phi = estimate_ref_phase_offset_rad(ref, abs_start_sample=abs_start, sample_rate=sr, ref_frequency_hz=f)
-        shift = phase_to_sample_shift(phi, n)
+        phi_raw = estimate_ref_phase_offset_rad(ref, abs_start_sample=abs_start, sample_rate=sr, ref_frequency_hz=f)
+        if not np.isfinite(phi_raw):
+            return
+
+        # Low-pass filter phase (wrap-aware) to reduce occasional estimator jumps.
+        beta = float(self._phi_lpf_alpha)
+        if not np.isfinite(beta) or beta <= 0.0:
+            beta = 0.25
+        if beta > 1.0:
+            beta = 1.0
+        if self._phi_filt is None or (not np.isfinite(float(self._phi_filt))):
+            phi = float(phi_raw)
+        else:
+            prev = float(self._phi_filt)
+            dphi = float(((phi_raw - prev + np.pi) % (2.0 * np.pi)) - np.pi)
+            phi = float(prev + beta * dphi)
+
+        self._phi_filt = float(phi)
+
+        shift_raw = int(phase_to_sample_shift(phi_raw, n))
+        self._shift_hist.append(shift_raw)
+        # Use median shift for folding; robust against single-tick outliers.
+        shift = int(np.median(np.asarray(list(self._shift_hist), dtype=np.int64))) if self._shift_hist else int(phase_to_sample_shift(phi, n))
+
+        # Mark alignment stability (used to gate learning updates)
+        if len(self._shift_hist) >= 5:
+            sh = np.asarray(list(self._shift_hist), dtype=np.int64)
+            spread = int(np.max(sh) - np.min(sh))
+            thresh = int(max(2, n // 32))
+            self._align_is_stable = bool(spread <= thresh)
+        else:
+            self._align_is_stable = True
+
         aligned = fold_one_period_latest(dut, abs_idx, period_samples=n, shift_samples=shift)
 
         self.last_phase_rad = float(phi)
