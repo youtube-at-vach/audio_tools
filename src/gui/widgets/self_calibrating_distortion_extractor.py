@@ -215,6 +215,18 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
             self._learned_ema = ema
 
         learned_use = np.asarray(self._learned_ema, dtype=np.float64)
+
+        # Scale learned_use so its fundamental matches the requested amplitude.
+        # This prevents harmonics-driven reduction of fundamental amplitude over many steps.
+        LU = np.fft.rfft(learned_use[m])
+        if LU.size > 1:
+            fund_mag = float(np.abs(LU[1]))
+            # Theoretical peak for cos is A, which corresponds to sum(cos^2) = N/2.
+            # RFFT bin 1 magnitude for A*cos is A*N/2.
+            expect_mag = target_amp * (float(np.count_nonzero(m)) / 2.0)
+            if fund_mag > 1e-12:
+                learned_use = learned_use * (expect_mag / fund_mag)
+
         # Slow down by blending toward the learned waveform.
         new_map[m] = (1.0 - alpha) * new_map[m] + alpha * learned_use[m]
 
@@ -500,10 +512,20 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
 
         self._phi_filt = float(phi)
 
-        shift_raw = int(phase_to_sample_shift(phi_raw, n))
+        # Match alignment shift to the fundamental phase of the current memory map.
+        # This prevents "phase drift" between the map and the aligned signal.
+        mem = np.asarray(self.memory_map, dtype=np.float64)
+        mem_phi = 0.0
+        if mem.size == n:
+            M = np.fft.rfft(mem)
+            if M.size > 1:
+                mem_phi = float(np.angle(M[1]))
+
+        target_phi = float(phi_raw - mem_phi)
+        shift_raw = int(phase_to_sample_shift(target_phi, n))
         self._shift_hist.append(shift_raw)
         # Use median shift for folding; robust against single-tick outliers.
-        shift = int(np.median(np.asarray(list(self._shift_hist), dtype=np.int64))) if self._shift_hist else int(phase_to_sample_shift(phi, n))
+        shift = int(np.median(np.asarray(list(self._shift_hist), dtype=np.int64))) if self._shift_hist else int(phase_to_sample_shift(target_phi, n))
 
         # Mark alignment stability (used to gate learning updates)
         if len(self._shift_hist) >= 5:
@@ -547,22 +569,74 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         mem_dc = float(np.mean(mem)) if mem.size else 0.0
         mem0 = mem - mem_dc
 
-        # Level match: find gain minimizing ||gain*dut0 - mem0|| over finite bins.
-        denom = float(np.dot(dut0[m], dut0[m]))
-        if not np.isfinite(denom) or denom <= 1e-24:
-            gain = 0.0
-        else:
-            gain = float(np.dot(dut0[m], mem0[m]) / denom)
-            if not np.isfinite(gain):
-                gain = 0.0
+        # Gain & Phase matching (minimizing residual fundamental).
+        # We use a 2-parameter least squares fit (complex gain) on the fundamental.
+        # Since we folded into exactly one period, the fundamental is at bin 1.
+        X_dut = np.fft.rfft(dut0[m])
+        X_mem = np.fft.rfft(mem0[m])
 
-        dut_norm = dut0 * gain
+        if X_dut.size > 1 and X_mem.size > 1:
+            # Complex gain G that minimizes ||G * X_dut[1] - X_mem[1]||^2
+            d1 = X_dut[1]
+            m1 = X_mem[1]
+            denom = float(np.abs(d1) ** 2)
+            if denom > 1e-20:
+                G = m1 / d1
+            else:
+                G = 0.0j
+        else:
+            G = 0.0j
+
+        # Apply complex gain to the fundamental component by rotating and scaling
+        # the entire time-domain signal. This is equivalent to adjusting A*cos(wt + phi).
+        # gain = abs(G), phase_shift = angle(G)
+        gain = float(np.abs(G))
+        dphi = float(np.angle(G))
+
+        # Rotate dut0 by dphi and scale by gain.
+        # Note: np.cos(wt + phi + dphi) = Re(exp(j(wt+phi)) * exp(jdphi))
+        # Since we folded to exactly N, we can shift more precisely in freq domain
+        # but for simplicity and since we are already aligned close to 0, 
+        # complex scaling in time domain works if we treat it as a phasor.
+        # However, it's safer to just scale and re-align or use 2-parameter LS in time.
+        
+        # 2-parameter LS in time domain: Minimize || a*dut0 + b*dut0_90 - mem0 ||
+        # where dut0_90 is the Hilbert transform (90 deg shift) of dut0.
+        # This is equivalent to G*dut_complex.
+        
+        def hilbert_90(x):
+            X = np.fft.fft(x)
+            h = np.zeros(len(x))
+            n = len(x)
+            if n % 2 == 0:
+                h[0] = h[n // 2] = 1
+                h[1 : n // 2] = 2
+            else:
+                h[0] = 1
+                h[1 : (n + 1) // 2] = 2
+            # For a pure fundamental, we just want to rotate bin 1.
+            # A simpler way since it's exactly 1 period:
+            X_rot = np.zeros_like(X)
+            X_rot[1] = X[1] * 1j
+            X_rot[-1] = X[-1] * -1j
+            return np.fft.ifft(X_rot).real
+
+        dut0_90 = hilbert_90(dut0)
+        # LS system: [dut0, dut0_90] * [a, b]^T = mem0
+        A_mat = np.column_stack((dut0[m], dut0_90[m]))
+        try:
+            coeffs, _, _, _ = np.linalg.lstsq(A_mat, mem0[m], rcond=None)
+            a, b = coeffs
+        except:
+            a, b = 0.0, 0.0
+
+        dut_norm = a * dut0 + b * dut0_90
         err = dut_norm - mem0
 
         self.normalized_dutin = dut_norm
         self.error_signal = err
         self.last_dc_offset = dc
-        self.last_gain = gain
+        self.last_gain = float(np.sqrt(a*a + b*b))
 
         rms_e = self._nan_rms(err)
         rms_ref = self._nan_rms(mem0)
