@@ -711,7 +711,7 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
         self.avg_check.setChecked(False)
 
         self.avg_tau_spin = QDoubleSpinBox()
-        self.avg_tau_spin.setRange(0.05, 10.0)
+        self.avg_tau_spin.setRange(0.05, 100.0)
         self.avg_tau_spin.setDecimals(3)
         self.avg_tau_spin.setSingleStep(0.05)
         self.avg_tau_spin.setValue(0.5)
