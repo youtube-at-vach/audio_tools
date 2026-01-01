@@ -75,6 +75,9 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         self.map_update_window_pct = 10.0
         # Noise-robust guard: larger => less sensitive to noise
         self.map_update_guard_z = 3.0
+        # Keep UI responsive: limit how often we attempt updates.
+        self.map_update_max_rate_hz = 5.0
+        self._map_update_last_time = 0.0
         self._map_update_pos = 0
         self._map_update_best_rms_error = np.inf
         self._map_update_bad_count = 0
@@ -125,15 +128,31 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         if not bool(self.map_update_enabled):
             return
 
+        # Rate limit to avoid monopolizing the UI thread.
+        try:
+            now = float(time.perf_counter())
+        except Exception:
+            now = 0.0
+        max_hz = float(self.map_update_max_rate_hz)
+        if not np.isfinite(max_hz) or max_hz <= 0.0:
+            max_hz = 5.0
+        min_dt = 1.0 / float(max_hz)
+        if np.isfinite(now) and self._map_update_last_time and (now - float(self._map_update_last_time)) < float(min_dt):
+            self.map_update_last_action = "skip"
+            self.map_update_last_skip_reason = "rate limit"
+            return
+
         n = int(self.period_samples)
         if n <= 0 or self.memory_map.size != n:
             self.map_update_last_action = "skip"
             self.map_update_last_skip_reason = "bad N/memory"
             return
 
-        if self.normalized_dutin.size != n or self.error_signal.size != n:
+        # We recompute normalized DUTIN and residual inside this method to keep
+        # acceptance testing consistent even after the map changes.
+        if self.aligned_dutin.size != n:
             self.map_update_last_action = "skip"
-            self.map_update_last_skip_reason = "no residual yet"
+            self.map_update_last_skip_reason = "no aligned period"
             return
 
         if not np.isfinite(self.last_filled_ratio) or float(self.last_filled_ratio) < 0.95:
@@ -170,13 +189,31 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         mem_dc = float(np.mean(mem)) if mem.size else 0.0
         mem0 = mem - mem_dc
 
-        dut = np.asarray(self.normalized_dutin, dtype=np.float64)
-        m = np.isfinite(dut) & np.isfinite(mem0)
+        aligned = np.asarray(self.aligned_dutin, dtype=np.float64)
+        m = np.isfinite(aligned) & np.isfinite(mem0)
+        if not np.any(m):
+            self.map_update_last_action = "skip"
+            self.map_update_last_skip_reason = "no residual yet"
+            return
+
         if not np.any(m[idx]):
             self.map_update_last_action = "skip"
             self.map_update_last_skip_reason = "window empty"
             return
 
+        # Use the same DC definition as Phase 2 (mean of aligned over finite bins).
+        dc = float(np.mean(aligned[m]))
+        dut0 = aligned - dc
+        denom = float(np.dot(dut0[m], dut0[m]))
+        if not np.isfinite(denom) or denom <= 1e-24:
+            self.map_update_last_action = "skip"
+            self.map_update_last_skip_reason = "gain denom"
+            return
+        gain = float(np.dot(dut0[m], mem0[m]) / denom)
+        if not np.isfinite(gain):
+            gain = 0.0
+
+        dut = dut0 * gain
         err = dut - mem0
         rms_before = self._nan_rms(err)
 
@@ -209,12 +246,22 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         # Count this as an update attempt (all preconditions satisfied)
         self.map_update_attempts += 1
         self.map_update_last_action = "attempt"
+        if np.isfinite(now):
+            self._map_update_last_time = float(now)
 
         # Save old segment for rollback.
         old_seg = mem[idx].copy()
 
+        # Noise-robust shaping: clip residual by estimated sigma.
+        sigma = float(np.sqrt(max(sigma2, 0.0))) if np.isfinite(sigma2) else 0.0
+        clip_k = float(max(1.0, min(10.0, z)))
+        clip = float(clip_k * sigma) if np.isfinite(sigma) and sigma > 0.0 else float('inf')
+
         delta = np.zeros((win,), dtype=np.float64)
-        delta[seg_m] = mu * err[idx][seg_m]
+        e_seg = err[idx][seg_m]
+        if np.isfinite(clip):
+            e_seg = np.clip(e_seg, -clip, clip)
+        delta[seg_m] = mu * e_seg
 
         # Keep DC from drifting by forcing zero-mean delta within the updated window.
         if np.any(seg_m):
@@ -230,10 +277,29 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         # Commit tentative update.
         self.memory_map = mem
 
-        # Re-evaluate error on the same captured period; reject if it got worse.
+        # Re-evaluate error on the same captured period with updated DC/gain.
         mem_dc2 = float(np.mean(mem)) if mem.size else 0.0
         mem02 = mem - mem_dc2
-        err2 = dut - mem02
+        m2 = np.isfinite(aligned) & np.isfinite(mem02)
+        if not np.any(m2):
+            mem[idx] = old_seg
+            self.memory_map = mem
+            self.map_update_reverts += 1
+            self.map_update_last_action = "revert"
+            self.map_update_last_skip_reason = "post residual"
+            return
+
+        # Keep the same DC estimate; only gain changes with mem.
+        denom2 = float(np.dot(dut0[m2], dut0[m2]))
+        if not np.isfinite(denom2) or denom2 <= 1e-24:
+            gain2 = 0.0
+        else:
+            gain2 = float(np.dot(dut0[m2], mem02[m2]) / denom2)
+            if not np.isfinite(gain2):
+                gain2 = 0.0
+
+        dut2 = dut0 * gain2
+        err2 = dut2 - mem02
         rms_after = self._nan_rms(err2)
 
         err2_w = err2[idx][seg_m]
@@ -241,8 +307,11 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
         d_sse = float(sse_after - sse_before)
         self.last_map_update_dsse = float(d_sse)
 
-        # Update stored residual to match the current memory map.
+        # Update stored normalization/residual to match the current memory map.
+        self.normalized_dutin = dut2
         self.error_signal = err2
+        self.last_dc_offset = float(dc)
+        self.last_gain = float(gain2)
         self.last_rms_error = float(rms_after)
         rms_ref2 = self._nan_rms(mem02)
         self.last_rms_error_ratio = float(rms_after / (rms_ref2 + 1e-15)) if np.isfinite(rms_after) and np.isfinite(rms_ref2) else float('nan')
@@ -258,15 +327,28 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
             self.last_map_update_delta_rms = float(self._nan_rms(delta[seg_m])) if np.any(seg_m) else float('nan')
             self.map_update_last_action = "revert"
 
-            # Restore residual metrics for the reverted map.
+            # Restore residual metrics for the reverted map (with consistent DC/gain).
             mem_dc3 = float(np.mean(mem)) if mem.size else 0.0
             mem03 = mem - mem_dc3
-            err3 = dut - mem03
-            rms3 = self._nan_rms(err3)
-            self.error_signal = err3
-            self.last_rms_error = float(rms3)
-            rms_ref3 = self._nan_rms(mem03)
-            self.last_rms_error_ratio = float(rms3 / (rms_ref3 + 1e-15)) if np.isfinite(rms3) and np.isfinite(rms_ref3) else float('nan')
+            m3 = np.isfinite(aligned) & np.isfinite(mem03)
+            if np.any(m3):
+                denom3 = float(np.dot(dut0[m3], dut0[m3]))
+                if not np.isfinite(denom3) or denom3 <= 1e-24:
+                    gain3 = 0.0
+                else:
+                    gain3 = float(np.dot(dut0[m3], mem03[m3]) / denom3)
+                    if not np.isfinite(gain3):
+                        gain3 = 0.0
+                dut3 = dut0 * gain3
+                err3 = dut3 - mem03
+                rms3 = self._nan_rms(err3)
+                self.normalized_dutin = dut3
+                self.error_signal = err3
+                self.last_dc_offset = float(dc)
+                self.last_gain = float(gain3)
+                self.last_rms_error = float(rms3)
+                rms_ref3 = self._nan_rms(mem03)
+                self.last_rms_error_ratio = float(rms3 / (rms_ref3 + 1e-15)) if np.isfinite(rms3) and np.isfinite(rms_ref3) else float('nan')
 
             self._map_update_bad_count += 1
             if self._map_update_bad_count >= 5:
@@ -384,6 +466,7 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
 
         self.is_running = True
         self.global_sample_counter = 0
+        self._map_update_last_time = 0.0
         self._map_update_pos = 0
         self._map_update_best_rms_error = np.inf
         self._map_update_bad_count = 0
@@ -897,17 +980,26 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
             self.res_curve.setData(tt, rr)
 
             # Scale enable flag to ~10% of current RMS range for visibility
-            rmax = float(np.nanmax(rr)) if rr.size else 0.0
+            if rr.size and np.any(np.isfinite(rr)):
+                rmax = float(np.nanmax(rr[np.isfinite(rr)]))
+            else:
+                rmax = 0.0
             scale = 0.1 * rmax if np.isfinite(rmax) and rmax > 0 else 1.0
             self.res_enable_curve.setData(tt, en * scale)
 
             # Scale map diff to be visible on the same axis (roughly the same scale as RMS)
-            mdv = float(np.nanmax(md)) if md.size else 0.0
+            if md.size and np.any(np.isfinite(md)):
+                mdv = float(np.nanmax(md[np.isfinite(md)]))
+            else:
+                mdv = 0.0
             md_scale = (0.1 * rmax / (mdv + 1e-30)) if np.isfinite(rmax) and rmax > 0 and np.isfinite(mdv) and mdv > 0 else 0.0
             self.res_mapdiff_curve.setData(tt, md * md_scale)
 
             # Scale per-step update magnitude similarly
-            duv = float(np.nanmax(du)) if du.size else 0.0
+            if du.size and np.any(np.isfinite(du)):
+                duv = float(np.nanmax(du[np.isfinite(du)]))
+            else:
+                duv = 0.0
             du_scale = (0.1 * rmax / (duv + 1e-30)) if np.isfinite(rmax) and rmax > 0 and np.isfinite(duv) and duv > 0 else 0.0
             self.res_upd_deltarms_curve.setData(tt, du * du_scale)
 
