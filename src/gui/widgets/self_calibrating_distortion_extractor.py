@@ -331,6 +331,9 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
         super().__init__()
         self.module = module
 
+        # Residual plot averaging state (kept in UI to avoid touching analysis)
+        self._ema_err = None
+
         layout = QVBoxLayout(self)
 
         # Controls
@@ -354,9 +357,21 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
         self.error_only_check = QCheckBox(tr("Error only"))
         self.error_only_check.setChecked(False)
 
+        self.avg_check = QCheckBox(tr("Avg residual"))
+        self.avg_check.setChecked(False)
+
+        self.avg_tau_spin = QDoubleSpinBox()
+        self.avg_tau_spin.setRange(0.05, 10.0)
+        self.avg_tau_spin.setDecimals(3)
+        self.avg_tau_spin.setSingleStep(0.05)
+        self.avg_tau_spin.setValue(0.5)
+        self.avg_tau_spin.setSuffix(" s")
+
         form.addRow(tr("Frequency"), self.freq_spin)
         form.addRow(tr("Amplitude"), self.amp_spin)
         form.addRow(tr("Plot"), self.error_only_check)
+        form.addRow(tr("Averaging"), self.avg_check)
+        form.addRow(tr("Avg tau"), self.avg_tau_spin)
         form.addRow(tr("Info"), self.info_label)
 
         btn_row = QHBoxLayout()
@@ -384,13 +399,17 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
         # Timer for UI updates
         self.timer = QTimer()
         self.timer.timeout.connect(self._tick)
-        self.timer.setInterval(50)  # 20 Hz
+        self.timer.setInterval(50)  # 20 Hz (may be lowered when averaging)
 
         self.start_btn.clicked.connect(self._on_start)
         self.stop_btn.clicked.connect(self._on_stop)
         self.error_only_check.toggled.connect(self._apply_plot_mode)
 
+        self.avg_check.toggled.connect(self._apply_avg_settings)
+        self.avg_tau_spin.valueChanged.connect(self._apply_avg_settings)
+
         self._apply_plot_mode()
+        self._apply_avg_settings()
 
     def _apply_plot_mode(self):
         err_only = bool(self.error_only_check.isChecked())
@@ -398,12 +417,23 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
         self.curve_dut.setVisible(not err_only)
         self.curve_err.setVisible(True)
 
+    def _apply_avg_settings(self):
+        # Keep UI responsive: when averaging is enabled, reduce update rate.
+        if bool(self.avg_check.isChecked()):
+            self.timer.setInterval(150)  # ~6.7 Hz
+        else:
+            self.timer.setInterval(50)  # 20 Hz
+
+        # If settings change, reset EMA so the user sees immediate effect.
+        self._ema_err = None
+
     def _on_start(self):
         self.module.target_frequency_hz = float(self.freq_spin.value())
         self.module.amplitude = float(self.amp_spin.value())
         self.module.start_analysis()
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
+        self._ema_err = None
         self.timer.start()
 
     def _on_stop(self):
@@ -412,6 +442,7 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         self.info_label.setText(tr("Idle"))
+        self._ema_err = None
 
     def _tick(self):
         try:
@@ -429,6 +460,29 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
 
         dut = self.module.normalized_dutin
         err = self.module.error_signal
+
+        # Optional lightweight time averaging for residual plot (EMA).
+        if bool(self.avg_check.isChecked()):
+            tau = float(self.avg_tau_spin.value())
+            dt = float(self.timer.interval()) / 1000.0
+            if np.isfinite(tau) and tau > 0.0 and np.isfinite(dt) and dt > 0.0:
+                alpha = float(1.0 - np.exp(-dt / tau))
+            else:
+                alpha = 1.0
+
+            if self._ema_err is None or (isinstance(self._ema_err, np.ndarray) and self._ema_err.size != err.size):
+                self._ema_err = np.array(err, dtype=np.float64, copy=True)
+            else:
+                cur = np.asarray(err, dtype=np.float64)
+                ema = np.asarray(self._ema_err, dtype=np.float64)
+                m = np.isfinite(cur)
+                if np.any(m):
+                    ema[m] = (1.0 - alpha) * ema[m] + alpha * cur[m]
+                # Preserve NaNs for bins that are not yet valid.
+                ema[~m] = np.nan
+                self._ema_err = ema
+
+            err = self._ema_err
 
         dut_plot = np.nan_to_num(dut, nan=0.0) if np.any(~np.isfinite(dut)) else dut
         err_plot = np.nan_to_num(err, nan=0.0) if np.any(~np.isfinite(err)) else err
