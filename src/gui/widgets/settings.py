@@ -2,7 +2,7 @@ import numpy as np
 import scipy.signal
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, QPushButton, 
                              QFormLayout, QGroupBox, QMessageBox, QLineEdit, QDialog,
-                             QDoubleSpinBox, QHBoxLayout, QTabWidget, QCheckBox)
+                             QDoubleSpinBox, QHBoxLayout, QTabWidget, QCheckBox, QFileDialog)
 from PyQt6.QtCore import QTimer
 from src.core.audio_engine import AudioEngine
 from src.core.config_manager import ConfigManager
@@ -880,6 +880,27 @@ class SettingsWidget(QWidget):
         
         appearance_group.setLayout(appearance_layout)
         general_layout.addWidget(appearance_group)
+
+        # Screenshot Settings
+        screenshot_group = QGroupBox(tr("Screenshots"))
+        screenshot_layout = QFormLayout()
+
+        self.screenshot_dir_edit = QLineEdit()
+        self.screenshot_dir_edit.setText(self.config_manager.get_screenshot_output_dir())
+        self.screenshot_dir_edit.editingFinished.connect(self.on_screenshot_dir_changed)
+
+        self.screenshot_browse_btn = QPushButton(tr("Browse..."))
+        self.screenshot_browse_btn.clicked.connect(self.browse_screenshot_dir)
+
+        screenshot_dir_row = QWidget()
+        screenshot_dir_row_layout = QHBoxLayout(screenshot_dir_row)
+        screenshot_dir_row_layout.setContentsMargins(0, 0, 0, 0)
+        screenshot_dir_row_layout.addWidget(self.screenshot_dir_edit)
+        screenshot_dir_row_layout.addWidget(self.screenshot_browse_btn)
+
+        screenshot_layout.addRow(tr("Output Folder") + ":", screenshot_dir_row)
+        screenshot_group.setLayout(screenshot_layout)
+        general_layout.addWidget(screenshot_group)
         
         general_layout.addStretch()
         general_tab.setLayout(general_layout)
@@ -1095,6 +1116,23 @@ class SettingsWidget(QWidget):
                 app = QApplication.instance()
                 if hasattr(app, 'theme_manager'):
                     app.theme_manager.set_theme(theme)
+
+    def on_screenshot_dir_changed(self):
+        out_dir = self.screenshot_dir_edit.text().strip()
+        if not out_dir:
+            out_dir = "screenshots"
+            self.screenshot_dir_edit.setText(out_dir)
+        self.config_manager.set_screenshot_output_dir(out_dir)
+
+    def browse_screenshot_dir(self):
+        current = self.screenshot_dir_edit.text().strip()
+        if not current:
+            current = self.config_manager.get_screenshot_output_dir()
+        selected = QFileDialog.getExistingDirectory(self, tr("Select Folder"), current)
+        if not selected:
+            return
+        self.screenshot_dir_edit.setText(selected)
+        self.config_manager.set_screenshot_output_dir(selected)
 
 
     def open_input_calibration(self):

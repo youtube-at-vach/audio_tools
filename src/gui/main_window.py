@@ -371,7 +371,7 @@ class MainWindow(QMainWindow):
 
             widget = module.get_widget()
             if widget:
-                wrapper = DetachableWidgetWrapper(widget, tr(key))
+                wrapper = DetachableWidgetWrapper(widget, tr(key), self.config_manager)
                 self.module_widgets[module_index] = wrapper
                 self._replace_container_contents(container, wrapper)
 

@@ -40,7 +40,12 @@ class ConfigManager:
                 "input_channels": "stereo",
                 "output_channels": "stereo",
                 "pipewire_jack_resident": False
-            }
+            },
+            "language": "en",
+            "theme": "system",
+            "screenshot": {
+                "output_dir": "screenshots"
+            },
         }
 
     def get_audio_config(self):
@@ -104,4 +109,21 @@ class ConfigManager:
     def set_theme(self, theme_name):
         """Updates the theme setting."""
         self.config["theme"] = theme_name
+        self.save_config()
+
+    def get_screenshot_output_dir(self) -> str:
+        """Returns the screenshot output directory (relative paths are allowed)."""
+        screenshot = self.config.get("screenshot")
+        if not isinstance(screenshot, dict):
+            return "screenshots"
+        out_dir = screenshot.get("output_dir", "screenshots")
+        if not out_dir:
+            return "screenshots"
+        return str(out_dir)
+
+    def set_screenshot_output_dir(self, output_dir: str):
+        """Updates the screenshot output directory."""
+        if "screenshot" not in self.config or not isinstance(self.config.get("screenshot"), dict):
+            self.config["screenshot"] = {}
+        self.config["screenshot"]["output_dir"] = str(output_dir)
         self.save_config()

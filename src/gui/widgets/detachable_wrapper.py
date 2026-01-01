@@ -1,7 +1,24 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QLabel, QMainWindow)
+import os
+import re
+from datetime import datetime
+
+from PyQt6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QSizePolicy,
+)
 from PyQt6.QtCore import Qt, pyqtSignal, QEvent
 from src.core.localization import tr
+
+try:
+    from src.core.config_manager import ConfigManager
+except Exception:  # pragma: no cover
+    ConfigManager = None
 
 class IndependentWindow(QMainWindow):
     """
@@ -31,10 +48,11 @@ class DetachableWidgetWrapper(QWidget):
     """
     Wraps a widget to allow it to be detached into a separate window.
     """
-    def __init__(self, widget: QWidget, title: str):
+    def __init__(self, widget: QWidget, title: str, config_manager=None):
         super().__init__()
         self.content_widget = widget
         self.title = title
+        self.config_manager = config_manager
         self.is_detached = False
         self.independent_window = None
         
@@ -54,10 +72,15 @@ class DetachableWidgetWrapper(QWidget):
         
         self.detach_btn = QPushButton(tr("Detach Window"))
         self.detach_btn.clicked.connect(self.toggle_detach)
-        self.detach_btn.setFixedWidth(120)
+        self.detach_btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+
+        self.screenshot_btn = QPushButton(tr("Screenshot"))
+        self.screenshot_btn.clicked.connect(self.save_screenshot)
+        self.screenshot_btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         
         header_layout.addWidget(self.title_label)
         header_layout.addStretch()
+        header_layout.addWidget(self.screenshot_btn)
         header_layout.addWidget(self.detach_btn)
         
         self.layout.addWidget(self.header)
@@ -89,6 +112,64 @@ class DetachableWidgetWrapper(QWidget):
         
         self.placeholder_widget.hide()
         self.layout.addWidget(self.placeholder_widget)
+
+    def _get_screenshot_output_dir(self) -> str:
+        if self.config_manager is None:
+            return "screenshots"
+        getter = getattr(self.config_manager, "get_screenshot_output_dir", None)
+        if callable(getter):
+            try:
+                return str(getter())
+            except Exception:
+                return "screenshots"
+        return "screenshots"
+
+    def _safe_base_filename(self, text: str) -> str:
+        text = (text or "widget").strip()
+        text = re.sub(r"\s+", "_", text)
+        text = re.sub(r"[^A-Za-z0-9_\-\.\(\)\[\]]+", "_", text)
+        text = text.strip("._ ")
+        return text or "widget"
+
+    def _next_available_filepath(self, directory: str, base_name: str, ext: str) -> str:
+        base = os.path.join(directory, f"{base_name}.{ext}")
+        if not os.path.exists(base):
+            return base
+        for i in range(1, 1000):
+            candidate = os.path.join(directory, f"{base_name}_{i:03d}.{ext}")
+            if not os.path.exists(candidate):
+                return candidate
+        return base
+
+    def save_screenshot(self):
+        out_dir = self._get_screenshot_output_dir()
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+        except Exception as e:
+            QMessageBox.warning(self, tr("Error"), tr("Failed to create output folder: {0}").format(str(e)))
+            return
+
+        try:
+            pixmap = self.content_widget.grab()
+        except Exception as e:
+            QMessageBox.warning(self, tr("Error"), tr("Failed to capture screenshot: {0}").format(str(e)))
+            return
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+        base_name = self._safe_base_filename(f"{self.title}_{timestamp}")
+        path = self._next_available_filepath(out_dir, base_name, "png")
+
+        ok = False
+        try:
+            ok = bool(pixmap.save(path, "PNG"))
+        except Exception:
+            ok = False
+
+        if not ok:
+            QMessageBox.warning(self, tr("Error"), tr("Failed to save screenshot."))
+            return
+
+        QMessageBox.information(self, tr("Success"), tr("Screenshot saved to: {0}").format(path))
 
     def toggle_detach(self):
         if self.is_detached:
