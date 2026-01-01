@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QFormLayout,
     QDoubleSpinBox,
+    QCheckBox,
 )
 from PyQt6.QtCore import QTimer
 
@@ -350,8 +351,12 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
 
         self.info_label = QLabel(tr("Idle"))
 
+        self.error_only_check = QCheckBox(tr("Error only"))
+        self.error_only_check.setChecked(False)
+
         form.addRow(tr("Frequency"), self.freq_spin)
         form.addRow(tr("Amplitude"), self.amp_spin)
+        form.addRow(tr("Plot"), self.error_only_check)
         form.addRow(tr("Info"), self.info_label)
 
         btn_row = QHBoxLayout()
@@ -383,6 +388,15 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
 
         self.start_btn.clicked.connect(self._on_start)
         self.stop_btn.clicked.connect(self._on_stop)
+        self.error_only_check.toggled.connect(self._apply_plot_mode)
+
+        self._apply_plot_mode()
+
+    def _apply_plot_mode(self):
+        err_only = bool(self.error_only_check.isChecked())
+        self.curve_mem.setVisible(not err_only)
+        self.curve_dut.setVisible(not err_only)
+        self.curve_err.setVisible(True)
 
     def _on_start(self):
         self.module.target_frequency_hz = float(self.freq_spin.value())
