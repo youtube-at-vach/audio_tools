@@ -122,6 +122,11 @@ def _load_module_class(module_key: str):
 
         return TimecodeMonitor
 
+    if module_key == "Self-Calibrating Distortion Extractor":
+        from src.gui.widgets.self_calibrating_distortion_extractor import SelfCalibratingDistortionExtractor
+
+        return SelfCalibratingDistortionExtractor
+
     raise KeyError(f"Unknown module key: {module_key}")
 
 
@@ -247,6 +252,7 @@ class MainWindow(QMainWindow):
             "Transient Analyzer",
             "Sound Quality Analyzer",
             "Timecode Monitor & Generator",
+            "Self-Calibrating Distortion Extractor",
         ]
         self.modules = [None] * len(self._module_keys)
         self.module_widgets = [None] * len(self._module_keys)
