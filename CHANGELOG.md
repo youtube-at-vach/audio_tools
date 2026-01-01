@@ -1,5 +1,34 @@
 # Changelog
 
+## [v0.2.8] - 2026-01-01
+
+### Added
+
+* Timecode Monitor & Generator モジュールを追加 (LTC エンコーディング / デコーディング、JAM メモリ機能)
+* TimecodeMonitor にフレームベース計算、ドロップフレーム率対応、複数チャネル FPS 表示、タイムゾーン機能を追加
+* 信号生成器に PRBS ウェーブフォーム生成を追加 (Order / Seed UI制御)
+* Timecode Monitor 関連の多言語翻訳キーを拡充
+
+### Changed
+
+* TimecodeMonitor のタイムゾーン処理を UTC ベースへ改善し、内部時間基準の一貫性を強化
+* TimecodeMonitor と LTCDecoder のフレーム時間追跡とエポック管理を改善
+* Lock-in Frequency Counter の応答性とジッター解析を強化
+
+### Fixed
+
+* TimecodeMonitor のジェネレーター状態管理をキャリブレーション中に改善
+* 入力オフセットフレームの総フレーム計算への適用を修正
+* LTC 生成のタイムゾーン処理とジェネレーター状態リセットを修正
+* TimecodeMonitor の入力オフセット処理を改善
+* 複数言語のテキスト翻訳を更新
+
+### Tests
+
+* LTC エンコーダー / デコーダーのユニットテストと TimecodeMonitor 入力遅延処理テストを追加
+* 複数チャネル Timecode Monitor テストを追加
+
+
 ## [v0.2.7] - 2025-12-28
 
 ### Added
