@@ -1416,6 +1416,8 @@ class TimecodeMonitorWidget(QWidget):
         super().__init__()
         self.module = module
         self._gen_buttons: Dict[str, QPushButton] = {}
+        self._mode_combos: Dict[str, QComboBox] = {}
+        self._jam_slot_combos: Dict[str, QComboBox] = {}
         self._tz_combos: Dict[str, QComboBox] = {}
         self._in_delay_spins: Dict[str, QSpinBox] = {}
         self._out_delay_spins: Dict[str, QSpinBox] = {}
@@ -1488,6 +1490,13 @@ class TimecodeMonitorWidget(QWidget):
         display_row.addWidget(build_display_frame(tr("Left"), "L", self.tc_label_L, self.sync_led_L, self.fps_est_label_L, self.level_label_L))
         display_row.addWidget(build_display_frame(tr("Right"), "R", self.tc_label_R, self.sync_led_R, self.fps_est_label_R, self.level_label_R))
         layout.addLayout(display_row)
+
+        # CH offset visualization (L/R LTC frame difference)
+        self.ltc_offset_label = QLabel(tr("CH Δ (R-L): --"))
+        self.ltc_offset_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.ltc_offset_label.setFont(QFont("Monospace", 11))
+        self.ltc_offset_label.setStyleSheet("color: #888;")
+        layout.addWidget(self.ltc_offset_label)
         
         controls_group = QGroupBox(tr("Output"))
         c_layout = QGridLayout()
@@ -1570,6 +1579,8 @@ class TimecodeMonitorWidget(QWidget):
         self.fps_est_label_L.setText(tr("FPS: {0}").format(self._format_fps_est("L", fpsl)))
         self.fps_est_label_R.setText(tr("FPS: {0}").format(self._format_fps_est("R", fpsr)))
 
+        self._update_ltc_offset_label()
+
         if getattr(self, "_jam_tab_index", None) is not None and self.tabs.currentIndex() == self._jam_tab_index:
             now = time.time()
             if not hasattr(self, "_jam_last_update"):
@@ -1603,11 +1614,145 @@ class TimecodeMonitorWidget(QWidget):
                     )
 
     def _on_jam_capture_auto(self, key: str):
+        """JAM button behavior:
+
+        - Immediately sync to external LTC (current decoded TC for this channel)
+        - Save the external TC into the currently selected JAM memory slot
+        - Switch generator mode to JAM and start output
+
+        Memory switching remains available after sync.
+        """
+
+        # Rotate-save: store external TC into a JAM memory slot (free slot first, else overwrite oldest).
         idx = self.module.jam_capture_auto_precise(key)
-        if idx >= 0 and self._jam_capture_msg.get(key) is not None:
-            self._jam_capture_msg[key].setText(tr("Saved: Mem {0}").format(str(idx + 1)))
-        elif self._jam_capture_msg.get(key) is not None:
-            self._jam_capture_msg[key].setText(tr("JAM failed"))
+        if idx < 0:
+            # Failure: abort JAM operation only; keep measurement/monitoring running.
+            if self._jam_capture_msg.get(key) is not None:
+                self._jam_capture_msg[key].setText(tr("JAM failed"))
+            return
+
+        self._start_generator_jam_sync(key, int(idx))
+
+        if self._jam_capture_msg.get(key) is not None:
+            self._jam_capture_msg[key].setText(tr("Saved: Mem {0}").format(str(int(idx) + 1)))
+
+    def _start_generator_jam_sync(self, key: str, slot: int) -> None:
+        # Link-mode handling: only the selected side should generate.
+        if self.module.link_enabled:
+            other = "R" if key == "L" else "L"
+            self.module.link_source = key
+            if getattr(self, "link_src_combo", None) is not None:
+                if self.link_src_combo.currentData() != key:
+                    self.link_src_combo.setCurrentIndex(0 if key == "L" else 1)
+
+            self.module.channels[other].generator_enabled = False
+            if self._gen_buttons.get(other) is not None:
+                self._gen_buttons[other].setChecked(False)
+                self._gen_buttons[other].setText(tr("Enable Generator"))
+
+        ch = self.module.channels.get(key)
+        if ch is None:
+            return
+
+        s = int(slot)
+        if s < 0:
+            s = 0
+        elif s > 4:
+            s = 4
+        ch.generator_jam_slot = int(s)
+
+        jam_combo = self._jam_slot_combos.get(key)
+        if jam_combo is not None:
+            try:
+                jam_combo.blockSignals(True)
+                jam_combo.setCurrentIndex(int(s))
+            finally:
+                jam_combo.blockSignals(False)
+
+        # Switch to JAM mode and restart generator state so output locks immediately.
+        ch.generator_mode = "jam"
+        ch.generator_enabled = True
+        ch.gen.frames_generated = 0
+        ch.gen.gen_buffer.clear()
+        ch.gen.gen_current = None
+        ch.gen.gen_pos = 0
+        ch.gen.tod_epoch_base = None
+        ch.gen.free_run_start_time = 0.0
+        ch.gen.jam_base_total_frames = None
+        ch.gen.jam_base_fps = None
+
+        btn = self._gen_buttons.get(key)
+        if btn is not None:
+            btn.setChecked(True)
+            btn.setText(tr("Stop Generator"))
+
+        mode_combo = self._mode_combos.get(key)
+        if mode_combo is not None:
+            # Update UI without re-triggering _on_mode_changed.
+            try:
+                mode_combo.blockSignals(True)
+                mode_combo.setCurrentIndex(2)  # JAM
+            finally:
+                mode_combo.blockSignals(False)
+
+    def _update_ltc_offset_label(self) -> None:
+        if getattr(self, "ltc_offset_label", None) is None:
+            return
+
+        l = self.module.channels.get("L")
+        r = self.module.channels.get("R")
+        if l is None or r is None:
+            self.ltc_offset_label.setText(tr("CH Δ (R-L): --"))
+            return
+
+        fps_l = float(getattr(l, "fps", 0.0) or 0.0)
+        fps_r = float(getattr(r, "fps", 0.0) or 0.0)
+        nominal_l = int(round(fps_l)) if fps_l > 0 else 0
+        nominal_r = int(round(fps_r)) if fps_r > 0 else 0
+
+        if nominal_l <= 0 or nominal_r <= 0 or nominal_l != nominal_r:
+            self.ltc_offset_label.setText(tr("CH Δ (R-L): --"))
+            return
+
+        # Prefer the latest decoded frame totals.
+        lf = None
+        rf = None
+        try:
+            if l.jam_history:
+                lf = int(l.jam_history[-1][1])
+        except Exception:
+            lf = None
+        try:
+            if r.jam_history:
+                rf = int(r.jam_history[-1][1])
+        except Exception:
+            rf = None
+
+        if lf is None or rf is None:
+            # Fallback: parse decoded TC strings.
+            pl = self.module._parse_tc(getattr(l, "decoded_tc", ""))
+            pr = self.module._parse_tc(getattr(r, "decoded_tc", ""))
+            if pl is None or pr is None:
+                self.ltc_offset_label.setText(tr("CH Δ (R-L): --"))
+                return
+            hh, mm, ss, ff = pl
+            lf = ((hh * 3600 + mm * 60 + ss) * nominal_l) + int(ff)
+            hh, mm, ss, ff = pr
+            rf = ((hh * 3600 + mm * 60 + ss) * nominal_r) + int(ff)
+
+        frames_per_day = int(24 * 3600 * nominal_l)
+        diff = int(rf) - int(lf)
+        if frames_per_day > 0:
+            half = frames_per_day // 2
+            diff = ((diff + half) % frames_per_day) - half
+
+        ms = (float(diff) / float(nominal_l)) * 1000.0
+        self.ltc_offset_label.setText(
+            tr("CH Δ (R-L): {0} fr ({1} ms)").format(
+                f"{diff:+d}",
+                f"{ms:+.1f}",
+            )
+        )
 
     def _build_channel_tab(self, key: str) -> QWidget:
         w = QWidget()
@@ -1677,6 +1822,7 @@ class TimecodeMonitorWidget(QWidget):
             mode_combo.setCurrentIndex(2)
         mode_combo.currentIndexChanged.connect(lambda _=0, k=key, c=mode_combo: self._on_mode_changed(k, c.currentData()))
         gl.addWidget(mode_combo, 0, 1)
+        self._mode_combos[key] = mode_combo
 
         gl.addWidget(QLabel(tr("JAM Mem:")), 3, 0)
         jam_combo = QComboBox()
@@ -1688,8 +1834,10 @@ class TimecodeMonitorWidget(QWidget):
         elif cur_slot > 4:
             cur_slot = 4
         jam_combo.setCurrentIndex(cur_slot)
-        jam_combo.currentIndexChanged.connect(lambda _=0, k=key, c=jam_combo: self._on_jam_slot_changed(k, int(c.currentData())))
+        # Use index (0-4) directly; some environments may not reliably return userData via currentData().
+        jam_combo.currentIndexChanged.connect(lambda idx=0, k=key: self._on_jam_slot_changed(k, int(idx)))
         gl.addWidget(jam_combo, 3, 1)
+        self._jam_slot_combos[key] = jam_combo
 
         gen_btn = QPushButton(tr("Enable Generator"))
         gen_btn.setCheckable(True)
@@ -1736,9 +1884,22 @@ class TimecodeMonitorWidget(QWidget):
 
     def _on_jam_slot_changed(self, key: str, slot: int):
         ch = self.module.channels[key]
-        ch.generator_jam_slot = int(slot)
+        s = int(slot)
+        if s < 0:
+            s = 0
+        elif s > 4:
+            s = 4
+        ch.generator_jam_slot = int(s)
         ch.gen.jam_base_total_frames = None
         ch.gen.jam_base_fps = None
+
+        # If currently generating in JAM mode, flush buffered frames so the new
+        # memory slot takes effect immediately.
+        if bool(getattr(ch, "generator_enabled", False)) and str(getattr(ch, "generator_mode", "")) == "jam":
+            ch.gen.frames_generated = 0
+            ch.gen.gen_buffer.clear()
+            ch.gen.gen_current = None
+            ch.gen.gen_pos = 0
 
     def _on_gen_toggle(self, key: str, checked: bool, btn: QPushButton):
         if self.module.link_enabled:
