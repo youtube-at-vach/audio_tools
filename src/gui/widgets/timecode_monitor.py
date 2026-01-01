@@ -33,7 +33,9 @@ SYNC_WORD = 0xBFFC # 1011 1111 1111 1100 (Reverse of 0011 1111 1111 1101 ?)
 class _LTCGenState:
     encoder: LTCEncoder
     gen_buffer: deque = field(default_factory=deque)
+    gen_tc_buffer: deque = field(default_factory=deque)
     gen_current: Optional[np.ndarray] = None
+    gen_current_tc: str = "--:--:--:--"
     gen_pos: int = 0
     frames_generated: int = 0
     tod_epoch_base: Optional[float] = None
@@ -470,7 +472,9 @@ class TimecodeMonitor(MeasurementModule):
             ch.generator_enabled = False
             ch.gen.frames_generated = 0
             ch.gen.gen_buffer.clear()
+            ch.gen.gen_tc_buffer.clear()
             ch.gen.gen_current = None
+            ch.gen.gen_current_tc = "--:--:--:--"
             ch.gen.gen_pos = 0
             ch.gen.tod_epoch_base = None
             ch.gen.free_run_start_time = 0.0
@@ -495,7 +499,9 @@ class TimecodeMonitor(MeasurementModule):
             ch.gen.encoder.sample_rate = sr
             ch.gen.encoder.set_fps(fps)
             ch.gen.gen_buffer.clear()
+            ch.gen.gen_tc_buffer.clear()
             ch.gen.gen_current = None
+            ch.gen.gen_current_tc = "--:--:--:--"
             ch.gen.gen_pos = 0
             ch.gen.frames_generated = 0
             ch.gen.tod_epoch_base = None
@@ -515,7 +521,9 @@ class TimecodeMonitor(MeasurementModule):
         ch.gen.encoder.sample_rate = sr
         ch.gen.encoder.set_fps(fps)
         ch.gen.gen_buffer.clear()
+        ch.gen.gen_tc_buffer.clear()
         ch.gen.gen_current = None
+        ch.gen.gen_current_tc = "--:--:--:--"
         ch.gen.gen_pos = 0
         ch.gen.frames_generated = 0
         ch.gen.tod_epoch_base = None
@@ -562,7 +570,9 @@ class TimecodeMonitor(MeasurementModule):
 
             ch.gen.frames_generated = 0
             ch.gen.gen_buffer.clear()
+            ch.gen.gen_tc_buffer.clear()
             ch.gen.gen_current = None
+            ch.gen.gen_current_tc = "--:--:--:--"
             ch.gen.gen_pos = 0
             ch.gen.free_run_start_time = 0.0
         
@@ -760,6 +770,10 @@ class TimecodeMonitor(MeasurementModule):
             if ch.gen.gen_current is None or ch.gen.gen_pos >= len(ch.gen.gen_current):
                 if ch.gen.gen_buffer:
                     ch.gen.gen_current = ch.gen.gen_buffer.popleft()
+                    if ch.gen.gen_tc_buffer:
+                        ch.gen.gen_current_tc = str(ch.gen.gen_tc_buffer.popleft())
+                    else:
+                        ch.gen.gen_current_tc = "--:--:--:--"
                     ch.gen.gen_pos = 0
                 else:
                     self._generate_next_frame(ch)
@@ -891,8 +905,10 @@ class TimecodeMonitor(MeasurementModule):
 
             ch.gen.frames_generated += 1
             
+        tc = f"{int(hh):02}:{int(mm):02}:{int(ss):02}:{int(ff):02}"
         samples = ch.gen.encoder.generate_frame(hh, mm, ss, ff)
         ch.gen.gen_buffer.append(samples)
+        ch.gen.gen_tc_buffer.append(tc)
 
     def stop_analysis(self):
         if self.callback_id:
@@ -1416,6 +1432,7 @@ class TimecodeMonitorWidget(QWidget):
         super().__init__()
         self.module = module
         self._gen_buttons: Dict[str, QPushButton] = {}
+        self._gen_out_labels: Dict[str, QLabel] = {}
         self._mode_combos: Dict[str, QComboBox] = {}
         self._jam_slot_combos: Dict[str, QComboBox] = {}
         self._tz_combos: Dict[str, QComboBox] = {}
@@ -1581,6 +1598,19 @@ class TimecodeMonitorWidget(QWidget):
 
         self._update_ltc_offset_label()
 
+        # Generator: show the currently-output LTC timecode (small display).
+        for k in ("L", "R"):
+            lbl = self._gen_out_labels.get(k)
+            ch = self.module.channels.get(k)
+            if lbl is None or ch is None:
+                continue
+
+            if bool(getattr(ch, "generator_enabled", False)):
+                tc_raw = str(getattr(ch.gen, "gen_current_tc", "--:--:--:--") or "--:--:--:--")
+                lbl.setText(tr("Gen Out: {0}").format(tc_raw))
+            else:
+                lbl.setText(tr("Gen Out: --:--:--:--"))
+
         if getattr(self, "_jam_tab_index", None) is not None and self.tabs.currentIndex() == self._jam_tab_index:
             now = time.time()
             if not hasattr(self, "_jam_last_update"):
@@ -1674,7 +1704,9 @@ class TimecodeMonitorWidget(QWidget):
         ch.generator_enabled = True
         ch.gen.frames_generated = 0
         ch.gen.gen_buffer.clear()
+        ch.gen.gen_tc_buffer.clear()
         ch.gen.gen_current = None
+        ch.gen.gen_current_tc = "--:--:--:--"
         ch.gen.gen_pos = 0
         ch.gen.tod_epoch_base = None
         ch.gen.free_run_start_time = 0.0
@@ -1847,6 +1879,13 @@ class TimecodeMonitorWidget(QWidget):
         gl.addWidget(gen_btn, 0, 2, 2, 1)
         self._gen_buttons[key] = gen_btn
 
+        gen_out = QLabel(tr("Gen Out: --:--:--:--"))
+        gen_out.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        gen_out.setFont(QFont("Monospace", 10))
+        gen_out.setStyleSheet("color: #888;")
+        gl.addWidget(gen_out, 2, 2)
+        self._gen_out_labels[key] = gen_out
+
         gl.addWidget(QLabel(tr("In Delay (fr):")), 1, 0)
         in_spin = QSpinBox()
         in_spin.setRange(-100000, 100000)
@@ -1875,7 +1914,9 @@ class TimecodeMonitorWidget(QWidget):
         ch.generator_mode = str(mode)
         ch.gen.frames_generated = 0
         ch.gen.gen_buffer.clear()
+        ch.gen.gen_tc_buffer.clear()
         ch.gen.gen_current = None
+        ch.gen.gen_current_tc = "--:--:--:--"
         ch.gen.gen_pos = 0
         ch.gen.free_run_start_time = 0.0
         ch.gen.tod_epoch_base = None
@@ -1898,7 +1939,9 @@ class TimecodeMonitorWidget(QWidget):
         if bool(getattr(ch, "generator_enabled", False)) and str(getattr(ch, "generator_mode", "")) == "jam":
             ch.gen.frames_generated = 0
             ch.gen.gen_buffer.clear()
+            ch.gen.gen_tc_buffer.clear()
             ch.gen.gen_current = None
+            ch.gen.gen_current_tc = "--:--:--:--"
             ch.gen.gen_pos = 0
 
     def _on_gen_toggle(self, key: str, checked: bool, btn: QPushButton):
@@ -1919,12 +1962,16 @@ class TimecodeMonitorWidget(QWidget):
         if checked:
             ch.gen.frames_generated = 0
             ch.gen.gen_buffer.clear()
+            ch.gen.gen_tc_buffer.clear()
             ch.gen.gen_current = None
+            ch.gen.gen_current_tc = "--:--:--:--"
             ch.gen.gen_pos = 0
             ch.gen.tod_epoch_base = None
             ch.gen.free_run_start_time = 0.0
             ch.gen.jam_base_total_frames = None
             ch.gen.jam_base_fps = None
+        else:
+            ch.gen.gen_current_tc = "--:--:--:--"
         btn.setText(tr("Stop Generator") if checked else tr("Enable Generator"))
 
     def _build_jam_tab(self) -> QWidget:
@@ -2090,7 +2137,9 @@ class TimecodeMonitorWidget(QWidget):
         ch.generator_enabled = True
         ch.gen.frames_generated = 0
         ch.gen.gen_buffer.clear()
+        ch.gen.gen_tc_buffer.clear()
         ch.gen.gen_current = None
+        ch.gen.gen_current_tc = "--:--:--:--"
         ch.gen.gen_pos = 0
         ch.gen.tod_epoch_base = None
         ch.gen.free_run_start_time = 0.0
