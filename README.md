@@ -40,8 +40,9 @@ A collection of DIY audio measurement and analysis tools, grown organically as n
 22. **Noise Profiler**: ノイズ特性の詳細解析ツール。1/fノイズ、ハムノイズ、ホワイトノイズの自動検出と定量化。平均化モード、LNAゲイン補正、熱雑音限界表示、等価抵抗表示対応。
 23. **Recorder & Player**: オーディオファイル(WAV/MP3/FLAC/OGG等)の録音・再生。リサンプリング、ループ再生、ソフトウェアループバック機能搭載。
 24. **Sound Quality Analyzer**: 音質評価指標 (Integrated/Momentary Loudness, Zwicker Sharpness, Roughness, Tonality) の数値およびグラフ表示。
-25. **Detachable Wrapper**: 任意ウィジットを独立ウィンドウとして切り離し・再接続できるUIユーティリティ。
-26. **Settings**: デバイス設定、キャリブレーション、テーマ選択、多言語切り替えなど。
+25. **Timecode Monitor & Generator**: LTC タイムコードのエンコード/デコードとリアルタイム監視。フレームベース計算、ドロップフレーム率、複数FPS表示、タイムゾーン/オフセット、JAMメモリ付きジェネレーターを備える。
+26. **Detachable Wrapper**: 任意ウィジットを独立ウィンドウとして切り離し・再接続できるUIユーティリティ。
+27. **Settings**: デバイス設定、キャリブレーション、テーマ選択、多言語切り替えなど。
 
 ### 🌍 多言語対応 (Localization)
 世界中の主要な言語をサポートしています。設定画面から切り替え可能です。
