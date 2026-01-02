@@ -93,6 +93,10 @@ def _load_module_class(module_key: str):
         from src.gui.widgets.goniometer import Goniometer
 
         return Goniometer
+    if module_key == "Inertial Stereo Filter":
+        from src.gui.widgets.inertial_stereo_filter import InertialStereoFilter
+
+        return InertialStereoFilter
     if module_key == "Impedance Analyzer":
         from src.gui.widgets.impedance_analyzer import ImpedanceAnalyzer
 
@@ -240,6 +244,7 @@ class MainWindow(QMainWindow):
             "Spectrogram",
             "Boxcar Averager",
             "Goniometer",
+            "Inertial Stereo Filter",
             "Impedance Analyzer",
             "Noise Profiler",
             "Recorder / Player",
