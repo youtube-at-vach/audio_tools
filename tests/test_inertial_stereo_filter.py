@@ -6,6 +6,8 @@ from src.core.stereo_angle_dynamics import (
     PhaseSpaceInertiaState,
     process_stereo_phase_space_inertia_block,
     prefilter_low_correlation_stereo_block,
+    DiffuseSide3DState,
+    process_stereo_diffuse_side_3d_block,
     wrap_angle_rad,
 )
 
@@ -151,3 +153,26 @@ def test_corr_prefilter_collapses_uncorrelated_to_mono():
     yr = y[:, 1].astype(np.float64)
     corr = float(np.corrcoef(yl, yr)[0, 1])
     assert corr > 0.90
+
+
+def test_diffuse_side_3d_leaves_mono_unchanged_and_is_finite():
+    sr = 48000.0
+    n = 4096
+
+    t = np.arange(n, dtype=np.float64) / sr
+    mono = (0.2 * np.sin(2 * np.pi * 440.0 * t)).astype(np.float32)
+    x = np.column_stack([mono, mono])
+
+    y, _st = process_stereo_diffuse_side_3d_block(
+        x,
+        sample_rate=sr,
+        alpha=0.8,
+        beta=0.8,
+        tau_seconds=0.010,
+        state=DiffuseSide3DState(),
+    )
+
+    assert np.all(np.isfinite(y))
+    # If input is mono (side==0), output should be (near) identical.
+    assert float(np.max(np.abs(y[:, 0] - mono))) < 1e-6
+    assert float(np.max(np.abs(y[:, 1] - mono))) < 1e-6

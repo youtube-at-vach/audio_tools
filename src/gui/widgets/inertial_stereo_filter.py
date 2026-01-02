@@ -28,6 +28,8 @@ from src.core.stereo_angle_dynamics import (
     PhaseSpaceInertiaState,
     process_stereo_phase_space_inertia_block,
     process_stereo_phase_space_inertia_corr_prefilter_block,
+    DiffuseSide3DState,
+    process_stereo_diffuse_side_3d_block,
 )
 
 
@@ -137,6 +139,16 @@ class ProcessingWorker(QThread):
                     tau_seconds=tau_seconds,
                     corr_threshold=self.corr_threshold,
                     corr_window_frames=self.corr_window_frames,
+                    state=st,
+                )
+            elif self.model_key == "diffuse_side_3d":
+                state = DiffuseSide3DState()
+                process_block = lambda block, st: process_stereo_diffuse_side_3d_block(
+                    block,
+                    sample_rate=sr,
+                    alpha=self.alpha,
+                    beta=self.beta,
+                    tau_seconds=tau_seconds,
                     state=st,
                 )
             else:
