@@ -1,7 +1,5 @@
-import argparse
 import os
 
-import numpy as np
 import soundfile as sf
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -21,32 +19,32 @@ from PyQt6.QtWidgets import (
 
 from src.measurement_modules.base import MeasurementModule
 from src.core.localization import tr
-from src.core.stereo_angle_dynamics import (
+from src.core.spatial_stereo_dynamics import (
     DiffuseSide3DState,
-    process_stereo_diffuse_side_3d_block,
     NeuralPrecedence3DState,
+    process_stereo_diffuse_side_3d_block,
     process_stereo_neural_precedence_3d_block,
 )
 
 
-class InertialStereoFilter(MeasurementModule):
+class SpatialStereoFilter(MeasurementModule):
     def __init__(self, audio_engine):
         self.audio_engine = audio_engine
         self.is_running = False
 
     @property
     def name(self) -> str:
-        return "Diffuse Side 3D Filter"
+        return "Spatial Stereo Filter"
 
     @property
     def description(self) -> str:
-        return "Offline stereo filter that increases spaciousness by diffusing the side channel."
+        return "Offline stereo filter experimenting with neuro-inspired spatial perception."
 
-    def run(self, args: argparse.Namespace):
+    def run(self, args):
         pass
 
     def get_widget(self):
-        return InertialStereoFilterWidget(self)
+        return SpatialStereoFilterWidget(self)
 
     def start_analysis(self):
         self.is_running = True
@@ -65,18 +63,18 @@ class ProcessingWorker(QThread):
         input_path: str,
         output_path: str,
         model_key: str,
-        alpha: float,
-        beta: float,
-        tau_ms: float,
+        depth: float,
+        width: float,
+        size_ms: float,
         block_frames: int = 65536,
     ):
         super().__init__()
         self.input_path = input_path
         self.output_path = output_path
         self.model_key = str(model_key)
-        self.alpha = float(alpha)
-        self.beta = float(beta)
-        self.tau_ms = float(tau_ms)
+        self.depth = float(depth)
+        self.width = float(width)
+        self.size_ms = float(size_ms)
         self.block_frames = int(block_frames)
 
     def run(self):
@@ -98,16 +96,16 @@ class ProcessingWorker(QThread):
             sr = float(info.samplerate)
             total_frames = int(info.frames) if info.frames else 0
 
-            tau_seconds = float(self.tau_ms) / 1000.0
+            size_seconds = float(self.size_ms) / 1000.0
 
             if self.model_key == "diffuse_side_3d":
                 state = DiffuseSide3DState()
                 process_block = lambda block, st: process_stereo_diffuse_side_3d_block(
                     block,
                     sample_rate=sr,
-                    alpha=self.alpha,
-                    beta=self.beta,
-                    tau_seconds=tau_seconds,
+                    alpha=self.depth,
+                    beta=self.width,
+                    tau_seconds=size_seconds,
                     state=st,
                 )
             elif self.model_key == "neural_precedence_3d":
@@ -115,9 +113,9 @@ class ProcessingWorker(QThread):
                 process_block = lambda block, st: process_stereo_neural_precedence_3d_block(
                     block,
                     sample_rate=sr,
-                    alpha=self.alpha,
-                    beta=self.beta,
-                    tau_seconds=tau_seconds,
+                    alpha=self.depth,
+                    beta=self.width,
+                    tau_seconds=size_seconds,
                     state=st,
                 )
             else:
@@ -127,7 +125,6 @@ class ProcessingWorker(QThread):
             processed_frames = 0
 
             with sf.SoundFile(self.input_path) as infile:
-                # Preserve subtype/format when possible; fallback to WAV defaults if unknown.
                 out_format = infile.format
                 out_subtype = infile.subtype
 
@@ -145,7 +142,6 @@ class ProcessingWorker(QThread):
                             break
 
                         out_block, state = process_block(block, state)
-
                         outfile.write(out_block)
 
                         processed_frames += int(block.shape[0])
@@ -163,8 +159,8 @@ class ProcessingWorker(QThread):
             self.finished.emit(False, str(e))
 
 
-class InertialStereoFilterWidget(QWidget):
-    def __init__(self, module: InertialStereoFilter):
+class SpatialStereoFilterWidget(QWidget):
+    def __init__(self, module: SpatialStereoFilter):
         super().__init__()
         self.module = module
         self.worker = None
@@ -173,7 +169,6 @@ class InertialStereoFilterWidget(QWidget):
     def init_ui(self):
         layout = QVBoxLayout()
 
-        # --- Section 1: Model / Params ---
         params_group = QGroupBox(tr("1. Spatial Model"))
         params_layout = QFormLayout()
 
@@ -182,35 +177,34 @@ class InertialStereoFilterWidget(QWidget):
         self.model_combo.addItem(tr("Neural Precedence 3D"), "neural_precedence_3d")
         params_layout.addRow(tr("Model:"), self.model_combo)
 
-        self.alpha_spin = QDoubleSpinBox()
-        self.alpha_spin.setRange(0.0, 1.0)
-        self.alpha_spin.setSingleStep(0.001)
-        self.alpha_spin.setDecimals(4)
-        self.alpha_spin.setValue(0.6000)
-        self.alpha_spin.setToolTip(tr("Strength/depth of spatial effect. Higher = wider/more spacious, but can sound 'effecty'."))
-        params_layout.addRow(tr("Depth:"), self.alpha_spin)
+        self.depth_spin = QDoubleSpinBox()
+        self.depth_spin.setRange(0.0, 1.0)
+        self.depth_spin.setSingleStep(0.001)
+        self.depth_spin.setDecimals(4)
+        self.depth_spin.setValue(0.6000)
+        self.depth_spin.setToolTip(tr("Effect strength/depth. Higher = more spacious, but can sound effecty."))
+        params_layout.addRow(tr("Depth:"), self.depth_spin)
 
-        self.beta_spin = QDoubleSpinBox()
-        self.beta_spin.setRange(0.0, 1.0)
-        self.beta_spin.setSingleStep(0.001)
-        self.beta_spin.setDecimals(4)
-        self.beta_spin.setValue(0.3000)
-        self.beta_spin.setToolTip(tr("Width amount (scales the side component)."))
-        params_layout.addRow(tr("Width:"), self.beta_spin)
+        self.width_spin = QDoubleSpinBox()
+        self.width_spin.setRange(0.0, 1.0)
+        self.width_spin.setSingleStep(0.001)
+        self.width_spin.setDecimals(4)
+        self.width_spin.setValue(0.3000)
+        self.width_spin.setToolTip(tr("Width amount (scales side component)."))
+        params_layout.addRow(tr("Width:"), self.width_spin)
 
-        self.tau_spin = QDoubleSpinBox()
-        self.tau_spin.setRange(0.0, 5000.0)
-        self.tau_spin.setSingleStep(10.0)
-        self.tau_spin.setDecimals(1)
-        self.tau_spin.setSuffix(" ms")
-        self.tau_spin.setValue(12.0)
-        self.tau_spin.setToolTip(tr("Time scale (ms). Larger = bigger space / longer precedence window; too large can sound like reverb."))
-        params_layout.addRow(tr("Size:"), self.tau_spin)
+        self.size_spin = QDoubleSpinBox()
+        self.size_spin.setRange(0.0, 5000.0)
+        self.size_spin.setSingleStep(10.0)
+        self.size_spin.setDecimals(1)
+        self.size_spin.setSuffix(" ms")
+        self.size_spin.setValue(12.0)
+        self.size_spin.setToolTip(tr("Time scale in ms. Larger = bigger space/longer precedence; too large can sound like reverb."))
+        params_layout.addRow(tr("Size:"), self.size_spin)
 
         params_group.setLayout(params_layout)
         layout.addWidget(params_group)
 
-        # --- Section 2: File Processing ---
         proc_group = QGroupBox(tr("2. Offline Processing"))
         proc_layout = QFormLayout()
 
@@ -250,9 +244,8 @@ class InertialStereoFilterWidget(QWidget):
 
         self.in_path_label.setText(path)
 
-        # Auto output path
         base, ext = os.path.splitext(path)
-        self.out_path_label.setText(base + "_inertial" + (ext if ext else ".wav"))
+        self.out_path_label.setText(base + "_spatial" + (ext if ext else ".wav"))
 
         self._update_process_btn()
 
@@ -280,9 +273,9 @@ class InertialStereoFilterWidget(QWidget):
         output_path = self.out_path_label.text()
 
         model_key = str(self.model_combo.currentData())
-        alpha = float(self.alpha_spin.value())
-        beta = float(self.beta_spin.value())
-        tau_ms = float(self.tau_spin.value())
+        depth = float(self.depth_spin.value())
+        width = float(self.width_spin.value())
+        size_ms = float(self.size_spin.value())
 
         self.process_btn.setEnabled(False)
         self.process_btn.setText(tr("Processing..."))
@@ -292,9 +285,9 @@ class InertialStereoFilterWidget(QWidget):
             input_path=input_path,
             output_path=output_path,
             model_key=model_key,
-            alpha=alpha,
-            beta=beta,
-            tau_ms=tau_ms,
+            depth=depth,
+            width=width,
+            size_ms=size_ms,
         )
         self.worker.progress.connect(self.progress.setValue)
         self.worker.finished.connect(self.on_processing_finished)
