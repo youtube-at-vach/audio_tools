@@ -24,6 +24,8 @@ from src.core.localization import tr
 from src.core.stereo_angle_dynamics import (
     DiffuseSide3DState,
     process_stereo_diffuse_side_3d_block,
+    NeuralPrecedence3DState,
+    process_stereo_neural_precedence_3d_block,
 )
 
 
@@ -62,6 +64,7 @@ class ProcessingWorker(QThread):
         *,
         input_path: str,
         output_path: str,
+        model_key: str,
         alpha: float,
         beta: float,
         tau_ms: float,
@@ -70,6 +73,7 @@ class ProcessingWorker(QThread):
         super().__init__()
         self.input_path = input_path
         self.output_path = output_path
+        self.model_key = str(model_key)
         self.alpha = float(alpha)
         self.beta = float(beta)
         self.tau_ms = float(tau_ms)
@@ -96,16 +100,29 @@ class ProcessingWorker(QThread):
 
             tau_seconds = float(self.tau_ms) / 1000.0
 
-            # Single experimental model: Diffuse Side 3D
-            state = DiffuseSide3DState()
-            process_block = lambda block, st: process_stereo_diffuse_side_3d_block(
-                block,
-                sample_rate=sr,
-                alpha=self.alpha,
-                beta=self.beta,
-                tau_seconds=tau_seconds,
-                state=st,
-            )
+            if self.model_key == "diffuse_side_3d":
+                state = DiffuseSide3DState()
+                process_block = lambda block, st: process_stereo_diffuse_side_3d_block(
+                    block,
+                    sample_rate=sr,
+                    alpha=self.alpha,
+                    beta=self.beta,
+                    tau_seconds=tau_seconds,
+                    state=st,
+                )
+            elif self.model_key == "neural_precedence_3d":
+                state = NeuralPrecedence3DState()
+                process_block = lambda block, st: process_stereo_neural_precedence_3d_block(
+                    block,
+                    sample_rate=sr,
+                    alpha=self.alpha,
+                    beta=self.beta,
+                    tau_seconds=tau_seconds,
+                    state=st,
+                )
+            else:
+                self.finished.emit(False, tr("Unknown model: {0}").format(self.model_key))
+                return
 
             processed_frames = 0
 
@@ -157,15 +174,20 @@ class InertialStereoFilterWidget(QWidget):
         layout = QVBoxLayout()
 
         # --- Section 1: Model / Params ---
-        params_group = QGroupBox(tr("1. Diffuse Side 3D"))
+        params_group = QGroupBox(tr("1. Spatial Model"))
         params_layout = QFormLayout()
+
+        self.model_combo = QComboBox()
+        self.model_combo.addItem(tr("Diffuse Side 3D"), "diffuse_side_3d")
+        self.model_combo.addItem(tr("Neural Precedence 3D"), "neural_precedence_3d")
+        params_layout.addRow(tr("Model:"), self.model_combo)
 
         self.alpha_spin = QDoubleSpinBox()
         self.alpha_spin.setRange(0.0, 1.0)
         self.alpha_spin.setSingleStep(0.001)
         self.alpha_spin.setDecimals(4)
         self.alpha_spin.setValue(0.6000)
-        self.alpha_spin.setToolTip(tr("Diffusion depth for the side channel. Higher = wider/more spacious, but can sound 'effecty'."))
+        self.alpha_spin.setToolTip(tr("Strength/depth of spatial effect. Higher = wider/more spacious, but can sound 'effecty'."))
         params_layout.addRow(tr("Depth:"), self.alpha_spin)
 
         self.beta_spin = QDoubleSpinBox()
@@ -182,7 +204,7 @@ class InertialStereoFilterWidget(QWidget):
         self.tau_spin.setDecimals(1)
         self.tau_spin.setSuffix(" ms")
         self.tau_spin.setValue(12.0)
-        self.tau_spin.setToolTip(tr("Base delay time for diffusion (ms). Larger = bigger space, too large can sound like reverb."))
+        self.tau_spin.setToolTip(tr("Time scale (ms). Larger = bigger space / longer precedence window; too large can sound like reverb."))
         params_layout.addRow(tr("Size:"), self.tau_spin)
 
         params_group.setLayout(params_layout)
@@ -257,6 +279,7 @@ class InertialStereoFilterWidget(QWidget):
         input_path = self.in_path_label.text()
         output_path = self.out_path_label.text()
 
+        model_key = str(self.model_combo.currentData())
         alpha = float(self.alpha_spin.value())
         beta = float(self.beta_spin.value())
         tau_ms = float(self.tau_spin.value())
@@ -268,6 +291,7 @@ class InertialStereoFilterWidget(QWidget):
         self.worker = ProcessingWorker(
             input_path=input_path,
             output_path=output_path,
+            model_key=model_key,
             alpha=alpha,
             beta=beta,
             tau_ms=tau_ms,

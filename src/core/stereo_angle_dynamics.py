@@ -67,6 +67,32 @@ class DiffuseSide3DState:
     hp_y1: float = 0.0
 
 
+@dataclass
+class NeuralPrecedence3DState:
+    """State for a neuro-inspired stereo spatialization experiment.
+
+    Components:
+    - Envelope follower + onset detector (models transient sensitivity).
+    - Precedence hold: keep localization cues stable briefly after onset.
+    - Adaptive diffusion: ramp spaciousness after onset; reduce over sustained signals.
+    - Side diffusion via short multi-tap delays (decorrelation).
+    """
+
+    buf: np.ndarray | None = None
+    idx: int = 0
+    max_delay: int = 0
+
+    # Envelope/onset tracking
+    env: float = 0.0
+    env_prev: float = 0.0
+    spacious: float = 0.0  # 0..1 ramp (spaciousness after onset)
+    hold: int = 0  # samples remaining in precedence hold
+
+    # High-pass filter memory for side.
+    hp_x1: float = 0.0
+    hp_y1: float = 0.0
+
+
 def _gamma_from_tau(tau_seconds: float, sample_rate: float) -> float:
     if tau_seconds <= 0.0:
         return 1.0
@@ -519,6 +545,173 @@ def process_stereo_diffuse_side_3d_block(
     return out, state
 
 
+def process_stereo_neural_precedence_3d_block(
+    data: np.ndarray,
+    *,
+    sample_rate: float,
+    alpha: float,
+    beta: float,
+    tau_seconds: float,
+    state: NeuralPrecedence3DState | None = None,
+    eps: float = 1e-12,
+) -> Tuple[np.ndarray, NeuralPrecedence3DState]:
+    """Neuro-inspired spatialization experiment.
+
+    Parameter mapping (reuses existing UI controls):
+    - alpha: spaciousness strength / diffusion depth (0..1)
+    - beta : width amount (0..1)
+    - tau_seconds: base time scale (affects delay taps and adaptation speed)
+    """
+    if state is None:
+        state = NeuralPrecedence3DState()
+
+    x = np.asarray(data)
+    if x.ndim == 1:
+        l = x.astype(np.float32, copy=False)
+        r = l
+    else:
+        if x.shape[1] == 1:
+            l = x[:, 0].astype(np.float32, copy=False)
+            r = l
+        elif x.shape[1] == 2:
+            l = x[:, 0].astype(np.float32, copy=False)
+            r = x[:, 1].astype(np.float32, copy=False)
+        else:
+            raise ValueError("Only mono or stereo input is supported.")
+
+    n = int(l.shape[0])
+    out = np.zeros((n, 2), dtype=np.float32)
+
+    strength = float(np.clip(float(alpha), 0.0, 1.0))
+    width_max = float(np.clip(1.0 + 2.0 * float(beta), 0.0, 3.0))
+
+    # Time scales
+    tau_ms = float(tau_seconds) * 1000.0
+    base_ms = float(np.clip(10.0 if tau_ms <= 0.0 else tau_ms, 3.0, 30.0))
+
+    # Delay taps
+    d1 = int(max(1, round((base_ms * 0.45) * float(sample_rate) / 1000.0)))
+    d2 = int(max(1, round((base_ms * 0.80 + 1.7) * float(sample_rate) / 1000.0)))
+    d3 = int(max(1, round((base_ms * 1.25 + 4.3) * float(sample_rate) / 1000.0)))
+    max_delay = int(max(d1, d2, d3))
+
+    if state.buf is None or int(state.max_delay) != max_delay:
+        state.buf = np.zeros(max_delay + 1, dtype=np.float32)
+        state.idx = 0
+        state.max_delay = int(max_delay)
+
+    buf = state.buf
+    idx = int(state.idx)
+
+    # Envelope follower (attack/release)
+    # Fast attack (~3ms), slower release (~80ms)
+    att = float(np.exp(-1.0 / (float(sample_rate) * 0.003)))
+    rel = float(np.exp(-1.0 / (float(sample_rate) * 0.080)))
+
+    # Precedence hold duration (~8ms)
+    hold_samples = int(round(0.008 * float(sample_rate)))
+
+    # Spaciousness ramp time constant (depends on tau)
+    ramp_tau = float(np.clip(0.020 + 0.004 * (base_ms / 10.0), 0.010, 0.080))
+    ramp_g = float(1.0 - np.exp(-1.0 / (float(sample_rate) * ramp_tau)))
+
+    # Sustained adaptation: slowly reduce spaciousness when signal is steady
+    adapt_tau = float(np.clip(0.250 + 0.020 * (base_ms / 10.0), 0.150, 0.600))
+    adapt_g = float(1.0 - np.exp(-1.0 / (float(sample_rate) * adapt_tau)))
+
+    # Side high-pass coefficient
+    fc = 180.0
+    a = float(np.exp(-2.0 * np.pi * float(fc) / float(sample_rate)))
+    hp_x1 = float(state.hp_x1)
+    hp_y1 = float(state.hp_y1)
+
+    env = float(state.env)
+    env_prev = float(state.env_prev)
+    spacious = float(state.spacious)
+    hold = int(state.hold)
+
+    for i in range(n):
+        li = float(l[i])
+        ri = float(r[i])
+
+        if abs(li) + abs(ri) <= eps:
+            buf[idx] = 0.0
+            idx = (idx + 1) % (max_delay + 1)
+            out[i, 0] = 0.0
+            out[i, 1] = 0.0
+            # Decay state gently.
+            env *= 0.999
+            spacious *= 0.999
+            hold = max(0, hold - 1)
+            continue
+
+        m = 0.5 * (li + ri)
+        s = 0.5 * (li - ri)
+
+        # Envelope (use mid energy as a proxy for source presence)
+        xenv = abs(m) + 0.35 * abs(s)
+        if xenv > env:
+            env = att * env + (1.0 - att) * xenv
+        else:
+            env = rel * env + (1.0 - rel) * xenv
+
+        # Onset detection: positive jump in env
+        d_env = max(0.0, env - env_prev)
+        env_prev = env
+
+        onset = d_env > (0.010 + 0.15 * env)  # heuristic threshold
+        if onset:
+            hold = hold_samples
+
+        # Precedence model:
+        # - During hold: keep spaciousness low (localization dominated by leading wavefront)
+        # - After hold: ramp spaciousness up (late energy contributes spaciousness)
+        if hold > 0:
+            hold -= 1
+            spacious = (1.0 - ramp_g) * spacious  # push toward 0
+        else:
+            spacious = float(np.clip(spacious + ramp_g * (1.0 - spacious), 0.0, 1.0))
+
+        # Adaptation: if envelope is steady (low d_env), slowly reduce spaciousness
+        steady = float(np.clip(1.0 - 10.0 * d_env, 0.0, 1.0))
+        spacious = float(np.clip(spacious - adapt_g * steady * 0.15, 0.0, 1.0))
+
+        # Diffuse side (decorrelate) scaled by spaciousness and strength
+        s_hp, hp_x1, hp_y1 = _one_pole_highpass_step(s, a=a, x1=hp_x1, y1=hp_y1)
+        buf[idx] = float(s_hp)
+
+        j1 = (idx - d1) % (max_delay + 1)
+        j2 = (idx - d2) % (max_delay + 1)
+        j3 = (idx - d3) % (max_delay + 1)
+
+        mix = strength * spacious
+        dry = 1.0 - 0.60 * mix
+        g1 = 0.32 * mix
+        g2 = 0.20 * mix
+        g3 = 0.12 * mix
+        s_diff = dry * float(s_hp) + g1 * float(buf[j1]) + g2 * float(buf[j2]) + g3 * float(buf[j3])
+
+        # Width: more during spacious periods, less during hold/steady
+        width = float(np.clip(1.0 + (width_max - 1.0) * (0.25 + 0.75 * spacious), 0.0, 3.0))
+        lo = float(m + width * s_diff)
+        ro = float(m - width * s_diff)
+
+        out[i, 0] = np.float32(lo)
+        out[i, 1] = np.float32(ro)
+
+        idx = (idx + 1) % (max_delay + 1)
+
+    state.idx = int(idx)
+    state.env = float(env)
+    state.env_prev = float(env_prev)
+    state.spacious = float(spacious)
+    state.hold = int(hold)
+    state.hp_x1 = float(hp_x1)
+    state.hp_y1 = float(hp_y1)
+
+    return out, state
+
+
 # Extensible model registry (GUI can populate from this).
 StereoOfflineModelFn = Callable[[np.ndarray], np.ndarray]
 
@@ -529,4 +722,5 @@ MODEL_KEYS: Dict[str, str] = {
     "phase_space_inertia": "Phase-Space Inertia (theta + radius)",
     "phase_space_inertia_corr_prefilter": "Phase-Space Inertia + Corr Prefilter",
     "diffuse_side_3d": "Diffuse Side 3D (experimental)",
+    "neural_precedence_3d": "Neural Precedence 3D (experimental)",
 }
