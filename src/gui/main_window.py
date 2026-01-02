@@ -121,6 +121,10 @@ def _load_module_class(module_key: str):
         from src.gui.widgets.timecode_monitor import TimecodeMonitor
 
         return TimecodeMonitor
+    if module_key == "BNIM Meter":
+        from src.gui.widgets.bnim_meter import BNIMMeter
+
+        return BNIMMeter
 
     raise KeyError(f"Unknown module key: {module_key}")
 
@@ -247,6 +251,7 @@ class MainWindow(QMainWindow):
             "Transient Analyzer",
             "Sound Quality Analyzer",
             "Timecode Monitor & Generator",
+            "BNIM Meter",
         ]
         self.modules = [None] * len(self._module_keys)
         self.module_widgets = [None] * len(self._module_keys)
