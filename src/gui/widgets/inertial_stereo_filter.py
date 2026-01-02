@@ -27,6 +27,7 @@ from src.core.stereo_angle_dynamics import (
     process_stereo_inertial_attractor_block,
     PhaseSpaceInertiaState,
     process_stereo_phase_space_inertia_block,
+    process_stereo_phase_space_inertia_corr_prefilter_block,
 )
 
 
@@ -69,6 +70,8 @@ class ProcessingWorker(QThread):
         alpha: float,
         beta: float,
         tau_ms: float,
+        corr_threshold: float = 0.3,
+        corr_window_frames: int = 1024,
         block_frames: int = 65536,
     ):
         super().__init__()
@@ -78,6 +81,8 @@ class ProcessingWorker(QThread):
         self.alpha = float(alpha)
         self.beta = float(beta)
         self.tau_ms = float(tau_ms)
+        self.corr_threshold = float(corr_threshold)
+        self.corr_window_frames = int(corr_window_frames)
         self.block_frames = int(block_frames)
 
     def run(self):
@@ -120,6 +125,18 @@ class ProcessingWorker(QThread):
                     alpha=self.alpha,
                     beta=self.beta,
                     tau_seconds=tau_seconds,
+                    state=st,
+                )
+            elif self.model_key == "phase_space_inertia_corr_prefilter":
+                state = PhaseSpaceInertiaState()
+                process_block = lambda block, st: process_stereo_phase_space_inertia_corr_prefilter_block(
+                    block,
+                    sample_rate=sr,
+                    alpha=self.alpha,
+                    beta=self.beta,
+                    tau_seconds=tau_seconds,
+                    corr_threshold=self.corr_threshold,
+                    corr_window_frames=self.corr_window_frames,
                     state=st,
                 )
             else:
@@ -209,6 +226,18 @@ class InertialStereoFilterWidget(QWidget):
         self.tau_spin.setToolTip(tr("EMA time constant for mass center (tau). 0 disables smoothing."))
         params_layout.addRow(tr("Tau:"), self.tau_spin)
 
+        self.corr_thr_spin = QDoubleSpinBox()
+        self.corr_thr_spin.setRange(-1.0, 1.0)
+        self.corr_thr_spin.setSingleStep(0.05)
+        self.corr_thr_spin.setDecimals(2)
+        self.corr_thr_spin.setValue(0.30)
+        self.corr_thr_spin.setToolTip(
+            tr(
+                "Correlation threshold for prefilter. If corr < threshold, window is collapsed to mono (mid)."
+            )
+        )
+        params_layout.addRow(tr("Corr Thr:"), self.corr_thr_spin)
+
         params_group.setLayout(params_layout)
         layout.addWidget(params_group)
 
@@ -285,6 +314,7 @@ class InertialStereoFilterWidget(QWidget):
         alpha = float(self.alpha_spin.value())
         beta = float(self.beta_spin.value())
         tau_ms = float(self.tau_spin.value())
+        corr_thr = float(self.corr_thr_spin.value())
 
         self.process_btn.setEnabled(False)
         self.process_btn.setText(tr("Processing..."))
@@ -297,6 +327,7 @@ class InertialStereoFilterWidget(QWidget):
             alpha=alpha,
             beta=beta,
             tau_ms=tau_ms,
+            corr_threshold=corr_thr,
         )
         self.worker.progress.connect(self.progress.setValue)
         self.worker.finished.connect(self.on_processing_finished)

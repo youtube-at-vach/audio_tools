@@ -5,6 +5,7 @@ from src.core.stereo_angle_dynamics import (
     process_stereo_inertial_attractor_block,
     PhaseSpaceInertiaState,
     process_stereo_phase_space_inertia_block,
+    prefilter_low_correlation_stereo_block,
     wrap_angle_rad,
 )
 
@@ -132,3 +133,21 @@ def test_phase_space_inertia_smooths_magnitude_step():
 
     # It should approach the target over time.
     assert float(out_mag[idx + 500]) > float(out_mag[idx])
+
+
+def test_corr_prefilter_collapses_uncorrelated_to_mono():
+    rng = np.random.default_rng(0)
+    n = 8192
+
+    # Independent signals => correlation ~ 0.
+    l = rng.standard_normal(n).astype(np.float32)
+    r = rng.standard_normal(n).astype(np.float32)
+    x = np.column_stack([l, r])
+
+    y = prefilter_low_correlation_stereo_block(x, threshold=0.5, window_frames=1024)
+
+    # After prefiltering, windows should become mono (L == R), so overall corr is high.
+    yl = y[:, 0].astype(np.float64)
+    yr = y[:, 1].astype(np.float64)
+    corr = float(np.corrcoef(yl, yr)[0, 1])
+    assert corr > 0.90

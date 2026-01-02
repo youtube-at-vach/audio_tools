@@ -295,6 +295,92 @@ def process_stereo_phase_space_inertia_block(
     return out, state
 
 
+def prefilter_low_correlation_stereo_block(
+    data: np.ndarray,
+    *,
+    threshold: float,
+    window_frames: int = 1024,
+    eps: float = 1e-12,
+) -> np.ndarray:
+    """Prefilter stereo by collapsing low-correlation regions to mono.
+
+    For each non-overlapping time window, compute Pearson-like correlation
+    between L and R. If corr < threshold, replace both channels with the mid
+    signal: mid = 0.5 * (L + R).
+
+    This is intended as a stabilizing pre-step before polar dynamics.
+    """
+    x = np.asarray(data)
+    if x.ndim == 1:
+        # Mono: nothing to prefilter.
+        mono = x.astype(np.float32, copy=False)
+        return np.column_stack([mono, mono]).astype(np.float32, copy=False)
+
+    if x.shape[1] == 1:
+        mono = x[:, 0].astype(np.float32, copy=False)
+        return np.column_stack([mono, mono]).astype(np.float32, copy=False)
+
+    if x.shape[1] != 2:
+        raise ValueError("Only mono or stereo input is supported.")
+
+    y = x.astype(np.float32, copy=True)
+    l = y[:, 0]
+    r = y[:, 1]
+
+    n = int(y.shape[0])
+    w = int(max(1, window_frames))
+    thr = float(threshold)
+
+    for start in range(0, n, w):
+        end = min(n, start + w)
+        lw = l[start:end]
+        rw = r[start:end]
+
+        # Compute correlation in this window.
+        l0 = lw - float(np.mean(lw))
+        r0 = rw - float(np.mean(rw))
+        num = float(np.sum(l0 * r0))
+        den = float(np.sqrt(float(np.sum(l0 * l0)) * float(np.sum(r0 * r0)))) + float(eps)
+        corr = num / den
+
+        if corr < thr:
+            mid = 0.5 * (lw + rw)
+            l[start:end] = mid
+            r[start:end] = mid
+
+    return y
+
+
+def process_stereo_phase_space_inertia_corr_prefilter_block(
+    data: np.ndarray,
+    *,
+    sample_rate: float,
+    alpha: float,
+    beta: float,
+    tau_seconds: float,
+    corr_threshold: float,
+    corr_window_frames: int = 1024,
+    state: PhaseSpaceInertiaState | None = None,
+    eps: float = 1e-12,
+) -> Tuple[np.ndarray, PhaseSpaceInertiaState]:
+    """Phase-space inertia model with a low-correlation prefilter."""
+    filtered = prefilter_low_correlation_stereo_block(
+        data,
+        threshold=float(corr_threshold),
+        window_frames=int(corr_window_frames),
+        eps=float(eps),
+    )
+    return process_stereo_phase_space_inertia_block(
+        filtered,
+        sample_rate=float(sample_rate),
+        alpha=float(alpha),
+        beta=float(beta),
+        tau_seconds=float(tau_seconds),
+        state=state,
+        eps=float(eps),
+    )
+
+
 # Extensible model registry (GUI can populate from this).
 StereoOfflineModelFn = Callable[[np.ndarray], np.ndarray]
 
@@ -303,4 +389,5 @@ MODEL_KEYS: Dict[str, str] = {
     # key -> user-visible label
     "inertial_attractor": "Inertial + Gravity (alpha/beta)",
     "phase_space_inertia": "Phase-Space Inertia (theta + radius)",
+    "phase_space_inertia_corr_prefilter": "Phase-Space Inertia + Corr Prefilter",
 }
