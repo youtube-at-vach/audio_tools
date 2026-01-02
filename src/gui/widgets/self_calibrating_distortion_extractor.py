@@ -303,8 +303,13 @@ class SelfCalibratingDistortionExtractor(MeasurementModule):
 
         harms = np.abs(X[2 : h_max + 1]).astype(np.float64, copy=False)
         thd = float(np.sqrt(np.sum(harms * harms)) / fund)
+        if not np.isfinite(thd) or thd < 0.0:
+            return float('nan'), float('nan')
+        if thd == 0.0:
+            return 0.0, float('-inf')
+
         thd_percent = float(100.0 * thd)
-        thd_db = float(20.0 * np.log10(thd + 1e-15))
+        thd_db = float(20.0 * np.log10(thd))
         return thd_percent, thd_db
 
     @property
@@ -1014,6 +1019,8 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
         thd_db = float(self.module.last_thd_db)
         thd_pct = float(self.module.last_thd_percent)
 
+        thd_db_disp = float(thd_db) if (np.isfinite(thd_db) or np.isneginf(thd_db)) else float('nan')
+
         self.info_label.setText(
             tr("N={0}, f={1:.3f} Hz, shift={2} samp, fill={3:.0f}% | gain={4:.4f}, DC={5:+.4f} | RMSerr={6:.4e} ({7:.3f}%), THD={8:.2f}% ({9:.1f} dB)").format(
                 int(self.module.period_samples),
@@ -1025,7 +1032,7 @@ class SelfCalibratingDistortionExtractorWidget(QWidget):
                 float(self.module.last_rms_error) if np.isfinite(self.module.last_rms_error) else float('nan'),
                 float(rms_pct) if np.isfinite(rms_pct) else float('nan'),
                 float(thd_pct) if np.isfinite(thd_pct) else float('nan'),
-                float(thd_db) if np.isfinite(thd_db) else float('nan'),
+                float(thd_db_disp),
             )
         )
 
