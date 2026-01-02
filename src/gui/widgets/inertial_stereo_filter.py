@@ -22,12 +22,6 @@ from PyQt6.QtWidgets import (
 from src.measurement_modules.base import MeasurementModule
 from src.core.localization import tr
 from src.core.stereo_angle_dynamics import (
-    MODEL_KEYS,
-    InertialAttractorState,
-    process_stereo_inertial_attractor_block,
-    PhaseSpaceInertiaState,
-    process_stereo_phase_space_inertia_block,
-    process_stereo_phase_space_inertia_corr_prefilter_block,
     DiffuseSide3DState,
     process_stereo_diffuse_side_3d_block,
 )
@@ -40,11 +34,11 @@ class InertialStereoFilter(MeasurementModule):
 
     @property
     def name(self) -> str:
-        return "Inertial Stereo Filter"
+        return "Diffuse Side 3D Filter"
 
     @property
     def description(self) -> str:
-        return "Offline stereo filter that adds inertia to panning/phase-space angle."
+        return "Offline stereo filter that increases spaciousness by diffusing the side channel."
 
     def run(self, args: argparse.Namespace):
         pass
@@ -68,23 +62,17 @@ class ProcessingWorker(QThread):
         *,
         input_path: str,
         output_path: str,
-        model_key: str,
         alpha: float,
         beta: float,
         tau_ms: float,
-        corr_threshold: float = 0.3,
-        corr_window_frames: int = 1024,
         block_frames: int = 65536,
     ):
         super().__init__()
         self.input_path = input_path
         self.output_path = output_path
-        self.model_key = model_key
         self.alpha = float(alpha)
         self.beta = float(beta)
         self.tau_ms = float(tau_ms)
-        self.corr_threshold = float(corr_threshold)
-        self.corr_window_frames = int(corr_window_frames)
         self.block_frames = int(block_frames)
 
     def run(self):
@@ -108,52 +96,16 @@ class ProcessingWorker(QThread):
 
             tau_seconds = float(self.tau_ms) / 1000.0
 
-            # Model dispatch (extensible)
-            if self.model_key == "inertial_attractor":
-                state = InertialAttractorState()
-                process_block = lambda block, st: process_stereo_inertial_attractor_block(
-                    block,
-                    sample_rate=sr,
-                    alpha=self.alpha,
-                    beta=self.beta,
-                    tau_seconds=tau_seconds,
-                    state=st,
-                )
-            elif self.model_key == "phase_space_inertia":
-                state = PhaseSpaceInertiaState()
-                process_block = lambda block, st: process_stereo_phase_space_inertia_block(
-                    block,
-                    sample_rate=sr,
-                    alpha=self.alpha,
-                    beta=self.beta,
-                    tau_seconds=tau_seconds,
-                    state=st,
-                )
-            elif self.model_key == "phase_space_inertia_corr_prefilter":
-                state = PhaseSpaceInertiaState()
-                process_block = lambda block, st: process_stereo_phase_space_inertia_corr_prefilter_block(
-                    block,
-                    sample_rate=sr,
-                    alpha=self.alpha,
-                    beta=self.beta,
-                    tau_seconds=tau_seconds,
-                    corr_threshold=self.corr_threshold,
-                    corr_window_frames=self.corr_window_frames,
-                    state=st,
-                )
-            elif self.model_key == "diffuse_side_3d":
-                state = DiffuseSide3DState()
-                process_block = lambda block, st: process_stereo_diffuse_side_3d_block(
-                    block,
-                    sample_rate=sr,
-                    alpha=self.alpha,
-                    beta=self.beta,
-                    tau_seconds=tau_seconds,
-                    state=st,
-                )
-            else:
-                self.finished.emit(False, tr("Unknown model: {0}").format(self.model_key))
-                return
+            # Single experimental model: Diffuse Side 3D
+            state = DiffuseSide3DState()
+            process_block = lambda block, st: process_stereo_diffuse_side_3d_block(
+                block,
+                sample_rate=sr,
+                alpha=self.alpha,
+                beta=self.beta,
+                tau_seconds=tau_seconds,
+                state=st,
+            )
 
             processed_frames = 0
 
@@ -205,50 +157,33 @@ class InertialStereoFilterWidget(QWidget):
         layout = QVBoxLayout()
 
         # --- Section 1: Model / Params ---
-        params_group = QGroupBox(tr("1. Dynamics Model"))
+        params_group = QGroupBox(tr("1. Diffuse Side 3D"))
         params_layout = QFormLayout()
-
-        self.model_combo = QComboBox()
-        for key, label in MODEL_KEYS.items():
-            self.model_combo.addItem(tr(label), key)
-        params_layout.addRow(tr("Model:"), self.model_combo)
 
         self.alpha_spin = QDoubleSpinBox()
         self.alpha_spin.setRange(0.0, 1.0)
         self.alpha_spin.setSingleStep(0.001)
         self.alpha_spin.setDecimals(4)
-        self.alpha_spin.setValue(0.0500)
-        self.alpha_spin.setToolTip(tr("Follow factor toward instantaneous angle (alpha)."))
-        params_layout.addRow(tr("Alpha:"), self.alpha_spin)
+        self.alpha_spin.setValue(0.6000)
+        self.alpha_spin.setToolTip(tr("Diffusion depth for the side channel. Higher = wider/more spacious, but can sound 'effecty'."))
+        params_layout.addRow(tr("Depth:"), self.alpha_spin)
 
         self.beta_spin = QDoubleSpinBox()
         self.beta_spin.setRange(0.0, 1.0)
         self.beta_spin.setSingleStep(0.001)
         self.beta_spin.setDecimals(4)
-        self.beta_spin.setValue(0.0100)
-        self.beta_spin.setToolTip(tr("Attraction toward mass center angle (beta)."))
-        params_layout.addRow(tr("Beta:"), self.beta_spin)
+        self.beta_spin.setValue(0.3000)
+        self.beta_spin.setToolTip(tr("Width amount (scales the side component)."))
+        params_layout.addRow(tr("Width:"), self.beta_spin)
 
         self.tau_spin = QDoubleSpinBox()
         self.tau_spin.setRange(0.0, 5000.0)
         self.tau_spin.setSingleStep(10.0)
         self.tau_spin.setDecimals(1)
         self.tau_spin.setSuffix(" ms")
-        self.tau_spin.setValue(200.0)
-        self.tau_spin.setToolTip(tr("EMA time constant for mass center (tau). 0 disables smoothing."))
-        params_layout.addRow(tr("Tau:"), self.tau_spin)
-
-        self.corr_thr_spin = QDoubleSpinBox()
-        self.corr_thr_spin.setRange(-1.0, 1.0)
-        self.corr_thr_spin.setSingleStep(0.05)
-        self.corr_thr_spin.setDecimals(2)
-        self.corr_thr_spin.setValue(0.30)
-        self.corr_thr_spin.setToolTip(
-            tr(
-                "Correlation threshold for prefilter. If corr < threshold, window is collapsed to mono (mid)."
-            )
-        )
-        params_layout.addRow(tr("Corr Thr:"), self.corr_thr_spin)
+        self.tau_spin.setValue(12.0)
+        self.tau_spin.setToolTip(tr("Base delay time for diffusion (ms). Larger = bigger space, too large can sound like reverb."))
+        params_layout.addRow(tr("Size:"), self.tau_spin)
 
         params_group.setLayout(params_layout)
         layout.addWidget(params_group)
@@ -322,11 +257,9 @@ class InertialStereoFilterWidget(QWidget):
         input_path = self.in_path_label.text()
         output_path = self.out_path_label.text()
 
-        model_key = self.model_combo.currentData()
         alpha = float(self.alpha_spin.value())
         beta = float(self.beta_spin.value())
         tau_ms = float(self.tau_spin.value())
-        corr_thr = float(self.corr_thr_spin.value())
 
         self.process_btn.setEnabled(False)
         self.process_btn.setText(tr("Processing..."))
@@ -335,11 +268,9 @@ class InertialStereoFilterWidget(QWidget):
         self.worker = ProcessingWorker(
             input_path=input_path,
             output_path=output_path,
-            model_key=str(model_key),
             alpha=alpha,
             beta=beta,
             tau_ms=tau_ms,
-            corr_threshold=corr_thr,
         )
         self.worker.progress.connect(self.progress.setValue)
         self.worker.finished.connect(self.on_processing_finished)
