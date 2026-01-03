@@ -1,3 +1,5 @@
+-c constraints.txt
+
 numpy
 scipy
 sounddevice
@@ -5,3 +7,4 @@ PyQt6
 pyqtgraph
 soundfile
 PyWavelets
+inquirer

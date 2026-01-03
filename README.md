@@ -90,14 +90,26 @@ Linux ではそのまま **PortAudio** バックエンドでも通常利用で�
 **必要条件**: Python 3.10 以上
 
 1.  リポジトリをクローンします。
-2.  依存関係をインストールします：
+2.  依存関係をインストールします（再現性のため constraints を利用）：
     ```bash
-    pip install -r requirements.txt
+    pip install -c constraints.txt -r requirements.txt
     ```
 3.  アプリケーションを起動します：
     ```bash
     python main_gui.py
     ```
+
+### 🛠️ 開発向けセットアップ
+
+テストやLint/型チェックを実行する場合は開発ツールもインストールしてください。
+
+```bash
+pip install -c constraints.txt -e .[dev]
+```
+
+- Lint: `ruff check src scripts tests`
+- Type check: `mypy src`
+- Tests: `pytest`（ハードウェア/GUI依存テストは環境変数が必要; CIではデフォルトでスキップ）
 
 ---
 
