@@ -37,10 +37,11 @@ jobs:
           )
 
           # Ubuntu 24.04 (noble) migrated several libs to *t64 names.
-          if apt-cache show libasound2 >/dev/null 2>&1; then
-            packages+=(libasound2)
-          elif apt-cache show libasound2t64 >/dev/null 2>&1; then
+          # Prefer the t64 package when both names appear in apt metadata.
+          if apt-cache show libasound2t64 >/dev/null 2>&1; then
             packages+=(libasound2t64)
+          elif apt-cache show libasound2 >/dev/null 2>&1; then
+            packages+=(libasound2)
           fi
 
           if apt-cache show libasound2-dev >/dev/null 2>&1; then
