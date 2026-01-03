@@ -3,15 +3,15 @@ import threading
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QComboBox,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QComboBox,
-    QGroupBox,
+    QVBoxLayout,
+    QWidget,
 )
 
 from src.core.audio_engine import AudioEngine

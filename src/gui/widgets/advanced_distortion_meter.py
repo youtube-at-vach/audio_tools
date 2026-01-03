@@ -1,13 +1,25 @@
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QComboBox, QGroupBox, QFormLayout, QSpinBox, QDoubleSpinBox, 
-                             QStackedWidget)
-from PyQt6.QtCore import QTimer, Qt
-from src.measurement_modules.base import MeasurementModule
-from src.core.audio_engine import AudioEngine
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import (
+    QComboBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
 from src.core.analysis import AudioCalc
+from src.core.audio_engine import AudioEngine
 from src.core.localization import tr
+from src.measurement_modules.base import MeasurementModule
+
 
 class AdvancedDistortionMeter(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -15,13 +27,13 @@ class AdvancedDistortionMeter(MeasurementModule):
         self.is_running = False
         self.buffer_size = 32768 # High resolution
         self.input_data = np.zeros(self.buffer_size)
-        
+
         # Generator Settings
         self.output_enabled = True
         self.gen_amplitude = 0.5
         self.output_channel = 0
         self.input_channel = 0
-        
+
         # MIM (Multitone) Settings
         self.mim_tone_count = 31
         self.mim_min_freq = 20.0
@@ -29,17 +41,17 @@ class AdvancedDistortionMeter(MeasurementModule):
         self._mim_freqs = None
         self._mim_phases = None
         self._mim_phase_state = None
-        
+
         # PIM Settings
         self.pim_f1 = 1800.0
         self.pim_f2 = 2100.0
         self.pim_amp_ratio = 1.0 # Equal amplitude
         self._pim_phase_f1 = 0.0
         self._pim_phase_f2 = 0.0
-        
+
         # Mode
         self.mode = 'MIM' # 'MIM', 'SPDR', 'PIM'
-        
+
         self.callback_id = None
         self.current_result = None
 
@@ -72,22 +84,22 @@ class AdvancedDistortionMeter(MeasurementModule):
     def start_analysis(self):
         if self.is_running:
             return
-            
+
         self.is_running = True
         self.input_data = np.zeros(self.buffer_size)
         self.current_result = None
-        
+
         sample_rate = self.audio_engine.sample_rate
-        
+
         # Reset generator state
         self._mim_freqs = None # Trigger regen
         self._pim_phase_f1 = 0.0
         self._pim_phase_f2 = 0.0
-        
+
         def callback(indata, outdata, frames, time, status):
             if status:
                 print(status)
-                
+
             # Generate Signal
             outdata.fill(0)
             if self.output_enabled:
@@ -100,7 +112,7 @@ class AdvancedDistortionMeter(MeasurementModule):
                     sig = self._generate_sine(frames, sample_rate)
                 else:
                     sig = np.zeros(frames)
-                
+
                 if self.output_channel == 0:
                     outdata[:, 0] = sig
                 elif self.output_channel == 1:
@@ -111,14 +123,14 @@ class AdvancedDistortionMeter(MeasurementModule):
                     outdata[:, 0] = sig
                     if outdata.shape[1] > 1:
                         outdata[:, 1] = sig
-            
+
             # Capture Input
             capture_ch = self.input_channel
             if indata.shape[1] > capture_ch:
                 new_data = indata[:, capture_ch]
             else:
                 new_data = indata[:, 0]
-                
+
             # Ring buffer
             if len(new_data) > self.buffer_size:
                 self.input_data[:] = new_data[-self.buffer_size:]
@@ -140,44 +152,44 @@ class AdvancedDistortionMeter(MeasurementModule):
         if self._mim_freqs is None or len(self._mim_freqs) != self.mim_tone_count:
             self._mim_freqs = np.logspace(np.log10(self.mim_min_freq), np.log10(self.mim_max_freq), self.mim_tone_count)
             self._mim_phase_state = np.random.uniform(0, 2*np.pi, self.mim_tone_count)
-            
+
         # Amplitude scaling: Peak should not exceed gen_amplitude
-        # Crest factor approx 12dB (4x). 
+        # Crest factor approx 12dB (4x).
         # RMS per tone = TotalRMS / sqrt(N)
         # Let's be safe and scale by N (very conservative) or sqrt(N) with headroom.
         # Using sqrt(N) * 4 for peak safety?
         # Let's use 1/sqrt(N) scaling for RMS, but keep peak check.
         # Simple: Amp per tone = gen_amplitude / sqrt(N)
-        
+
         amp_per_tone = self.gen_amplitude / np.sqrt(self.mim_tone_count)
-        
+
         signal = np.zeros(frames)
         t_idx = np.arange(frames)
-        
+
         for i, f in enumerate(self._mim_freqs):
             inc = 2 * np.pi * f / sample_rate
             phases = self._mim_phase_state[i] + t_idx * inc
             signal += amp_per_tone * np.sin(phases)
             self._mim_phase_state[i] = (self._mim_phase_state[i] + frames * inc) % (2 * np.pi)
-            
+
         return signal
 
     def _generate_pim(self, frames, sample_rate):
         # Two tones f1, f2
         amp = self.gen_amplitude / 2 # Split power
-        
+
         inc1 = 2 * np.pi * self.pim_f1 / sample_rate
         inc2 = 2 * np.pi * self.pim_f2 / sample_rate
-        
+
         t = np.arange(frames)
         p1 = self._pim_phase_f1 + t * inc1
         p2 = self._pim_phase_f2 + t * inc2
-        
+
         signal = amp * np.sin(p1) + amp * np.sin(p2)
-        
+
         self._pim_phase_f1 = (self._pim_phase_f1 + frames * inc1) % (2 * np.pi)
         self._pim_phase_f2 = (self._pim_phase_f2 + frames * inc2) % (2 * np.pi)
-        
+
         return signal
 
     def _generate_sine(self, frames, sample_rate):
@@ -186,7 +198,7 @@ class AdvancedDistortionMeter(MeasurementModule):
         f = 1000.0
         if not hasattr(self, '_spdr_phase'):
             self._spdr_phase = 0.0
-            
+
         inc = 2 * np.pi * f / sample_rate
         t = np.arange(frames)
         p = self._spdr_phase + t * inc
@@ -199,18 +211,18 @@ class AdvancedDistortionMeterWidget(QWidget):
         super().__init__()
         self.module = module
         self.init_ui()
-        
+
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_analysis)
         self.timer.setInterval(100) # 10Hz
 
     def init_ui(self):
         layout = QHBoxLayout()
-        
+
         # --- Controls ---
         left_panel = QVBoxLayout()
         left_panel.setSpacing(10)
-        
+
         # Mode
         mode_group = QGroupBox(tr("Measurement Mode"))
         mode_layout = QVBoxLayout()
@@ -220,63 +232,63 @@ class AdvancedDistortionMeterWidget(QWidget):
         mode_layout.addWidget(self.mode_combo)
         mode_group.setLayout(mode_layout)
         left_panel.addWidget(mode_group)
-        
+
         # Settings Stack
         self.settings_stack = QStackedWidget()
-        
+
         # 1. MIM Settings
         mim_widget = QWidget()
         mim_layout = QFormLayout()
-        
+
         self.mim_count_spin = QSpinBox()
         self.mim_count_spin.setRange(3, 100)
         self.mim_count_spin.setValue(self.module.mim_tone_count)
         self.mim_count_spin.valueChanged.connect(lambda v: setattr(self.module, 'mim_tone_count', v))
         mim_layout.addRow(tr("Tone Count:"), self.mim_count_spin)
-        
+
         self.mim_min_spin = QDoubleSpinBox()
         self.mim_min_spin.setRange(10, 20000)
         self.mim_min_spin.setValue(self.module.mim_min_freq)
         self.mim_min_spin.valueChanged.connect(lambda v: setattr(self.module, 'mim_min_freq', v))
         mim_layout.addRow(tr("Min Freq:"), self.mim_min_spin)
-        
+
         self.mim_max_spin = QDoubleSpinBox()
         self.mim_max_spin.setRange(10, 24000)
         self.mim_max_spin.setValue(self.module.mim_max_freq)
         self.mim_max_spin.valueChanged.connect(lambda v: setattr(self.module, 'mim_max_freq', v))
         mim_layout.addRow(tr("Max Freq:"), self.mim_max_spin)
-        
+
         mim_widget.setLayout(mim_layout)
         self.settings_stack.addWidget(mim_widget)
-        
+
         # 2. SPDR Settings
         spdr_widget = QWidget()
         spdr_layout = QFormLayout()
         spdr_layout.addRow(QLabel(tr("Standard 1kHz Tone")))
         spdr_widget.setLayout(spdr_layout)
         self.settings_stack.addWidget(spdr_widget)
-        
+
         # 3. PIM Settings
         pim_widget = QWidget()
         pim_layout = QFormLayout()
-        
+
         self.pim_f1_spin = QDoubleSpinBox()
         self.pim_f1_spin.setRange(10, 20000)
         self.pim_f1_spin.setValue(self.module.pim_f1)
         self.pim_f1_spin.valueChanged.connect(lambda v: setattr(self.module, 'pim_f1', v))
         pim_layout.addRow(tr("Freq 1 (Hz):"), self.pim_f1_spin)
-        
+
         self.pim_f2_spin = QDoubleSpinBox()
         self.pim_f2_spin.setRange(10, 20000)
         self.pim_f2_spin.setValue(self.module.pim_f2)
         self.pim_f2_spin.valueChanged.connect(lambda v: setattr(self.module, 'pim_f2', v))
         pim_layout.addRow(tr("Freq 2 (Hz):"), self.pim_f2_spin)
-        
+
         pim_widget.setLayout(pim_layout)
         self.settings_stack.addWidget(pim_widget)
-        
+
         left_panel.addWidget(self.settings_stack)
-        
+
         # Amplitude
         amp_group = QGroupBox(tr("Generator"))
         amp_layout = QFormLayout()
@@ -292,7 +304,7 @@ class AdvancedDistortionMeterWidget(QWidget):
         amp_row.addWidget(self.amp_spin)
         amp_row.addWidget(self.unit_combo)
         amp_layout.addRow(tr("Amplitude:"), amp_row)
-        
+
         amp_group.setLayout(amp_layout)
         left_panel.addWidget(amp_group)
 
@@ -312,36 +324,36 @@ class AdvancedDistortionMeterWidget(QWidget):
 
         io_group.setLayout(io_layout)
         left_panel.addWidget(io_group)
-        
+
         # Control Buttons
         self.start_btn = QPushButton(tr("Start Measurement"))
         self.start_btn.setCheckable(True)
         self.start_btn.clicked.connect(self.on_start_clicked)
         self.start_btn.setStyleSheet("QPushButton:checked { background-color: #ccffcc; }")
         left_panel.addWidget(self.start_btn)
-        
+
         # Results Display
         self.results_group = QGroupBox(tr("Results"))
         results_layout = QVBoxLayout()
-        
+
         self.main_metric_label = QLabel("--")
         self.main_metric_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #00ff00;")
         self.main_metric_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         results_layout.addWidget(self.main_metric_label)
-        
+
         self.sub_metric_label = QLabel("--")
         self.sub_metric_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         results_layout.addWidget(self.sub_metric_label)
-        
+
         self.results_group.setLayout(results_layout)
         left_panel.addWidget(self.results_group)
-        
+
         left_panel.addStretch()
         layout.addLayout(left_panel, 1)
-        
+
         # --- Right Panel: Plots ---
         right_panel = QVBoxLayout()
-        
+
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setLabel('left', tr('Amplitude'), units='dB')
         self.plot_widget.setLabel('bottom', tr('Frequency'), units='Hz')
@@ -349,10 +361,10 @@ class AdvancedDistortionMeterWidget(QWidget):
         self.plot_widget.setYRange(-140, 0)
         self.plot_widget.showGrid(x=True, y=True)
         self.plot_curve = self.plot_widget.plot(pen='y')
-        
+
         right_panel.addWidget(self.plot_widget)
         layout.addLayout(right_panel, 3)
-        
+
         self.setLayout(layout)
 
         # Initialize amplitude display with current unit
@@ -371,7 +383,7 @@ class AdvancedDistortionMeterWidget(QWidget):
         elif index == 2: # PIM
             self.module.mode = 'PIM'
             self.settings_stack.setCurrentIndex(2)
-            
+
         # Reset results
         self.main_metric_label.setText("--")
         self.sub_metric_label.setText("--")
@@ -439,22 +451,22 @@ class AdvancedDistortionMeterWidget(QWidget):
     def update_analysis(self):
         if not self.module.is_running:
             return
-            
+
         data = self.module.input_data
         sr = self.module.audio_engine.sample_rate
-        
+
         # Perform FFT
         window = np.blackman(len(data))
         fft_res = np.fft.rfft(data * window)
         freqs = np.fft.rfftfreq(len(data), 1/sr)
-        
+
         # Magnitude in dB
         mag = np.abs(fft_res) * 2 / np.sum(window)
         mag_db = 20 * np.log10(mag + 1e-12)
-        
+
         # Update Plot
         self.plot_curve.setData(freqs, mag_db)
-        
+
         # Calculate Metrics
         if self.module.mode == 'MIM':
             # Need expected tone freqs
@@ -462,13 +474,13 @@ class AdvancedDistortionMeterWidget(QWidget):
                 res = AudioCalc.calculate_multitone_tdn(mag, freqs, self.module._mim_freqs)
                 self.main_metric_label.setText(f"TD+N: {res['tdn_db']:.1f} dB")
                 self.sub_metric_label.setText(f"{res['tdn']:.4f} %")
-                
+
         elif self.module.mode == 'SPDR':
             # Assume 1kHz fundamental for now
             res = AudioCalc.calculate_spdr(mag, freqs, 1000.0)
             self.main_metric_label.setText(f"SPDR: {res['spdr_db']:.1f} dB")
             self.sub_metric_label.setText(f"Max Spur: {res['max_spur_freq']:.0f} Hz ({20*np.log10(res['max_spur_amp']+1e-12):.1f} dB)")
-            
+
         elif self.module.mode == 'PIM':
             res = AudioCalc.calculate_pim(mag, freqs, self.module.pim_f1, self.module.pim_f2)
             self.main_metric_label.setText(f"PIM: {res['pim_db']:.1f} dBc")

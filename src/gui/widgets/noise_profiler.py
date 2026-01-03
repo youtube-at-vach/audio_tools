@@ -1,13 +1,28 @@
 import argparse
+
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QComboBox, QCheckBox, QGroupBox, QFormLayout, QSpinBox, QDoubleSpinBox, QTabWidget)
-from PyQt6.QtCore import QTimer, Qt
-from src.measurement_modules.base import MeasurementModule
-from src.core.audio_engine import AudioEngine
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
 from src.core.analysis import AudioCalc
+from src.core.audio_engine import AudioEngine
 from src.core.localization import tr
+from src.measurement_modules.base import MeasurementModule
+
 
 class NoiseProfiler(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -15,27 +30,27 @@ class NoiseProfiler(MeasurementModule):
         self.is_running = False
         self.buffer_size = 16384 # Large buffer for better low-freq resolution
         self.input_data = np.zeros((self.buffer_size, 2))
-        
+
         # Settings
         self.window_type = 'hanning'
         self.averaging = 0.0
         self.lna_gain_db = 0.0
         self.temperature_c = 25.0
         self.input_impedance = 50.0
-        
+
         # State
         self._avg_magnitude = None
         self.callback_id = None
-        
+
         # Results
         self.last_results = {}
-        
+
         # Average Mode State
         self.average_mode = False
         self.target_averages = 1000
         self.current_avg_count = 0
         self.accumulated_magnitude = None
-        
+
     def reset_average(self):
         self.current_avg_count = 0
         self.accumulated_magnitude = None
@@ -67,22 +82,22 @@ class NoiseProfiler(MeasurementModule):
         self.is_running = True
         self.reset_average()
         self.input_data = np.zeros((self.buffer_size, 2))
-        
+
         def callback(indata, outdata, frames, time, status):
             if status:
                 print(status)
-            
+
             if indata.shape[1] >= 2:
                 new_data = indata[:, :2]
             else:
                 new_data = np.column_stack((indata[:, 0], indata[:, 0]))
-            
+
             if len(new_data) > self.buffer_size:
                 self.input_data[:] = new_data[-self.buffer_size:]
             else:
                 self.input_data = np.roll(self.input_data, -len(new_data), axis=0)
                 self.input_data[-len(new_data):] = new_data
-            
+
             outdata.fill(0)
 
         self.callback_id = self.audio_engine.register_callback(callback)
@@ -99,26 +114,26 @@ class NoiseProfilerWidget(QWidget):
         super().__init__()
         self.module = module
         self.init_ui()
-        
+
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_analysis)
         self.timer.setInterval(100) # 10Hz update
 
     def init_ui(self):
         layout = QHBoxLayout()
-        
+
         # --- Left Panel: Controls ---
         left_panel = QVBoxLayout()
-        
+
         # Top Controls (Always Visible)
         top_ctrl_layout = QVBoxLayout()
-        
+
         self.toggle_btn = QPushButton(tr("Start Profiling"))
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
         self.toggle_btn.setStyleSheet("QPushButton { background-color: #ccffcc; color: black; } QPushButton:checked { background-color: #ffcccc; color: black; }")
         top_ctrl_layout.addWidget(self.toggle_btn)
-        
+
         # Input Channel Selection
         chan_layout = QHBoxLayout()
         chan_layout.addWidget(QLabel(tr("Input Channel:")))
@@ -127,24 +142,24 @@ class NoiseProfilerWidget(QWidget):
         self.channel_combo.currentIndexChanged.connect(self.update_analysis)
         chan_layout.addWidget(self.channel_combo)
         top_ctrl_layout.addLayout(chan_layout)
-        
+
         left_panel.addLayout(top_ctrl_layout)
-        
+
         # Tab Widget for Settings
         self.settings_tabs = QTabWidget()
-        
+
         # --- Tab 1: Measurement ---
         tab_meas = QWidget()
         tab_meas_layout = QVBoxLayout()
-        
+
         # Average Mode Control
         avg_group = QGroupBox(tr("Average Mode"))
         avg_layout = QVBoxLayout()
-        
+
         self.avg_mode_chk = QCheckBox(tr("Enable Averaging"))
         self.avg_mode_chk.toggled.connect(self.on_avg_mode_toggled)
         avg_layout.addWidget(self.avg_mode_chk)
-        
+
         avg_ctrl_layout = QHBoxLayout()
         avg_ctrl_layout.addWidget(QLabel(tr("Count:")))
         self.avg_count_spin = QSpinBox()
@@ -153,59 +168,59 @@ class NoiseProfilerWidget(QWidget):
         self.avg_count_spin.valueChanged.connect(self.on_avg_count_changed)
         avg_ctrl_layout.addWidget(self.avg_count_spin)
         avg_layout.addLayout(avg_ctrl_layout)
-        
+
         self.reset_avg_btn = QPushButton(tr("Reset Average"))
         self.reset_avg_btn.clicked.connect(self.on_reset_average)
         avg_layout.addWidget(self.reset_avg_btn)
-        
+
         self.avg_progress_label = QLabel("0 / 1000")
         self.avg_progress_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         avg_layout.addWidget(self.avg_progress_label)
-        
+
         avg_group.setLayout(avg_layout)
         tab_meas_layout.addWidget(avg_group)
-        
+
         # LNA Settings
         lna_group = QGroupBox(tr("LNA / Input Settings"))
         lna_layout = QFormLayout()
-        
+
         self.gain_spin = QDoubleSpinBox()
         self.gain_spin.setRange(-100, 100)
         self.gain_spin.setSuffix(" dB")
         self.gain_spin.setValue(0.0)
         self.gain_spin.valueChanged.connect(self.on_lna_changed)
         lna_layout.addRow(tr("Pre-Amp Gain:"), self.gain_spin)
-        
+
         self.apply_gain_chk = QCheckBox(tr("Apply to Plot"))
         self.apply_gain_chk.setToolTip(tr("Subtract LNA gain from plot and results (Input Referred)"))
         self.apply_gain_chk.toggled.connect(self.update_analysis)
         lna_layout.addRow("", self.apply_gain_chk)
-        
+
         self.temp_spin = QDoubleSpinBox()
         self.temp_spin.setRange(-273, 500)
         self.temp_spin.setSuffix(" °C")
         self.temp_spin.setValue(25.0)
         self.temp_spin.valueChanged.connect(self.on_lna_changed)
         lna_layout.addRow(tr("Temperature:"), self.temp_spin)
-        
+
         self.imp_spin = QDoubleSpinBox()
         self.imp_spin.setRange(1, 1e6)
         self.imp_spin.setSuffix(" Ω")
         self.imp_spin.setValue(50.0)
         self.imp_spin.valueChanged.connect(self.on_lna_changed)
         lna_layout.addRow(tr("Input Z:"), self.imp_spin)
-        
+
         lna_group.setLayout(lna_layout)
         tab_meas_layout.addWidget(lna_group)
-        
+
         tab_meas_layout.addStretch()
         tab_meas.setLayout(tab_meas_layout)
         self.settings_tabs.addTab(tab_meas, tr("Measurement"))
-        
+
         # --- Tab 2: Display ---
         tab_disp = QWidget()
         tab_disp_layout = QVBoxLayout()
-        
+
         # Unit Selection
         unit_group = QGroupBox(tr("Units"))
         unit_layout = QVBoxLayout()
@@ -216,35 +231,35 @@ class NoiseProfilerWidget(QWidget):
         unit_layout.addWidget(self.unit_combo)
         unit_group.setLayout(unit_layout)
         tab_disp_layout.addWidget(unit_group)
-        
+
         # Display Options
         disp_group = QGroupBox(tr("Display"))
         disp_layout = QVBoxLayout()
-        
+
         self.res_mode_chk = QCheckBox(tr("Show as Resistance (Ω)"))
         self.res_mode_chk.toggled.connect(self.update_analysis)
         disp_layout.addWidget(self.res_mode_chk)
-        
+
         self.thermal_chk = QCheckBox(tr("Show Thermal Limit"))
         self.thermal_chk.setChecked(True)
         self.thermal_chk.toggled.connect(self.update_analysis)
         disp_layout.addWidget(self.thermal_chk)
-        
+
         disp_group.setLayout(disp_layout)
         tab_disp_layout.addWidget(disp_group)
-        
+
         tab_disp_layout.addStretch()
         tab_disp.setLayout(tab_disp_layout)
         self.settings_tabs.addTab(tab_disp, tr("Display"))
-        
 
-        
+
+
         left_panel.addWidget(self.settings_tabs)
         layout.addLayout(left_panel, 1)
-        
+
         # --- Center Panel: Visualization ---
         center_panel = QVBoxLayout()
-        
+
         # FFT Plot
         self.plot_widget = pg.PlotWidget(title=tr("Noise Spectrum (Log-Log)"))
         self.plot_widget.setLogMode(x=True, y=False)
@@ -253,22 +268,22 @@ class NoiseProfilerWidget(QWidget):
         self.plot_widget.showGrid(x=True, y=True)
         self.plot_widget.setYRange(-160, -60) # Typical noise floor range
         self.plot_widget.setXRange(np.log10(10), np.log10(20000))
-        
+
         # Custom Axis Ticks for Log Scale
         axis = self.plot_widget.getPlotItem().getAxis('bottom')
         ticks = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
         ticks_log = [(np.log10(t), str(t) if t < 1000 else f"{t/1000:.0f}k") for t in ticks]
         axis.setTicks([ticks_log])
-        
+
         self.plot_curve = self.plot_widget.plot(pen='y', name=tr('PSD'))
         self.fit_curve = self.plot_widget.plot(pen=pg.mkPen('r', style=Qt.PenStyle.DashLine, width=2), name=tr('1/f Fit'))
         self.hum_curve = self.plot_widget.plot(pen=None, symbol='o', symbolBrush='c', symbolSize=8, name=tr('Hum'))
         self.white_curve = self.plot_widget.plot(pen=pg.mkPen('g', style=Qt.PenStyle.DotLine), name=tr('White Floor'))
         self.thermal_line = pg.InfiniteLine(angle=0, pen=pg.mkPen('m', style=Qt.PenStyle.DashDotLine, width=1), label=tr('Thermal Limit'), labelOpts={'position':0.9, 'color': (200,0,200), 'movable': True})
         self.plot_widget.addItem(self.thermal_line)
-        
+
         center_panel.addWidget(self.plot_widget, 2)
-        
+
         # Stacked Bar Chart (Noise Contribution)
         self.stack_widget = pg.PlotWidget(title=tr("Noise Contribution (%)"))
         self.stack_widget.setMouseEnabled(x=False, y=False)
@@ -277,31 +292,31 @@ class NoiseProfilerWidget(QWidget):
         self.stack_widget.setXRange(0, 100)
         self.stack_widget.setYRange(0, 2) # Increase range to make room for legend
         self.stack_widget.getPlotItem().hideButtons()
-        
+
         # Add Legend
         self.stack_legend = self.stack_widget.addLegend(offset=(10, 5)) # Top-left with small padding
-        
+
         # Bars (using BarGraphItem logic manually or stacked curves)
         # We will use 3 BarGraphItems for Hum, White, 1/f
         # Horizontal bars: x0 (left), width (length), y (center), height (thickness)
         # Note: pyqtgraph BarGraphItem arguments: x, height (vertical) OR x0, x1, y, height?
         # Let's check docs or common usage. usually x, height, width, brush.
         # For horizontal: y, height, width (length), x0 (start).
-        
+
         self.bar_hum = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush='c', name=tr('Hum'))
         self.bar_white = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush='g', name=tr('White'))
         self.bar_flicker = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush='r', name=tr('1/f'))
         self.bar_other = pg.BarGraphItem(x0=[0], y=[0.5], height=[0.6], width=[0], brush=pg.mkBrush(150, 0, 255), name=tr('Other'))
-        
+
         self.stack_widget.addItem(self.bar_hum)
         self.stack_widget.addItem(self.bar_white)
         self.stack_widget.addItem(self.bar_flicker)
         self.stack_widget.addItem(self.bar_other)
-        
+
         center_panel.addWidget(self.stack_widget, 1)
-        
+
         layout.addLayout(center_panel, 3)
-        
+
         # --- Right Panel: Report ---
         right_panel = QVBoxLayout()
         report_group = QGroupBox(tr("Noise Report"))
@@ -309,14 +324,14 @@ class NoiseProfilerWidget(QWidget):
         self.report_label.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.report_label.setStyleSheet("font-family: monospace; font-size: 12px;")
         self.report_label.setWordWrap(True)
-        
+
         report_layout = QVBoxLayout()
         report_layout.addWidget(self.report_label)
         report_group.setLayout(report_layout)
-        
+
         right_panel.addWidget(report_group)
         layout.addLayout(right_panel, 1)
-        
+
         self.setLayout(layout)
 
     def on_toggle(self, checked):
@@ -344,18 +359,18 @@ class NoiseProfilerWidget(QWidget):
     def on_avg_count_changed(self, val):
         self.module.target_averages = val
         self.update_avg_ui()
-        
+
     def on_reset_average(self):
         self.module.reset_average()
         self.update_avg_ui()
-        
+
     def update_avg_ui(self):
         self.avg_progress_label.setText(f"{self.module.current_avg_count} / {self.module.target_averages}")
 
     def update_analysis(self):
         if not self.module.is_running:
             return
-            
+
         try:
             data = self.module.input_data
             if len(data) < self.module.buffer_size:
@@ -364,11 +379,11 @@ class NoiseProfilerWidget(QWidget):
             # 1. Compute PSD (V/rtHz)
             # Use Hanning window
             window = np.hanning(len(data))
-            
+
             fs = self.module.audio_engine.sample_rate
             sum_w2 = np.sum(window**2)
             psd_factor = np.sqrt(2 / (fs * sum_w2))
-            
+
             # FFT
             # Select Channel
             ch_idx = self.channel_combo.currentIndex() # 0=Left, 1=Right
@@ -376,12 +391,12 @@ class NoiseProfilerWidget(QWidget):
                 fft_input = data[:, ch_idx]
             else:
                 fft_input = data[:, 0]
-                
+
             fft_data = np.fft.rfft(fft_input * window)
             mag_v_rthz = np.abs(fft_data) * psd_factor
-            
+
             freqs = np.fft.rfftfreq(len(data), 1/fs)
-            
+
             # Averaging
             if self.module.average_mode:
                 # Cumulative Average Logic
@@ -392,7 +407,7 @@ class NoiseProfilerWidget(QWidget):
                     else:
                         self.module.accumulated_magnitude += mag_v_rthz
                         self.module.current_avg_count += 1
-                    
+
                     self.module._avg_magnitude = self.module.accumulated_magnitude / self.module.current_avg_count
                     self.update_avg_ui()
                 else:
@@ -406,48 +421,48 @@ class NoiseProfilerWidget(QWidget):
                 else:
                     alpha = 0.8 # Fixed smoothing
                     self.module._avg_magnitude = alpha * self.module._avg_magnitude + (1 - alpha) * mag_v_rthz
-                
+
             avg_mag = self.module._avg_magnitude
-            
+
             # Apply Unit / Calibration Offset
             # avg_mag is in V_fs/rtHz (Linear, relative to Full Scale 1.0)
             # We want to convert to the selected unit's linear voltage reference
-            
+
             unit_mode = self.unit_combo.currentText()
             offset_db = 0.0
-            
+
             if "dBV" in unit_mode or "dBu" in unit_mode:
                 # Apply Calibration Offset
                 offset_db += self.module.audio_engine.calibration.get_input_offset_db()
-                
+
             if "dBu" in unit_mode:
                 # 0 dBu = 0.775V = -2.218 dBV
                 # dBu = dBV + 2.218
                 offset_db += 2.2184
-            
+
             # Apply LNA Gain Offset if requested
             if self.apply_gain_chk.isChecked():
                 # Subtract Gain (Input Referred)
                 # Gain is in dB
                 offset_db -= self.module.lna_gain_db
-                
+
             # Apply offset to linear magnitude
             # magnitude_new = magnitude_old * 10^(offset_db/20)
             cal_factor = 10**(offset_db/20)
             avg_mag_cal = avg_mag * cal_factor
-            
+
             # 2. Analyze Noise (using calibrated magnitude)
             results = AudioCalc.calculate_noise_profile(avg_mag_cal, freqs, fs)
-            
+
             self.module.last_results = results
-            
+
             # 3. Update Plots
-            
+
             # Constants
             k = 1.380649e-23
             T = self.module.temperature_c + 273.15
             R_in = self.module.input_impedance
-            
+
             # Thermal Noise Density (V/rtHz)
             # This is physical Volts.
             # If we are in dBFS mode, we should technically convert Thermal Noise to dBFS?
@@ -460,12 +475,12 @@ class NoiseProfilerWidget(QWidget):
             # If Display is Volts (dBV/dBu), we are good.
             # If Display is dBFS, we need Volts -> FS.
             # FS = Volts / 10^(offset/20).
-            
+
             thermal_density = np.sqrt(4 * k * T * R_in)
-            
+
             # Resistance Mode Logic
             is_res_mode = self.res_mode_chk.isChecked()
-            
+
             if is_res_mode:
                 # Resistance Mode always uses Physical Volts to calculate Ohms
                 # R = V^2 / (4kT)
@@ -477,10 +492,10 @@ class NoiseProfilerWidget(QWidget):
                 # If unit is dBu, avg_mag_cal is "dBu-linearized"? i.e. 1.0 = 0.775V?
                 # Yes, because we added 2.218dB.
                 # So avg_mag_cal * 0.775 = Volts.
-                
+
                 # To get Ohms, we need Volts.
                 # Let's recover Volts from avg_mag_cal.
-                
+
                 if "dBu" in unit_mode:
                     mag_volts = avg_mag_cal * 0.775
                 elif "dBV" in unit_mode:
@@ -499,27 +514,27 @@ class NoiseProfilerWidget(QWidget):
                 # Convert to Ohms: R = V^2 / (4kT)
                 denom = 4 * k * T
                 mag_plot = (mag_volts**2) / denom
-                
+
                 # Thermal Limit (Ohms) -> R_in
                 thermal_limit_val = R_in
-                
+
                 # Update Labels
                 self.plot_widget.setLabel('left', tr('Equivalent Resistance'), units='Ω')
                 self.plot_widget.setTitle(tr("Noise Resistance (Log-Log)"))
-                
+
                 # Update Curves
                 self.plot_curve.setData(freqs[1:], mag_plot[1:])
-                
+
                 # Fit Line (Convert V fit to R fit)
                 if results['flicker_slope'] != 0:
                     f_fit = np.logspace(0, 2, 100)
                     # V density fit (log10 of Display Units)
                     # We need to convert fit result to Volts first
-                    
+
                     # Fit is on log10(avg_mag_cal)
                     y_fit_log_disp = results['flicker_slope'] * np.log10(f_fit) + results['flicker_intercept']
                     y_fit_disp = 10**(y_fit_log_disp)
-                    
+
                     if "dBu" in unit_mode:
                         y_fit_volts = y_fit_disp * 0.775
                     elif "dBV" in unit_mode:
@@ -528,12 +543,12 @@ class NoiseProfilerWidget(QWidget):
                         # For dBFS fit, we need to apply cal offset to get volts
                         cal_offset = self.module.audio_engine.calibration.get_input_offset_db()
                         y_fit_volts = y_fit_disp * 10**(cal_offset/20)
-                        
+
                     y_fit_r = (y_fit_volts**2) / denom
                     self.fit_curve.setData(f_fit, y_fit_r)
                 else:
                     self.fit_curve.setData([], [])
-                
+
                 # Hum Markers
                 hum_freqs = [h[0] for h in results['hum_components']]
                 hum_vals = []
@@ -541,7 +556,7 @@ class NoiseProfilerWidget(QWidget):
                     idx = np.argmin(np.abs(freqs - f))
                     hum_vals.append(mag_plot[idx])
                 self.hum_curve.setData(hum_freqs, hum_vals)
-                
+
                 # White Noise Floor
                 # white_density is in Display Units
                 if "dBu" in unit_mode:
@@ -551,15 +566,15 @@ class NoiseProfilerWidget(QWidget):
                 else:
                     cal_offset = self.module.audio_engine.calibration.get_input_offset_db()
                     white_volts = results['white_density'] * 10**(cal_offset/20)
-                    
+
                 white_r = (white_volts**2) / denom
                 self.white_curve.setData([10, 20000], [white_r, white_r])
-                
+
             else:
                 # Voltage Mode (PSD dB)
                 # avg_mag_cal is in Display Units
                 mag_plot = 20 * np.log10(avg_mag_cal + 1e-15)
-                
+
                 # Thermal Limit (dB)
                 # Convert Thermal Density (Volts) to Display Units
                 if "dBu" in unit_mode:
@@ -570,15 +585,15 @@ class NoiseProfilerWidget(QWidget):
                     # dBFS: Volts -> FS
                     cal_offset = self.module.audio_engine.calibration.get_input_offset_db()
                     thermal_disp = thermal_density / (10**(cal_offset/20))
-                    
+
                 thermal_limit_val = 20 * np.log10(thermal_disp + 1e-15)
-                
+
                 # Update Labels
                 self.plot_widget.setLabel('left', tr('Noise Density'), units=unit_mode)
                 self.plot_widget.setTitle(f"{tr('Noise PSD')} ({unit_mode})")
-                
+
                 self.plot_curve.setData(freqs[1:], mag_plot[1:])
-                
+
                 # Fit Line
                 if results['flicker_slope'] != 0:
                     f_fit = np.logspace(0, 2, 100)
@@ -587,7 +602,7 @@ class NoiseProfilerWidget(QWidget):
                     self.fit_curve.setData(f_fit, y_fit_db)
                 else:
                     self.fit_curve.setData([], [])
-                    
+
                 # Hum Markers
                 hum_freqs = [h[0] for h in results['hum_components']]
                 hum_vals = []
@@ -595,7 +610,7 @@ class NoiseProfilerWidget(QWidget):
                     idx = np.argmin(np.abs(freqs - f))
                     hum_vals.append(mag_plot[idx])
                 self.hum_curve.setData(hum_freqs, hum_vals)
-                
+
                 # White Noise Floor
                 white_level_db = 20 * np.log10(results['white_density'] + 1e-15)
                 self.white_curve.setData([10, 20000], [white_level_db, white_level_db])
@@ -609,36 +624,36 @@ class NoiseProfilerWidget(QWidget):
 
             # 4. Update Stacked Bar Chart
             self.update_stack_chart(results, unit_mode)
-            
+
             # 5. Update Report
             self.update_report(results, unit_mode)
-            
+
         except Exception as e:
             print(f"Error in NoiseProfiler update: {e}")
             import traceback
             traceback.print_exc()
-        
+
     def update_stack_chart(self, results, unit_mode):
         # Calculate Power Contributions
         # Total Power = (RMS)^2
         # Note: results are in Display Units.
         # Ratios are independent of units (linear scaling cancels out).
         p_total = results['noise_rms_20k']**2
-        
+
         # Hum Power
         p_hum = results['hum_rms']**2
-        
+
         # White Noise Power (Density^2 * BW)
         # BW is approx 20kHz
         p_white = (results['white_density']**2) * 20000
-        
+
         # 1/f Power (Explicit)
         p_flicker = results.get('flicker_rms', 0.0)**2
-        
+
         # Other Power (Residual)
         p_other = p_total - p_hum - p_white - p_flicker
         if p_other < 0: p_other = 0
-        
+
         # Normalize to %
         if p_total > 0:
             pct_hum = (p_hum / p_total) * 100
@@ -650,20 +665,20 @@ class NoiseProfilerWidget(QWidget):
             pct_white = 0
             pct_flicker = 0
             pct_other = 0
-            
+
         # Update Bars
         # Hum (Cyan) starts at 0
         self.bar_hum.setOpts(width=[pct_hum], x0=[0])
-        
+
         # White (Green) starts after Hum
         self.bar_white.setOpts(width=[pct_white], x0=[pct_hum])
-        
+
         # Flicker (Red) starts after White
         self.bar_flicker.setOpts(width=[pct_flicker], x0=[pct_hum + pct_white])
-        
+
         # Other (Purple) starts after Flicker
         self.bar_other.setOpts(width=[pct_other], x0=[pct_hum + pct_white + pct_flicker])
-        
+
         # Update Title with Total RMS
         # Show unit
         unit_rms = unit_mode.replace("/√Hz", "")
@@ -671,7 +686,7 @@ class NoiseProfilerWidget(QWidget):
         # If dBV, unit is Volts. uV is fine.
         # If dBu, unit is 0.775V scaled. u(dBu-linear)?
         # Maybe just show the value and unit.
-        
+
         if "dBV" in unit_mode:
             val_disp = results['noise_rms_20k'] * 1e6
             unit_disp = "µVrms"
@@ -681,17 +696,17 @@ class NoiseProfilerWidget(QWidget):
         else:
             val_disp = results['noise_rms_20k'] * 1e6
             unit_disp = "µFS"
-            
+
         self.stack_widget.setTitle(f"{tr('Noise Contribution')} ({tr('Total')}: {val_disp:.2f} {unit_disp})")
-        
+
     def update_report(self, results, unit_mode):
         # Calculate Input Referred Noise
         # results are in Display Units (Output).
         # We need to refer back to Input by dividing by LNA Gain.
-        
+
         gain_db = self.module.lna_gain_db
         gain_linear = 10**(gain_db/20)
-        
+
         # Thermal Noise
         # V_thermal = sqrt(4 * k * T * R * BW)
         # Density = sqrt(4 * k * T * R)
@@ -700,7 +715,7 @@ class NoiseProfilerWidget(QWidget):
         R = self.module.input_impedance
         thermal_density = np.sqrt(4 * k * T * R)
         thermal_density_db = 20 * np.log10(thermal_density)
-        
+
         # Input Referred Density (Volts)
         # First convert Display Unit to Volts
         if "dBu" in unit_mode:
@@ -713,14 +728,14 @@ class NoiseProfilerWidget(QWidget):
             # No, cal_offset comes from audio_engine.calibration.
             # But "results" come from "avg_mag_cal" which had "offset_db" applied.
             # offset_db included -gain_db if checked.
-            
+
             # If checked: avg_mag_cal is Input Referred.
             # So white_volts is Input Referred.
             # We don't need to divide by gain again.
-            
+
             # If NOT checked: avg_mag_cal is Output Referred.
             # We need to divide by gain.
-            
+
             # Let's reconstruct based on check state.
             white_volts = results['white_density'] * 10**(cal_offset/20) # Revert cal offset? No.
             # Wait, results['white_density'] is in Display Units.
@@ -730,7 +745,7 @@ class NoiseProfilerWidget(QWidget):
             # But if we applied LNA gain to plot, we subtracted gain from offset.
             # So FS is "Input Referred FS".
             # Volts = FS * 10^((cal_offset - gain)/20) ? No.
-            
+
             # Let's simplify.
             # We want Input Referred Density in Volts.
             # If "Apply to Plot" is ON:
@@ -738,8 +753,8 @@ class NoiseProfilerWidget(QWidget):
             #   If Display Unit is Volts (dBV), it IS Input Referred Volts.
             #   If Display Unit is dBu, it IS Input Referred dBu (linearized).
             #   If Display Unit is dBFS, it IS Input Referred FS.
-            
-            
+
+
         # Recalculate Input Referred Density based on current state
         if self.apply_gain_chk.isChecked():
             # Already Input Referred
@@ -763,21 +778,21 @@ class NoiseProfilerWidget(QWidget):
             else:
                 cal_offset = self.module.audio_engine.calibration.get_input_offset_db()
                 white_volts = results['white_density'] * 10**(cal_offset/20)
-            
+
             white_density_in = white_volts / gain_linear
         20 * np.log10(white_density_in + 1e-15)
-        
+
         # Report Values (Display Units)
         hum_rms = results['hum_rms']
         total_rms = results['noise_rms_20k']
         white_dens = results['white_density']
-        
+
         # Formatting helper
         def fmt(val):
             return f"{val*1e6:.2f} µ" if val < 1e-3 else f"{val*1e3:.2f} m"
-            
+
         unit_suffix = "V" if "dBV" in unit_mode else ("(dBu-lin)" if "dBu" in unit_mode else "FS")
-        
+
         txt = f"""
         <b>{tr('Noise Report')}</b><br>
         <br>

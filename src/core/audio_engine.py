@@ -1,8 +1,11 @@
-import sounddevice as sd
-import numpy as np
 import logging
 import threading
+
+import numpy as np
+import sounddevice as sd
+
 from src.core.calibration import CalibrationManager
+
 
 class AudioEngine:
     """
@@ -20,10 +23,10 @@ class AudioEngine:
         # PipeWire/JACK resident mode: keep PortAudio stream open for the app lifetime.
         self.pipewire_jack_resident = False
         self.jack_client_name = "MeasureLab"
-        
+
         # Calibration
         self.calibration = CalibrationManager()
-        
+
         # Channel Configuration
         # 'stereo', 'left', 'right'
         self.input_channel_mode = 'stereo'
@@ -33,7 +36,7 @@ class AudioEngine:
         self.callbacks = {} # id -> callback
         self.next_callback_id = 0
         self.lock = threading.Lock()
-        
+
         # Status Monitoring
         # Loopback State
         self.loopback = False
@@ -140,11 +143,11 @@ class AudioEngine:
             self.next_callback_id += 1
             self.callbacks[cid] = callback
             self.logger.info(f"Registered callback {cid}")
-            
+
             # Start stream if not running
             if self.stream is None:
                 self._start_master_stream()
-                
+
             return cid
 
     def unregister_callback(self, callback_id):
@@ -154,11 +157,11 @@ class AudioEngine:
             if callback_id in self.callbacks:
                 del self.callbacks[callback_id]
                 self.logger.info(f"Unregistered callback {callback_id}")
-            
+
             # Check if we should stop the stream
             if (not self.callbacks) and (self.stream is not None) and (not self.pipewire_jack_resident):
                 should_stop = True
-        
+
         # Stop stream outside the lock to avoid deadlock with callback
         if should_stop:
             self.stop_stream()
@@ -171,35 +174,35 @@ class AudioEngine:
         # Determine hardware channels needed based on mode
         in_mode = self.input_channel_mode
         out_mode = self.output_channel_mode
-        
+
         hw_in_ch = 2 if in_mode in ['right', 'stereo'] else 1
         hw_out_ch = 2 if out_mode in ['right', 'stereo'] else 1
-        
+
         # Reset loopback buffer
         self.last_output_buffer = None
-        
+
         def master_callback(indata, outdata, frames, time, status):
             if status:
                 self.accumulated_status |= status
-                
+
             # Zero out master output buffer first
             outdata.fill(0)
-            
+
             # Prepare logical input for clients
             # Map Hardware Input -> Logical Input (Stereo usually, or as requested)
-            
+
             # If Loopback is enabled, use the last output buffer as input
             if self.loopback and self.last_output_buffer is not None and len(self.last_output_buffer) == frames:
                 # We use the mixed output from the previous block
                 # last_output_buffer is (frames, logical_out_ch)
                 # We need to map it to logical_in (frames, 2)
-                
+
                 # Assuming logical_out_ch is 2 (stereo) or 1 (mono)
                 # logical_in is usually stereo (2)
-                
+
                 lb_src = self.last_output_buffer
                 logical_in = np.zeros((frames, 2), dtype='float32')
-                
+
                 if lb_src.shape[1] >= 2:
                     logical_in[:, :2] = lb_src[:, :2]
                 elif lb_src.shape[1] == 1:
@@ -219,11 +222,11 @@ class AudioEngine:
 
             # Create a temp output buffer for clients
             logical_out_ch = 2 if out_mode == 'stereo' else 1
-            
+
             # Snapshot of callbacks
             with self.lock:
                 active_callbacks = list(self.callbacks.values())
-            
+
             if not active_callbacks:
                 # Even if no callbacks, we might need to update last_output_buffer (silence)
                 if self.loopback:
@@ -235,24 +238,24 @@ class AudioEngine:
 
             # Mix buffer
             mix_buffer = np.zeros((frames, logical_out_ch), dtype='float32')
-            
+
             for cb in active_callbacks:
                 # Temp buffer for this client
                 client_out = np.zeros_like(mix_buffer)
-                
+
                 try:
                     cb(logical_in, client_out, frames, time, status)
                 except Exception as e:
                     print(f"Error in audio callback: {e}")
                     continue
-                
+
                 # Sum to mix
                 mix_buffer += client_out
-            
+
             # Store for next loopback cycle
             if self.loopback:
                 self.last_output_buffer = mix_buffer.copy()
-            
+
             # Map Logical Output -> Hardware Output
             if not self.mute_output:
                 if out_mode == 'stereo':
@@ -266,7 +269,7 @@ class AudioEngine:
                         outdata[:, 1:2] = mix_buffer
                         outdata[:, 0] = 0
             # If muted, outdata is already 0 filled at start of callback
-        
+
         try:
             extra_settings = None
             # If running on JACK (including PipeWire-JACK), attempt to fix the client/node name.
@@ -325,14 +328,14 @@ class AudioEngine:
         cpu_load = 0.0
         if active and self.stream:
             cpu_load = self.stream.cpu_load
-            
+
         with self.lock:
             client_count = len(self.callbacks)
-            
+
         # Get and reset accumulated status
         current_status_flags = self.accumulated_status
         self.accumulated_status = sd.CallbackFlags()
-            
+
         return {
             "active": active,
             "input_channels": self.input_channel_mode,
@@ -356,5 +359,5 @@ class AudioEngine:
         self.stop_stream()
         with self.lock:
             self.callbacks.clear()
-        
+
         self.register_callback(callback)

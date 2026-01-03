@@ -1,27 +1,39 @@
 from __future__ import annotations
 
-import numpy as np
-import time
 import math
 import threading
+import time
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 
+import numpy as np
+
 try:
     from zoneinfo import ZoneInfo  # Python 3.9+
 except Exception:  # pragma: no cover
     ZoneInfo = None
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, 
-                             QComboBox, QPushButton, QFrame, QGridLayout, QCheckBox, 
-                             QGroupBox, QTabWidget, QSpinBox)
-from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QFrame,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
-from src.measurement_modules.base import MeasurementModule
 from src.core.audio_engine import AudioEngine
 from src.core.localization import tr
+from src.measurement_modules.base import MeasurementModule
 
 # Constants
 SYNC_WORD = 0xBFFC # 1011 1111 1111 1100 (Reverse of 0011 1111 1111 1101 ?)
@@ -86,23 +98,23 @@ class LTCEncoder:
         self.samples_per_frame = sample_rate / fps
         self.current_frame_samples = 0
         self.phase = 1.0 # -1.0 or 1.0
-        
+
         # State
         self.total_frames = 0
-        
+
     def set_fps(self, fps: float):
         self.fps = fps
         self.samples_per_frame = self.sample_rate / fps
-        
+
     def generate_frame(self, hh: int, mm: int, ss: int, ff: int, user_bits: list = None) -> np.ndarray:
         """Generates audio samples for one LTC frame."""
         bits = [0] * 80
-        
+
         # Helper to set bits
         def set_b(idx, val):
             if 0 <= idx < 80:
                 bits[idx] = 1 if val else 0
-                
+
         # Timecode Data (BCD)
         # IMPORTANT: these are BCD digits, not binary values.
 
@@ -115,7 +127,7 @@ class LTCEncoder:
         set_b(3, ff_u & 8)
         set_b(8, ff_t & 1)
         set_b(9, ff_t & 2)
-        
+
         # Seconds
         ss_u = int(ss) % 10
         ss_t = int(ss) // 10
@@ -126,7 +138,7 @@ class LTCEncoder:
         set_b(24, ss_t & 1)
         set_b(25, ss_t & 2)
         set_b(26, ss_t & 4)
-        
+
         # Minutes
         mm_u = int(mm) % 10
         mm_t = int(mm) // 10
@@ -137,7 +149,7 @@ class LTCEncoder:
         set_b(40, mm_t & 1)
         set_b(41, mm_t & 2)
         set_b(42, mm_t & 4)
-        
+
         # Hours
         hh_u = int(hh) % 10
         hh_t = int(hh) // 10
@@ -147,54 +159,54 @@ class LTCEncoder:
         set_b(51, hh_u & 8)
         set_b(56, hh_t & 1)
         set_b(57, hh_t & 2)
-        
+
         # Sync Word (Bits 64-79): 0011 1111 1111 1101
         sync_pattern = [0,0,1,1, 1,1,1,1, 1,1,1,1, 1,1,0,1]
         for i, b in enumerate(sync_pattern):
             bits[64 + i] = b
-            
+
         # Bi-phase Mark Encoding
         # Transition at start of every bit window.
         # If '1', transition also in middle.
-        
+
         # Calculate samples per bit (80 bits total)
         # Note: Samples per bit is not integer usually. We need sub-sample precision or just accumulate phase.
-        
+
         samples = np.zeros(int(self.samples_per_frame + 1.0)) # Over allocate slightly
         idx = 0
-        
+
         samples_per_bit = self.samples_per_frame / 80.0
-        
-        # We generate continuous samples. 
+
+        # We generate continuous samples.
         # Ideally, we should treat time as continuous to avoid jitter accumulation over frames.
         # But for snippet generation, let's keep it simple.
-        
+
         t = 0.0 # Time in bits
         out_idx = 0
-        
+
         current_level = self.phase
-        
+
         # For each bit
         buffer = []
-        
+
         for bit_val in bits:
             # Duration of this bit is 1.0 bit-time
             # Start of bit -> transition
             current_level = -current_level
-            
+
             # Determine transition points within this bit
             # '0': just the start transition (already did), hold for 1.0
             # '1': start transition, hold for 0.5, transition, hold for 0.5
-            
+
             start_sample = int(out_idx)
             # How many samples for this bit?
             # We map bit_index to sample_index
             end_sample_f = (t + 1.0) * samples_per_bit
             end_sample = int(end_sample_f)
-            
+
             mid_sample_f = (t + 0.5) * samples_per_bit
             mid_sample = int(mid_sample_f)
-            
+
             if bit_val == 0:
                 # Fill until end
                 count = end_sample - start_sample
@@ -207,19 +219,19 @@ class LTCEncoder:
                 if count1 > 0:
                     buffer.extend([current_level] * count1)
                     out_idx += count1
-                    
+
                 current_level = -current_level # Mid transition
-                
+
                 count2 = end_sample - mid_sample
                 if count2 > 0:
                     buffer.extend([current_level] * count2)
                     out_idx += count2
-            
+
             t += 1.0
-            
+
         # Update phase for next frame
         self.phase = current_level
-        
+
         return np.array(buffer, dtype=np.float32)
 
 class LTCDecoder:
@@ -232,20 +244,20 @@ class LTCDecoder:
         self.bit_stream = 0
         self.bits_count = 0
         self.current_bits = []
-        self.last_bit_is_one = False 
-        
+        self.last_bit_is_one = False
+
         # Pulse Width discrimination
         # Initial guess for half-bit (Short pulse)
         # 80 bits per frame.
-        self.pulse_avg = (sample_rate / fps) / 160.0 
-        
+        self.pulse_avg = (sample_rate / fps) / 160.0
+
         self.decoded_bits = []
         self.decoded_tc = "--:--:--:--"
         self.locked = False
 
         self.total_samples = 0
         self.last_frame_offset_in_chunk: Optional[int] = None
-        
+
     def process_samples(self, samples: np.ndarray):
         """Process a chunk of audio samples. Returns True if a new frame was decoded."""
         # Vectorized zero-crossing (sign change) detection.
@@ -310,26 +322,26 @@ class LTCDecoder:
         """Returns True if a frame completion was triggered."""
         # Adaptive discriminator
         # Long pulse ~ 2 * Short pulse
-        
+
         # Initial guess or update
         if self.pulse_avg == 0: self.pulse_avg = d
-        
+
         # Use simple IIR for average tracking
         # We assume we track the Short pulse duration
-        
+
         threshold = self.pulse_avg * 1.5
-        
+
         frame_decoded = False
-        
+
         if d > threshold:
             # Long Pulse -> '0'
             self._push_bit(0)
             if self._check_sync():
                 frame_decoded = True
-                
-            self.last_bit_is_one = False 
+
+            self.last_bit_is_one = False
             # Update average towards Long/2 -> Short
-            self.pulse_avg = 0.95 * self.pulse_avg + 0.05 * (d / 2.0) 
+            self.pulse_avg = 0.95 * self.pulse_avg + 0.05 * (d / 2.0)
         else:
             # Short Pulse
             if self.last_bit_is_one:
@@ -341,14 +353,14 @@ class LTCDecoder:
             else:
                 s = self.last_bit_is_one
                 self.last_bit_is_one = True
-                
+
             self.pulse_avg = 0.95 * self.pulse_avg + 0.05 * d
-            
+
         return frame_decoded
 
     def _push_bit(self, bit: int):
         self.decoded_bits.append(bit)
-        if len(self.decoded_bits) > 160: 
+        if len(self.decoded_bits) > 160:
              self.decoded_bits.pop(0)
 
     def _check_sync(self) -> bool:
@@ -356,14 +368,14 @@ class LTCDecoder:
             # Check last 16 bits for Sync Word 0x3FFD (0011 1111 1111 1101)
             # bits are pushed 0 or 1.
             # We need to construct integer.
-            
+
             # Optimization: could allow reverse play, but for now forward only
-            
+
             last16 = self.decoded_bits[-16:]
             val = 0
             for b in last16:
                 val = (val << 1) | b
-            
+
             if val == 0x3FFD:
                 if len(self.decoded_bits) >= 80:
                     frame_bits = self.decoded_bits[-80:]
@@ -378,23 +390,23 @@ class LTCDecoder:
                 if bits[start + i]:
                     v |= (1 << i)
             return v
-            
+
         ff_ones = val(0, 4)
         ff_tens = val(8, 2)
         ff = ff_tens * 10 + ff_ones
-        
+
         ss_ones = val(16, 4)
         ss_tens = val(24, 3)
         ss = ss_tens * 10 + ss_ones
-        
+
         mm_ones = val(32, 4)
         mm_tens = val(40, 3)
         mm = mm_tens * 10 + mm_ones
-        
+
         hh_ones = val(48, 4)
         hh_tens = val(56, 2)
         hh = hh_tens * 10 + hh_ones
-        
+
         self.decoded_tc = f"{hh:02}:{mm:02}:{ss:02}:{ff:02}"
         self.locked = True
 
@@ -406,7 +418,7 @@ class TimecodeMonitor(MeasurementModule):
 
         # Settings (legacy convenience, maps to Left channel)
         self.fps = 30.0
-        
+
         # Audio Gate
         self.gate_threshold_db = -50.0
 
@@ -535,7 +547,7 @@ class TimecodeMonitor(MeasurementModule):
     @property
     def name(self) -> str:
         return tr("Timecode Monitor & Generator")
-        
+
     @property
     def description(self) -> str:
         return tr("LTC (Linear Timecode) Reader and Generator.")
@@ -555,7 +567,7 @@ class TimecodeMonitor(MeasurementModule):
     def start_analysis(self):
         if self.is_running:
             return
-            
+
         self.is_running = True
 
         sr = int(getattr(self.audio_engine, "sample_rate", 48000))
@@ -577,7 +589,7 @@ class TimecodeMonitor(MeasurementModule):
             ch.gen.gen_current_tc = "--:--:--:--"
             ch.gen.gen_pos = 0
             ch.gen.free_run_start_time = 0.0
-        
+
         def callback(indata, outdata, frames, time_info, status):
             # Always start from silence for this module's output.
             outdata.fill(0)
@@ -853,7 +865,7 @@ class TimecodeMonitor(MeasurementModule):
             # Relative to start
             if ch.gen.free_run_start_time == 0:
                 ch.gen.free_run_start_time = time.time()
-            
+
             # Simple frame counter
             total_frames = ch.gen.frames_generated
             # Or based on time?
@@ -861,7 +873,7 @@ class TimecodeMonitor(MeasurementModule):
             # But we need to initialize 'total_frames' based on 'free_run_start_time'?
             # For free run, we usually just start at 00:00:00:00 or user set value.
             # Let's implement continuous increment.
-            
+
             # Calculate TC from total frames
             # fps
             fps = float(ch.fps) if ch.fps else 30.0
@@ -871,7 +883,7 @@ class TimecodeMonitor(MeasurementModule):
             rem = rem % (int(fps * 60))
             ss = int(rem / fps)
             ff = int(rem % fps)
-            
+
             ch.gen.frames_generated += 1
 
         else:
@@ -905,7 +917,7 @@ class TimecodeMonitor(MeasurementModule):
                 ff = nominal_fps - 1
 
             ch.gen.frames_generated += 1
-            
+
         tc = f"{int(hh):02}:{int(mm):02}:{int(ss):02}:{int(ff):02}"
         samples = ch.gen.encoder.generate_frame(hh, mm, ss, ff)
         ch.gen.gen_buffer.append(samples)
@@ -1447,7 +1459,7 @@ class TimecodeMonitorWidget(QWidget):
 
         self._monitor_toggle_btn: Optional[QPushButton] = None
         self.init_ui()
-        
+
     def init_ui(self):
         layout = QVBoxLayout()
         layout.setContentsMargins(6, 6, 6, 6)
@@ -1529,7 +1541,7 @@ class TimecodeMonitorWidget(QWidget):
         self.ltc_offset_label.setFont(QFont("Monospace", 11))
         self.ltc_offset_label.setStyleSheet("color: #888;")
         layout.addWidget(self.ltc_offset_label)
-        
+
         controls_group = QGroupBox(tr("Output"))
         c_layout = QGridLayout()
 
@@ -1546,7 +1558,7 @@ class TimecodeMonitorWidget(QWidget):
         self.link_src_combo.currentIndexChanged.connect(self.on_link_source_changed)
         c_layout.addWidget(self.link_src_combo, 1, 1)
         self.link_src_combo.setEnabled(bool(self.module.link_enabled))
-        
+
         controls_group.setLayout(c_layout)
         layout.addWidget(controls_group)
 
@@ -1556,7 +1568,7 @@ class TimecodeMonitorWidget(QWidget):
         self.tabs.addTab(self._build_jam_tab(), tr("JAM"))
         self.tabs.addTab(self._build_calibration_tab(), tr("Calibration"))
         layout.addWidget(self.tabs)
-        
+
         layout.addStretch()
         self.setLayout(layout)
 
@@ -1594,7 +1606,7 @@ class TimecodeMonitorWidget(QWidget):
         except Exception:
             pass
         return super().closeEvent(event)
-        
+
     def on_link_toggled(self, checked: bool):
         self.module.link_enabled = bool(checked)
         self.link_src_combo.setEnabled(bool(checked))
@@ -1616,7 +1628,7 @@ class TimecodeMonitorWidget(QWidget):
                 if self._gen_buttons.get(key) is not None:
                     self._gen_buttons[key].setChecked(False)
                     self._gen_buttons[key].setText(tr("Enable Generator"))
-        
+
     def update_ui(self):
         data = self.module.process()
         l = data.get("L", {})

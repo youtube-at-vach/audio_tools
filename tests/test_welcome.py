@@ -1,5 +1,6 @@
-import sys
 import os
+import sys
+
 import pytest
 from PyQt6.QtWidgets import QApplication
 
@@ -15,22 +16,22 @@ pytestmark = pytest.mark.skipif(
 
 def test_welcome_screen():
     QApplication(sys.argv)
-    
+
     print("Initializing MainWindow...")
     window = MainWindow()
-    
+
     print("Checking initial widget...")
     current_widget = window.content_area.currentWidget()
     print(f"Current widget type: {type(current_widget).__name__}")
-    
+
     if type(current_widget).__name__ == 'WelcomeWidget':
         print("SUCCESS: WelcomeWidget is the initial widget.")
     else:
         print(f"FAILED: Expected WelcomeWidget, got {type(current_widget).__name__}")
-        
+
     # Check if image loaded (indirectly)
     # We can't easily check the pixmap content in headless, but we can check if it didn't crash.
-    
+
     print("Test Complete.")
     # Don't actually show window to avoid blocking
     # window.show()

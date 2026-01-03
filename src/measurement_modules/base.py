@@ -1,5 +1,6 @@
-from abc import ABC, abstractmethod
 import argparse
+from abc import ABC, abstractmethod
+
 
 class MeasurementModule(ABC):
     @property

@@ -1,14 +1,29 @@
-import numpy as np
-import soundfile as sf
-import scipy.signal
 import os
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
-                             QFileDialog, QComboBox, QCheckBox, QGroupBox, QProgressBar,
-                             QMessageBox, QProgressDialog, QSlider)
-from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
-from src.measurement_modules.base import MeasurementModule
+
+import numpy as np
+import scipy.signal
+import soundfile as sf
+from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QFileDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QProgressBar,
+    QProgressDialog,
+    QPushButton,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+)
+
 from src.core.audio_engine import AudioEngine
 from src.core.localization import tr
+from src.measurement_modules.base import MeasurementModule
+
 
 class FileLoadWorker(QThread):
     finished = pyqtSignal(bool, object, str) # success, data, message
@@ -23,10 +38,10 @@ class FileLoadWorker(QThread):
             # First read basic info to check length/sr
             info = sf.info(self.filepath)
             file_sr = info.samplerate
-            
+
             # Read data
             data, _ = sf.read(self.filepath, always_2d=True)
-            
+
             msg_extra = ""
             if file_sr != self.target_sr:
                 # Resample
@@ -35,10 +50,10 @@ class FileLoadWorker(QThread):
                 # For this task, we assume it's acceptable as long as it's in a thread
                 data = scipy.signal.resample(data, num_samples)
                 msg_extra = f" (Resampled from {file_sr}Hz)"
-            
+
             result_msg = f"Loaded: {os.path.basename(self.filepath)} ({self.target_sr}Hz{msg_extra}, {data.shape[1]}ch, {len(data)/self.target_sr:.2f}s)"
             self.finished.emit(True, data, result_msg)
-            
+
         except Exception as e:
             self.finished.emit(False, None, str(e))
 
@@ -46,23 +61,23 @@ class FileLoadWorker(QThread):
 class RecorderPlayer(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
         self.audio_engine = audio_engine
-        
+
         # State
         self.is_playing = False
         self.is_recording = False
         self.loop_playback = False
         self.playback_gain_db = 0.0
-        
+
         # Buffers
         self.playback_buffer = None # numpy array (samples, channels)
         self.playback_pos = 0
         self.record_buffer = [] # List of numpy arrays
         self.recorded_samples = 0
-        
+
         # Settings
         self.input_mode = 'Stereo' # Stereo, Left, Right
         self.output_mode = 'Stereo' # Stereo, Left, Right, Mono
-        
+
         self.callback_id = None
         self.widget = None
 
@@ -91,21 +106,21 @@ class RecorderPlayer(MeasurementModule):
         try:
             data, file_sr = sf.read(filepath, always_2d=True)
             engine_sr = self.audio_engine.sample_rate
-            
+
             msg_extra = ""
-            
+
             # Resample if needed
             if file_sr != engine_sr:
                 print(f"Resampling {os.path.basename(filepath)}: {file_sr}Hz -> {engine_sr}Hz")
                 # Calculate new number of samples
                 num_samples = int(len(data) * engine_sr / file_sr)
-                
+
                 # Use scipy.signal.resample (Fourier method)
                 # Note: For very large files, this might be slow and memory intensive.
                 # But for typical measurement signals it's fine.
                 data = scipy.signal.resample(data, num_samples)
                 msg_extra = f" (Resampled from {file_sr}Hz)"
-            
+
             self.playback_buffer = data
             self.playback_pos = 0
             return True, f"Loaded: {os.path.basename(filepath)} ({engine_sr}Hz{msg_extra}, {data.shape[1]}ch, {len(data)/engine_sr:.2f}s)"
@@ -115,7 +130,7 @@ class RecorderPlayer(MeasurementModule):
     def save_recording(self, filepath, format=None, subtype=None):
         if not self.record_buffer:
             return False, "No recording data"
-        
+
         try:
             data = np.concatenate(self.record_buffer, axis=0)
             sf.write(filepath, data, self.audio_engine.sample_rate, format=format, subtype=subtype)
@@ -166,7 +181,7 @@ class RecorderPlayer(MeasurementModule):
                     rec_data = indata[:, 1:2]
                 else:
                     rec_data = np.zeros((frames, 1), dtype=indata.dtype)
-            
+
             self.record_buffer.append(rec_data)
             self.recorded_samples += frames
 
@@ -174,13 +189,13 @@ class RecorderPlayer(MeasurementModule):
         if self.is_playing and self.playback_buffer is not None:
             pb_len = len(self.playback_buffer)
             current_idx = 0
-            
+
             while current_idx < frames:
                 remaining = frames - current_idx
                 available = pb_len - self.playback_pos
-                
+
                 to_copy = min(remaining, available)
-                
+
                 # Get chunk from buffer
                 chunk = self.playback_buffer[self.playback_pos : self.playback_pos + to_copy]
 
@@ -188,13 +203,13 @@ class RecorderPlayer(MeasurementModule):
                 if self.playback_gain_db != 0.0:
                     gain = 10 ** (self.playback_gain_db / 20.0)
                     chunk = chunk * gain
-                
+
                 # Target slice in outdata
                 out_slice = outdata[current_idx : current_idx + to_copy]
-                
+
                 file_ch = chunk.shape[1]
                 out_ch = out_slice.shape[1]
-                
+
                 if self.output_mode == 'Stereo':
                     if file_ch == 1:
                         out_slice[:, 0] = chunk[:, 0]
@@ -206,7 +221,7 @@ class RecorderPlayer(MeasurementModule):
                     out_slice[:, 0] = chunk[:, 0]
                     if out_ch > 1: out_slice[:, 1] = 0
                 elif self.output_mode == 'Right':
-                    if out_ch > 1: 
+                    if out_ch > 1:
                         out_slice[:, 1] = chunk[:, 0] if file_ch == 1 else chunk[:, 1] if file_ch > 1 else 0
                         out_slice[:, 0] = 0
                 elif self.output_mode == 'Mono':
@@ -215,13 +230,13 @@ class RecorderPlayer(MeasurementModule):
                         mono = np.mean(chunk, axis=1)
                     else:
                         mono = chunk[:, 0]
-                    
+
                     out_slice[:, 0] = mono
                     if out_ch > 1: out_slice[:, 1] = mono
-                
+
                 self.playback_pos += to_copy
                 current_idx += to_copy
-                
+
                 if self.playback_pos >= pb_len:
                     if self.loop_playback:
                         self.playback_pos = 0
@@ -238,10 +253,10 @@ class RecorderPlayerWidget(QWidget):
         super().__init__()
         self.module = module
         self.init_ui()
-        
+
         self.load_worker = None
         self.progress_dialog = None
-        
+
         # Update timer
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_ui)
@@ -249,16 +264,16 @@ class RecorderPlayerWidget(QWidget):
 
     def init_ui(self):
         layout = QVBoxLayout()
-        
+
         # --- Playback Section ---
         pb_group = QGroupBox(tr("Playback"))
         pb_layout = QVBoxLayout()
-        
+
         # File Info
         self.file_label = QLabel(tr("No file loaded"))
         self.file_label.setWordWrap(True)
         pb_layout.addWidget(self.file_label)
-        
+
         # Controls
         ctrl_layout = QHBoxLayout()
         self.load_btn = QPushButton(tr("Load File"))
@@ -267,17 +282,17 @@ class RecorderPlayerWidget(QWidget):
         self.play_btn.clicked.connect(self.on_play_toggle)
         self.loop_check = QCheckBox(tr("Loop"))
         self.loop_check.toggled.connect(self.on_loop_toggle)
-        
+
         ctrl_layout.addWidget(self.load_btn)
         ctrl_layout.addWidget(self.play_btn)
         ctrl_layout.addWidget(self.loop_check)
         pb_layout.addLayout(ctrl_layout)
-        
+
         # Progress
         self.pb_progress = QProgressBar()
         self.pb_progress.setTextVisible(True)
         pb_layout.addWidget(self.pb_progress)
-        
+
         # Output Mode
         out_layout = QHBoxLayout()
         out_layout.addWidget(QLabel(tr("Output Mode:")))
@@ -307,11 +322,11 @@ class RecorderPlayerWidget(QWidget):
         # Output Destination
         pb_group.setLayout(pb_layout)
         layout.addWidget(pb_group)
-        
+
         # --- Recording Section ---
         rec_group = QGroupBox(tr("Recording"))
         rec_layout = QVBoxLayout()
-        
+
         # Controls
         rec_ctrl_layout = QHBoxLayout()
         self.rec_btn = QPushButton(tr("Record"))
@@ -320,15 +335,15 @@ class RecorderPlayerWidget(QWidget):
         self.save_btn = QPushButton(tr("Save Recording"))
         self.save_btn.clicked.connect(self.on_save)
         self.save_btn.setEnabled(False)
-        
+
         rec_ctrl_layout.addWidget(self.rec_btn)
         rec_ctrl_layout.addWidget(self.save_btn)
         rec_layout.addLayout(rec_ctrl_layout)
-        
+
         # Info
         self.rec_info_label = QLabel(tr("Recorded: 0.00s"))
         rec_layout.addWidget(self.rec_info_label)
-        
+
         # Input Mode
         in_layout = QHBoxLayout()
         in_layout.addWidget(QLabel(tr("Input Mode:")))
@@ -339,7 +354,7 @@ class RecorderPlayerWidget(QWidget):
         self.in_mode_combo.currentTextChanged.connect(self.on_in_mode_changed)
         in_layout.addWidget(self.in_mode_combo)
         rec_layout.addLayout(in_layout)
-        
+
         rec_group.setLayout(rec_layout)
         layout.addWidget(rec_group)
 
@@ -356,34 +371,34 @@ class RecorderPlayerWidget(QWidget):
             info = sf.info(fname)
             file_sr = info.samplerate
             engine_sr = self.module.audio_engine.sample_rate
-            
+
             if file_sr != engine_sr:
                 reply = QMessageBox.question(
-                    self, 
-                    tr("Resample Required"), 
+                    self,
+                    tr("Resample Required"),
                     tr("The file sample rate ({0} Hz) differs from the engine rate ({1} Hz).\n"
                     "Resampling is required to play correctly.\n\n"
                     "Do you want to proceed? (This may take a moment for large files)").format(file_sr, engine_sr),
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.Yes
                 )
-                
+
                 if reply == QMessageBox.StandardButton.No:
                     return
 
             # Start background loading
             self.load_worker = FileLoadWorker(fname, engine_sr)
             self.load_worker.finished.connect(self.on_load_finished)
-            
+
             # Show progress dialog
             self.progress_dialog = QProgressDialog(tr("Loading and processing audio..."), tr("Cancel"), 0, 0, self)
             self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
             self.progress_dialog.setMinimumDuration(0)
             self.progress_dialog.canceled.connect(self.on_load_cancel)
             self.progress_dialog.show()
-            
+
             self.load_worker.start()
-            
+
         except Exception as e:
             QMessageBox.critical(self, tr("Error"), tr("Failed to read file info:\n{0}").format(e))
 
@@ -391,7 +406,7 @@ class RecorderPlayerWidget(QWidget):
         if self.progress_dialog:
             self.progress_dialog.close()
             self.progress_dialog = None
-            
+
         if success:
             self.module.set_playback_data(data)
             self.file_label.setText(msg)
@@ -399,7 +414,7 @@ class RecorderPlayerWidget(QWidget):
         else:
             if msg != "Cancelled": # Don't show error if user cancelled
                 QMessageBox.critical(self, tr("Error"), tr("Failed to load file:\n{0}").format(msg))
-        
+
         self.load_worker = None
 
     def on_load_cancel(self):
@@ -460,7 +475,7 @@ class RecorderPlayerWidget(QWidget):
                     self.pb_progress.setValue(progress)
         else:
             self.play_btn.setText(tr("Play"))
-            
+
         # Update Recording UI
         if self.module.is_recording:
             duration = self.module.recorded_samples / self.module.audio_engine.sample_rate

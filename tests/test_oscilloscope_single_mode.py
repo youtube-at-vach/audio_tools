@@ -1,7 +1,6 @@
 import os
 import sys
 
-
 sys.path.append(os.getcwd())
 
 from src.gui.widgets.oscilloscope import Oscilloscope

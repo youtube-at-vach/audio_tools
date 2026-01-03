@@ -1,20 +1,21 @@
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
-    QMainWindow,
-    QWidget,
-    QHBoxLayout,
-    QVBoxLayout,
-    QLabel,
-    QListWidget,
-    QStackedWidget,
-    QStatusBar,
     QApplication,
     QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QMainWindow,
+    QStackedWidget,
+    QStatusBar,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import QTimer
+
 from src.core.audio_engine import AudioEngine
 from src.core.config_manager import ConfigManager
-from src.gui.widgets.detachable_wrapper import DetachableWidgetWrapper
 from src.core.localization import get_manager, tr
+from src.gui.widgets.detachable_wrapper import DetachableWidgetWrapper
 
 
 def _load_module_class(module_key: str):
@@ -146,41 +147,41 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("MeasureLab")
         self.resize(1000, 700)
-        
+
         # Initialize Core Components
         self.config_manager = ConfigManager()
-        
+
         # Initialize Localization
         lang = self.config_manager.get_language()
         get_manager().load_language(lang)
-        
+
         self.audio_engine = AudioEngine()
-        
+
         # Initialize Theme Manager
         from src.core.theme_manager import ThemeManager
         self.theme_manager = ThemeManager(QApplication.instance())
         # Make it accessible from app instance for SettingsWidget
         QApplication.instance().theme_manager = self.theme_manager
-        
+
         # Load and apply saved theme
         saved_theme = self.config_manager.get_theme()
         self.theme_manager.set_theme(saved_theme)
 
-        
+
         # Load saved config
         audio_cfg = self.config_manager.get_audio_config()
         last_in = audio_cfg.get('input_device')
         last_out = audio_cfg.get('output_device')
-        
+
         # Default IDs
         in_id, out_id = 3, 3 # Fallback
-        
+
         if last_in or last_out:
             # Find IDs by name
             devices = self.audio_engine.list_devices()
             found_in = False
             found_out = False
-            
+
             for i, dev in enumerate(devices):
                 if last_in and dev['name'] == last_in and dev['max_input_channels'] > 0:
                     in_id = i
@@ -188,7 +189,7 @@ class MainWindow(QMainWindow):
                 if last_out and dev['name'] == last_out and dev['max_output_channels'] > 0:
                     out_id = i
                     found_out = True
-            
+
             if not found_in and last_in:
                 print(f"Saved input device '{last_in}' not found, using default.")
             if not found_out and last_out:
@@ -196,21 +197,21 @@ class MainWindow(QMainWindow):
 
         try:
             self.audio_engine.set_devices(in_id, out_id)
-            
+
             # Apply other settings
             sr = audio_cfg.get('sample_rate', 48000)
             self.audio_engine.set_sample_rate(sr)
-            
+
             bs = audio_cfg.get('block_size', 1024)
             self.audio_engine.set_block_size(bs)
-            
+
             in_ch = audio_cfg.get('input_channels', 'stereo')
             out_ch = audio_cfg.get('output_channels', 'stereo')
             self.audio_engine.set_channel_mode(in_ch, out_ch)
 
             # Apply PipeWire/JACK resident mode after devices + format are configured.
             self.audio_engine.set_pipewire_jack_resident(self.config_manager.get_pipewire_jack_resident())
-            
+
         except Exception as e:
             print(f"Failed to set devices/settings: {e}")
             # Try default if specific failed
@@ -255,12 +256,12 @@ class MainWindow(QMainWindow):
         ]
         self.modules = [None] * len(self._module_keys)
         self.module_widgets = [None] * len(self._module_keys)
-        
+
         # Main layout container
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         layout = QHBoxLayout(main_widget)
-        
+
         # Sidebar for tool selection
         self.sidebar = QListWidget()
         self.sidebar.setFixedWidth(200)
@@ -269,14 +270,14 @@ class MainWindow(QMainWindow):
 
         for key in self._module_keys:
             self.sidebar.addItem(tr(key))
-            
+
         self.sidebar.currentRowChanged.connect(self.on_tool_selected)
         layout.addWidget(self.sidebar)
-        
+
         # Main content area
         self.content_area = QStackedWidget()
         layout.addWidget(self.content_area)
-        
+
         # Add initial welcome page (Index 0)
         WelcomeWidget = _load_welcome_widget_class()
         self.welcome_widget = WelcomeWidget()
@@ -299,11 +300,11 @@ class MainWindow(QMainWindow):
             v.addWidget(QLabel(tr("Select a module from the sidebar.")))
             self._module_containers.append(container)
             self.content_area.addWidget(container)
-        
+
         # Status Bar
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        
+
         # Status Labels
         self.status_label = QLabel(tr("Idle"))
         self.io_label = QLabel(tr("In: - | Out: -"))
@@ -317,7 +318,7 @@ class MainWindow(QMainWindow):
         self.output_dest_combo.addItem(tr("Loopback + Physical"), "loopback_mix")
         self.output_dest_combo.setToolTip(tr("Global output destination for all modules."))
         self.output_dest_combo.currentIndexChanged.connect(self.on_output_destination_changed)
-        
+
         # Add labels to status bar
         self.status_bar.addPermanentWidget(self.status_label)
         self.status_bar.addPermanentWidget(self.io_label)
@@ -326,7 +327,7 @@ class MainWindow(QMainWindow):
         self.status_bar.addPermanentWidget(self.clients_label)
         self.status_bar.addPermanentWidget(self.output_dest_label)
         self.status_bar.addPermanentWidget(self.output_dest_combo)
-        
+
         # Timer for status update
         self.status_timer = QTimer()
         self.status_timer.timeout.connect(self.update_status)
@@ -433,7 +434,7 @@ class MainWindow(QMainWindow):
         # Keep global output selector in sync if a widget changed it
         current_mode = self._get_engine_output_destination()
         self._sync_output_destination_ui(current_mode, propagate=True)
-        
+
         # Active State
         if status['active']:
             self.status_label.setText(tr("ACTIVE"))
@@ -441,19 +442,19 @@ class MainWindow(QMainWindow):
         else:
             self.status_label.setText(tr("IDLE"))
             self.status_label.setStyleSheet("color: gray;")
-            
+
         # I/O Mode
         in_mode = status['input_channels'].capitalize()
         out_mode = status['output_channels'].capitalize()
         self.io_label.setText(tr("In: {0} | Out: {1}").format(in_mode, out_mode))
-        
+
         # Sample Rate
         self.sr_label.setText(tr("SR: {0}").format(status['sample_rate']))
-        
+
         # CPU Load
         cpu = status['cpu_load'] * 100
         flags = status.get('status_flags')
-        
+
         if flags:
             self.cpu_label.setText(tr("CPU: {0:.1f}% [{1}]").format(cpu, flags))
             self.cpu_label.setStyleSheet("color: red; font-weight: bold;")
@@ -462,7 +463,7 @@ class MainWindow(QMainWindow):
             self.cpu_label.setText(tr("CPU: {0:.1f}%").format(cpu))
             self.cpu_label.setStyleSheet("")
             self.cpu_label.setToolTip(tr("CPU Load of Audio Thread"))
-        
+
         # Clients
         self.clients_label.setText(tr("Clients: {0}").format(status['active_clients']))
 
@@ -508,7 +509,7 @@ class MainWindow(QMainWindow):
 
         # Mirror selection to widgets that expose destination controls
         self._propagate_output_destination(data)
-        
+
     def on_tool_selected(self, index):
         if index == 1:
             self._ensure_settings_loaded()

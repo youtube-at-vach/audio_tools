@@ -1,5 +1,7 @@
-from .base import MeasurementModule
 import argparse
+
+from .base import MeasurementModule
+
 
 class Crosstalk(MeasurementModule):
     """クロストーク測定モジュール（サンプル）"""

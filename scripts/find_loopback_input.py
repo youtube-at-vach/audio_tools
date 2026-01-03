@@ -1,6 +1,7 @@
-import sounddevice as sd
-import numpy as np
 import time
+
+import numpy as np
+import sounddevice as sd
 
 OUTPUT_DEVICE = 17
 TEST_FREQ = 1000
@@ -19,9 +20,9 @@ def test_input_device(input_device_id):
         # We need to play to OUTPUT_DEVICE and record from input_device_id
         # Since they are different devices, we can't use sd.playrec easily if they are not synchronized?
         # Actually sd.Stream allows different devices for input and output.
-        
+
         recorded_data = []
-        
+
         def callback(indata, outdata, frames, time, status):
             if status:
                 print(status)
@@ -29,21 +30,21 @@ def test_input_device(input_device_id):
             # We need to fill outdata with our sine wave
             # But wait, the callback is called for BOTH input and output if we use a duplex stream.
             # If we use different devices, sounddevice handles it.
-            
+
             # However, we need to manage the buffer state.
             # For simplicity, let's just play silence to output in the callback if we run out of data
             # But wait, we want to play the sine wave.
 
         # Let's use a simpler approach: start an output stream and an input stream separately?
         # No, sd.Stream with device=(in, out) is better.
-        
+
         # We need to pass the data to the callback.
         playback_index = 0
-        
+
         def callback_rw(indata, outdata, frames, time, status):
             nonlocal playback_index
             recorded_data.append(indata.copy())
-            
+
             chunk_len = len(outdata)
             if playback_index + chunk_len <= len(sine_wave):
                 outdata[:] = sine_wave[playback_index:playback_index+chunk_len]
@@ -62,16 +63,16 @@ def test_input_device(input_device_id):
                        samplerate=SAMPLE_RATE, blocksize=1024,
                        channels=1, callback=callback_rw):
             time.sleep(DURATION + 0.1)
-            
+
         # Analyze recording
         full_recording = np.concatenate(recorded_data)
         rms = np.sqrt(np.mean(full_recording**2))
         print(f"  RMS: {rms}")
-        
+
         if rms > 0.01:
             print(f"  *** FOUND SIGNAL ON DEVICE {input_device_id} ***")
             return True
-            
+
     except Exception as e:
         print(f"  Error: {e}")
         return False

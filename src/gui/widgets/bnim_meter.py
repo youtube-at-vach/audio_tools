@@ -2,19 +2,30 @@ import threading
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-                             QComboBox, QGroupBox, QSlider, QCheckBox)
-from PyQt6.QtCore import QTimer, Qt
-from src.measurement_modules.base import MeasurementModule
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+)
+from scipy.ndimage import gaussian_filter
+
 from src.core.audio_engine import AudioEngine
 from src.core.localization import tr
-from scipy.ndimage import gaussian_filter
+from src.measurement_modules.base import MeasurementModule
+
 
 class BNIMMeter(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
         self.audio_engine = audio_engine
         self.is_running = False
-        
+
         # Settings
         self.fft_size = 2048
         self.overlap = 0.5
@@ -31,7 +42,7 @@ class BNIMMeter(MeasurementModule):
         self.ild_strength = 0.6
         self.ild_width_db = 6.0
         self.ild_freq_split_hz = 1500.0
-        
+
         # State
         self.callback_id = None
         self.sample_rate = self.audio_engine.sample_rate
@@ -39,7 +50,7 @@ class BNIMMeter(MeasurementModule):
         self.audio_buffer = np.zeros((4096, 2), dtype=np.float32)
         self._buffer_seq = 0
         self._last_processed_seq = -1
-        
+
         # Neural Map State (Frequencies x ITD)
         # We'll determine the actual shape during first processing
         self.neural_map = None
@@ -71,24 +82,24 @@ class BNIMMeter(MeasurementModule):
             self.audio_buffer = np.zeros((self.fft_size * 2, 2), dtype=np.float32)
             self._buffer_seq = 0
             self._last_processed_seq = -1
-        
+
         # Prepare axes
         self.itd_axis = np.linspace(-self.max_itd_ms, self.max_itd_ms, self.num_itd_bins)
         self._itd_axis_norm = (self.itd_axis / max(1e-9, float(self.max_itd_ms))).astype(np.float32, copy=False)
-        
+
         # Frequency bins for RFFT
         freqs = np.fft.rfftfreq(self.fft_size, 1/self.sample_rate)
         # Select indices within range
         self.freq_indices = np.where((freqs >= self.freq_min) & (freqs <= self.freq_max))[0]
         self.frequencies = freqs[self.freq_indices]
-        
+
         # Initialize Neural Map
         self.neural_map = np.zeros((len(self.frequencies), self.num_itd_bins))
 
         # Precompute ITD phase model: (freq, itd)
         delays_s = (self.itd_axis / 1000.0).astype(np.float32, copy=False)
         self._phase_diff_model = (-2.0 * np.pi * self.frequencies[:, None].astype(np.float32, copy=False) * delays_s[None, :]).astype(np.float32, copy=False)
-        
+
         self.callback_id = self.audio_engine.register_callback(self._callback)
 
     def stop_analysis(self):
@@ -121,7 +132,7 @@ class BNIMMeter(MeasurementModule):
     def process_buffer(self):
         """Perform the 'neural' processing: ITD/ILD extraction per frequency."""
         if not self.is_running: return
-        
+
         # Extract last window
         with self._buffer_lock:
             # Avoid redundant FFTs if the GUI timer fires faster than audio callbacks.
@@ -132,41 +143,41 @@ class BNIMMeter(MeasurementModule):
             window_data = self.audio_buffer[-self.fft_size:].copy()
         L = window_data[:, 0]
         R = window_data[:, 1]
-        
+
         # Apply window (Hann)
         win = np.hanning(self.fft_size)
         L_w = L * win
         R_w = R * win
-        
+
         # FFT
         fft_L = np.fft.rfft(L_w)
         fft_R = np.fft.rfft(R_w)
-        
+
         # Select active frequencies
         fft_L = fft_L[self.freq_indices]
         fft_R = fft_R[self.freq_indices]
-        
+
         # Normalize by magnitude to focus on phase (ITD)
         # Mag L/R for ILD
         mag_L = np.abs(fft_L)
         mag_R = np.abs(fft_R)
-        
+
         # Avoid div by zero
         eps = 1e-10
         mag_sum = mag_L + mag_R + eps
-        
+
         # Jeffress-style coincidence map against a precomputed delay-line phase model.
         phase_diff_model = self._phase_diff_model
-        
+
         phase_L = np.angle(fft_L)
         phase_R = np.angle(fft_R)
-        
+
         # Broadcast
         phase_diff_signal = (phase_L - phase_R)[:, np.newaxis]
-        
+
         # Coincidence = cos(phase_diff_signal - phase_diff_model)
         coincidence = 0.5 + 0.5 * np.cos(phase_diff_signal - phase_diff_model)
-        
+
         # Band intensity (energy proxy)
         band_intensity = np.log1p(mag_sum * self.gain).astype(np.float32, copy=False)
         coincidence = coincidence.astype(np.float32, copy=False) * band_intensity[:, np.newaxis]
@@ -188,7 +199,7 @@ class BNIMMeter(MeasurementModule):
             # If ild_sign>0 (left louder), boost negative ITD (itd_norm<0) via (-itd_norm).
             lateral = (1.0 + (self.ild_strength * ild_band_weight)[:, None] * (-itd_norm[None, :]) * ild_sign[:, None]).astype(np.float32, copy=False)
             coincidence *= np.clip(lateral, 0.0, 5.0)
-        
+
         # Update neural map with persistence
         self.neural_map = (self.neural_map * self.decay) + (coincidence * (1.0 - self.decay))
 
@@ -197,22 +208,22 @@ class BNIMMeterWidget(QWidget):
         super().__init__()
         self.module = module
         self.init_ui()
-        
+
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_display)
         self.timer.setInterval(40) # 25 FPS is usually enough for this kind of "neural" look
-        
+
     def init_ui(self):
         layout = QHBoxLayout()
-        
+
         # --- Left: Display ---
         display_layout = QVBoxLayout()
-        
+
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setBackground('#050505')
         self.plot_widget.hideAxis('bottom')
         self.plot_widget.hideAxis('left')
-        
+
         # Label axes
         self.label_itd = QLabel(tr("ITD (Left <-> Right)"))
         self.label_itd.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -227,20 +238,20 @@ class BNIMMeterWidget(QWidget):
         cmap = pg.ColorMap(pos, color)
         lut = cmap.getLookupTable(0.0, 1.0, 256)
         self.img_item.setLookupTable(lut)
-        
+
         self.plot_widget.addItem(self.img_item)
-        
+
         layout.addLayout(display_layout, stretch=3)
-        
+
         # --- Right: Controls ---
         controls_group = QGroupBox(tr("BNIM Controls"))
         controls_layout = QVBoxLayout()
-        
+
         self.toggle_btn = QPushButton(tr("Start"))
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self.on_toggle)
         controls_layout.addWidget(self.toggle_btn)
-        
+
         # Persistence
         controls_layout.addWidget(QLabel(tr("Persistence:")))
         self.decay_slider = QSlider(Qt.Orientation.Horizontal)
@@ -248,7 +259,7 @@ class BNIMMeterWidget(QWidget):
         self.decay_slider.setValue(int(self.module.decay * 100))
         self.decay_slider.valueChanged.connect(self.on_decay_changed)
         controls_layout.addWidget(self.decay_slider)
-        
+
         # Gain
         controls_layout.addWidget(QLabel(tr("Gain:")))
         self.gain_slider = QSlider(Qt.Orientation.Horizontal)
@@ -256,7 +267,7 @@ class BNIMMeterWidget(QWidget):
         self.gain_slider.setValue(100)
         self.gain_slider.valueChanged.connect(self.on_gain_changed)
         controls_layout.addWidget(self.gain_slider)
-        
+
         # Glow
         controls_layout.addWidget(QLabel(tr("Neural Glow:")))
         self.glow_slider = QSlider(Qt.Orientation.Horizontal)
@@ -277,7 +288,7 @@ class BNIMMeterWidget(QWidget):
         self.ild_strength_slider.setValue(int(self.module.ild_strength * 100))
         self.ild_strength_slider.valueChanged.connect(self.on_ild_strength_changed)
         controls_layout.addWidget(self.ild_strength_slider)
-        
+
         # Freq Range
         controls_layout.addWidget(QLabel(tr("Max Freq (Hz):")))
         self.freq_combo = QComboBox()
@@ -289,9 +300,9 @@ class BNIMMeterWidget(QWidget):
         controls_layout.addStretch()
         controls_group.setLayout(controls_layout)
         layout.addWidget(controls_group, stretch=1)
-        
+
         self.setLayout(layout)
-        
+
     def on_toggle(self, checked):
         if checked:
             self.module.start_analysis()
@@ -301,13 +312,13 @@ class BNIMMeterWidget(QWidget):
             self.module.stop_analysis()
             self.timer.stop()
             self.toggle_btn.setText(tr("Start"))
-            
+
     def on_decay_changed(self, val):
         self.module.decay = val / 100.0
-        
+
     def on_gain_changed(self, val):
         self.module.gain = val / 100.0
-        
+
     def on_glow_changed(self, val):
         self.module.glow_sigma = val / 10.0
 
@@ -316,36 +327,36 @@ class BNIMMeterWidget(QWidget):
 
     def on_ild_strength_changed(self, val):
         self.module.ild_strength = val / 100.0
-        
+
     def on_freq_changed(self, text):
         was_running = self.module.is_running
         if was_running: self.module.stop_analysis()
         self.module.freq_max = int(text)
         if was_running: self.module.start_analysis()
-        
+
     def update_display(self):
         if not self.module.is_running: return
-        
+
         self.module.process_buffer()
-        
+
         data = self.module.neural_map
         if data is None: return
-        
+
         # Apply Glow
         if self.module.glow_sigma > 0:
             data = gaussian_filter(data, sigma=self.module.glow_sigma)
-            
+
         # Display
         # Y axis is frequency, X axis is ITD
         # pyqtgraph ImageItem expects (X, Y)
         # Our neural_map is (Freqs, ITD) -> (Y, X)
         self.img_item.setImage(data.T, autoLevels=False)
-        
+
         # Auto-adjust levels for better visibility
         # We want to see the peaks clearly
         mx = float(np.max(data)) if data.size else 0.0
         self.img_item.setLevels([0, mx * 0.8 + 0.1])
-        
+
         # Set Rect
         # x: -max_itd to +max_itd
         # y: log scale or linear? Let's start linear for simplicity

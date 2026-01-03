@@ -1,8 +1,11 @@
 import unittest
-import numpy as np
 from collections import deque
-from src.gui.widgets.frequency_counter import FrequencyCounter
 from unittest.mock import MagicMock
+
+import numpy as np
+
+from src.gui.widgets.frequency_counter import FrequencyCounter
+
 
 class TestFrequencyCounterAllanPlot(unittest.TestCase):
     def setUp(self):
@@ -18,19 +21,19 @@ class TestFrequencyCounterAllanPlot(unittest.TestCase):
         n = 1000
         noise = np.random.normal(1000, 1.0, n)
         self.counter.freq_history.extend(noise)
-        
+
         taus, devs = self.counter.calculate_allan_plot_data()
-        
+
         self.assertGreater(len(taus), 5)
         self.assertGreater(len(devs), 5)
-        
+
         # Check slope roughly
         # log(sigma) = -0.5 * log(tau) + C
         log_taus = np.log10(taus)
         log_devs = np.log10(devs)
-        
+
         slope, intercept = np.polyfit(log_taus, log_devs, 1)
-        
+
         # For white noise FM, slope is -0.5
         # Allow some margin due to limited sample size
         self.assertAlmostEqual(slope, -0.5, delta=0.2)
@@ -42,14 +45,14 @@ class TestFrequencyCounterAllanPlot(unittest.TestCase):
         steps = np.random.normal(0, 0.1, n)
         walk = 1000 + np.cumsum(steps)
         self.counter.freq_history.extend(walk)
-        
+
         taus, devs = self.counter.calculate_allan_plot_data()
-        
+
         log_taus = np.log10(taus)
         log_devs = np.log10(devs)
-        
+
         slope, intercept = np.polyfit(log_taus, log_devs, 1)
-        
+
         # For random walk FM, slope is +0.5
         self.assertAlmostEqual(slope, 0.5, delta=0.2)
 

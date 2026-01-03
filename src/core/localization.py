@@ -1,6 +1,8 @@
 import json
 import os
+
 from src.core.utils import resource_path
+
 
 class LocalizationManager:
     _instance = None
@@ -28,7 +30,7 @@ class LocalizationManager:
                 if f.endswith('.json'):
                     lang_code = f[:-5]
                     self.available_languages[lang_code] = f
-        
+
         # Ensure en is always available (fallback)
         if 'en' not in self.available_languages:
              self.available_languages['en'] = 'en.json'
@@ -37,10 +39,10 @@ class LocalizationManager:
         if lang_code not in self.available_languages:
             # print(f"Language {lang_code} not found, falling back to en")
             lang_code = 'en'
-        
+
         self.language = lang_code
         path = resource_path(f'src/assets/lang/{lang_code}.json')
-        
+
         if os.path.exists(path):
             try:
                 with open(path, 'r', encoding='utf-8') as f:

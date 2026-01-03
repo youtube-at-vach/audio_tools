@@ -1,6 +1,8 @@
 import json
 import os
+
 import numpy as np
+
 
 class CalibrationManager:
     """
@@ -131,7 +133,7 @@ class CalibrationManager:
         """Sets the frequency calibration factor (multiplier)."""
         self.frequency_calibration = factor
         self.save()
-        
+
     def set_lockin_gain_offset(self, offset_db):
         """Sets the absolute gain offset for the Lock-in Amplifier in dB."""
         self.lockin_gain_offset = offset_db
@@ -156,7 +158,7 @@ class CalibrationManager:
         return 20 * np.log10(self.input_sensitivity)
 
     # --- Frequency Correction Map ---
-    
+
     def load_frequency_map(self, path):
         """
         Loads a frequency correction map from a JSON file.
@@ -165,7 +167,7 @@ class CalibrationManager:
         if not os.path.exists(path):
             print(f"Calibration map not found: {path}")
             return False
-            
+
         try:
             with open(path, 'r') as f:
                 data = json.load(f)
@@ -200,33 +202,33 @@ class CalibrationManager:
         """
         if not hasattr(self, 'frequency_map') or not self.frequency_map:
             return 0.0, 0.0
-            
+
         # If out of range, clamp to nearest
         if freq <= self.frequency_map[0][0]:
             return self.frequency_map[0][1], self.frequency_map[0][2]
         if freq >= self.frequency_map[-1][0]:
             return self.frequency_map[-1][1], self.frequency_map[-1][2]
-            
+
         # Binary search or simple search (map size usually < 1000)
         # np.interp is convenient if we separate arrays, but here we have list of lists.
-        # Let's do a simple search or convert to numpy arrays on load? 
+        # Let's do a simple search or convert to numpy arrays on load?
         # For now, simple search is fine for < 1000 points.
-        
+
         # Optimization: Convert to numpy arrays on load if performance is critical.
         # But for now, let's just do it simply.
-        
+
         # Find index i such that map[i][0] <= freq < map[i+1][0]
         # Using bisect would be faster but let's stick to basic python for clarity unless needed.
-        
+
         # Let's use numpy for interpolation, it's robust.
         # We can cache the numpy arrays if this is called often (it is).
-        
+
         if not hasattr(self, '_map_freqs'):
             self._update_map_cache()
-            
+
         mag_corr = np.interp(freq, self._map_freqs, self._map_mags)
         phase_corr = np.interp(freq, self._map_freqs, self._map_phases)
-        
+
         return mag_corr, phase_corr
 
     def _update_map_cache(self):

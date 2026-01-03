@@ -1,6 +1,6 @@
 import json
-import os
 import logging
+import os
 from copy import deepcopy
 
 # Default configuration used for initialization and validation
@@ -35,7 +35,7 @@ class ConfigManager:
             config = self._default_config()
             self._ensure_screenshot_dir(config)
             return config
-        
+
         try:
             with open(self.config_path, 'r') as f:
                 loaded = json.load(f)
@@ -130,7 +130,7 @@ class ConfigManager:
         """Updates the audio configuration."""
         if "audio" not in self.config:
             self.config["audio"] = {}
-        
+
         self.config["audio"]["input_device"] = input_name
         self.config["audio"]["output_device"] = output_name
         self.config["audio"]["sample_rate"] = sample_rate

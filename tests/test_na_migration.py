@@ -1,5 +1,6 @@
-import sys
 import os
+import sys
+
 import pytest
 from PyQt6.QtWidgets import QApplication
 
@@ -16,21 +17,21 @@ pytestmark = pytest.mark.skipif(
 
 def test_network_analyzer_migration():
     QApplication(sys.argv)
-    
+
     print("Initializing AudioEngine...")
     engine = AudioEngine()
-    
+
     print("Initializing NetworkAnalyzer...")
     na = NetworkAnalyzer(engine)
-    
+
     print("Testing Latency Calibration (Mock)...")
-    # We can't easily test full audio loopback without hardware, 
+    # We can't easily test full audio loopback without hardware,
     # but we can verify it runs without crashing and uses the callback.
-    
+
     # Mocking the run_play_rec to avoid actual long wait if no audio device or silence
     # But we want to test the actual callback logic if possible.
     # If we run it, it should finish in ~0.5s + overhead.
-    
+
     try:
         na.calibrate_latency()
         print("Latency Calibration finished.")
@@ -40,7 +41,7 @@ def test_network_analyzer_migration():
     # Check status
     status = engine.get_status()
     print(f"Engine Status: {status}")
-    
+
     if status['active_clients'] == 0:
         print("SUCCESS: Client unregistered after calibration.")
     else:

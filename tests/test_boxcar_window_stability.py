@@ -1,5 +1,6 @@
-import sys
 import os
+import sys
+
 import numpy as np
 
 # Add src to path

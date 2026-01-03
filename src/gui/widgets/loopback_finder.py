@@ -1,11 +1,23 @@
 import numpy as np
 import sounddevice as sd
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QTableWidget, QTableWidgetItem, QHeaderView, QProgressBar, QMessageBox)
 from PyQt6.QtCore import QThread, pyqtSignal
-from src.measurement_modules.base import MeasurementModule
+from PyQt6.QtWidgets import (
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
 from src.core.audio_engine import AudioEngine
 from src.core.localization import tr
+from src.measurement_modules.base import MeasurementModule
+
 
 class LoopbackWorker(QThread):
     progress = pyqtSignal(int, str)
@@ -23,8 +35,8 @@ class LoopbackWorker(QThread):
     def run(self):
         try:
             self.module.perform_scan(
-                self.device_id, 
-                self.sample_rate, 
+                self.device_id,
+                self.sample_rate,
                 progress_callback=self.report_progress,
                 check_stop=self.check_stop
             )
@@ -73,18 +85,18 @@ class LoopbackFinder(MeasurementModule):
         for out_ch in range(max_out):
             if check_stop and check_stop():
                 break
-            
+
             if progress_callback:
                 progress_callback(int((out_ch / max_out) * 100), tr("Testing Output Channel {}").format(out_ch + 1))
-            
+
             # Prepare output buffer for all channels
             output_signal = np.zeros((len(test_signal), max_out), dtype=np.float32)
             output_signal[:, out_ch] = test_signal
-            
+
             # Play and Record
             # We record all input channels
             try:
-                recorded_signal = sd.playrec(output_signal, samplerate=sample_rate, 
+                recorded_signal = sd.playrec(output_signal, samplerate=sample_rate,
                                            channels=max_in, device=device_id, blocking=True)
             except Exception as e:
                 raise Exception(f"Error during playback/recording: {str(e)}")
@@ -95,13 +107,13 @@ class LoopbackFinder(MeasurementModule):
                 # Using FFT as in legacy code
                 input_fft = np.fft.rfft(recorded_signal[:, in_ch])
                 freqs = np.fft.rfftfreq(len(recorded_signal), 1/sample_rate)
-                
+
                 target_bin = np.argmin(np.abs(freqs - test_freq))
                 magnitude = np.abs(input_fft[target_bin]) / len(recorded_signal) * 2
-                
+
                 if magnitude > threshold:
                     found_paths.append((out_ch + 1, in_ch + 1, magnitude))
-        
+
         # If called from worker, we might want to emit result here or return it.
         # The worker expects result signal.
         if self.worker:
@@ -115,14 +127,14 @@ class LoopbackFinder(MeasurementModule):
         # For now just use default device from engine if available or query
         # But run(args) implies we might not have audio_engine initialized fully or we use it.
         # Let's assume audio_engine is available.
-        
+
         # TODO: Parse device ID from args if provided
         device_id = self.audio_engine.output_device # Use current
         sample_rate = self.audio_engine.sample_rate
-        
-        results = self.perform_scan(device_id, sample_rate, 
+
+        results = self.perform_scan(device_id, sample_rate,
                                     progress_callback=lambda p, m: print(f"{p}%: {m}"))
-        
+
         print("Found Paths:")
         for p in results:
             print(f"Out: {p[0]}, In: {p[1]}, Mag: {20*np.log10(p[2]):.1f} dB")
@@ -148,12 +160,12 @@ class LoopbackFinderWidget(QWidget):
         self.start_btn = QPushButton(tr("Start Scan"))
         self.start_btn.clicked.connect(self.start_scan)
         controls_layout.addWidget(self.start_btn)
-        
+
         self.stop_btn = QPushButton(tr("Stop"))
         self.stop_btn.clicked.connect(self.stop_scan)
         self.stop_btn.setEnabled(False)
         controls_layout.addWidget(self.stop_btn)
-        
+
         layout.addLayout(controls_layout)
 
         # Progress
@@ -177,26 +189,26 @@ class LoopbackFinderWidget(QWidget):
             self.module.audio_engine.stop_stream()
 
         # Get current device from engine
-        # Note: AudioEngine stores device IDs. 
+        # Note: AudioEngine stores device IDs.
         # We need to make sure we use the configured device.
         # Assuming input and output are on the same device for loopback test usually,
         # or we test the output device loopbacked to input device.
         # The legacy tool took one device ID.
         # Let's use the Output device ID from settings, and assume we record from Input device ID.
         # Wait, sd.playrec takes 'device'. If it's a tuple (in, out), that works.
-        
+
         input_device = self.module.audio_engine.input_device
         output_device = self.module.audio_engine.output_device
-        
+
         # If they are different, we pass (input, output) tuple to playrec
         device_arg = (input_device, output_device)
-        
+
         self.module.worker = LoopbackWorker(self.module, device_arg, self.module.audio_engine.sample_rate)
         self.module.worker.progress.connect(self.update_progress)
         self.module.worker.result.connect(self.show_results)
         self.module.worker.error.connect(self.show_error)
         self.module.worker.finished_testing.connect(self.scan_finished)
-        
+
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.results_table.setRowCount(0)
@@ -218,7 +230,7 @@ class LoopbackFinderWidget(QWidget):
             self.results_table.setItem(i, 0, QTableWidgetItem(str(out_ch)))
             self.results_table.setItem(i, 1, QTableWidgetItem(str(in_ch)))
             self.results_table.setItem(i, 2, QTableWidgetItem(f"{20*np.log10(mag):.1f} dB"))
-        
+
         if not paths:
             self.status_label.setText(tr("No loopback paths found."))
         else:

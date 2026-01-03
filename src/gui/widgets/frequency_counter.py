@@ -1,24 +1,37 @@
-import numpy as np
 import time
-import pyqtgraph as pg
 from collections import deque
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, 
-                             QComboBox, QFormLayout, QFrame, QPushButton, QTabWidget,
-                             QDialog, QMessageBox)
-from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtGui import QFont
 
-from src.measurement_modules.base import MeasurementModule
-from src.core.audio_engine import AudioEngine
+import numpy as np
+import pyqtgraph as pg
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QDoubleSpinBox,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
 from src.core.analysis import AudioCalc
+from src.core.audio_engine import AudioEngine
 from src.core.localization import tr
+from src.measurement_modules.base import MeasurementModule
+
 
 class FrequencyCounter(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
         self.audio_engine = audio_engine
         self.is_running = False
         self.callback_id = None
-        
+
         # Settings
         self.gate_threshold_db = -60.0
         self.update_interval_ms = 100 # Fast: 100ms, Slow: 500ms
@@ -30,7 +43,7 @@ class FrequencyCounter(MeasurementModule):
         # measurements from history so plots/stats/histograms don't get polluted.
         self.warmup_discard_points = 3
         self._warmup_remaining = 0
-        
+
         # State
         self.input_buffer = np.zeros(self.buffer_size)
         self.history_len = 2000 # Increased for Allan Plot
@@ -43,7 +56,7 @@ class FrequencyCounter(MeasurementModule):
         self.allan_deviation = 0.0
         self.allan_taus = []
         self.allan_devs = []
-        
+
     @property
     def name(self) -> str:
         return "Frequency Counter"
@@ -70,18 +83,18 @@ class FrequencyCounter(MeasurementModule):
     def start_analysis(self):
         if self.is_running:
             return
-            
+
         self.is_running = True
         self.input_buffer = np.zeros(self.buffer_size)
         self.freq_history.clear()
         self.time_history.clear()
         self.start_time = time.time()
         self._warmup_remaining = int(max(0, getattr(self, 'warmup_discard_points', 0)))
-        
+
         def callback(indata, outdata, frames, time, status):
             if status:
                 print(status)
-            
+
             # Capture Selected Channel
             if indata.shape[1] > self.selected_channel:
                 new_data = indata[:, self.selected_channel]
@@ -90,14 +103,14 @@ class FrequencyCounter(MeasurementModule):
                 new_data = indata[:, 0]
             else:
                 new_data = np.zeros(frames)
-                
+
             # Ring buffer
             if len(new_data) >= self.buffer_size:
                 self.input_buffer[:] = new_data[-self.buffer_size:]
             else:
                 self.input_buffer = np.roll(self.input_buffer, -len(new_data))
                 self.input_buffer[-len(new_data):] = new_data
-                
+
             outdata.fill(0)
 
         self.callback_id = self.audio_engine.register_callback(callback)
@@ -114,62 +127,62 @@ class FrequencyCounter(MeasurementModule):
         was_running = self.is_running
         if was_running:
             self.stop_analysis()
-            
+
         self.update_interval_ms = interval_ms
-        
+
         # Adjust buffer size to capture enough samples for the interval
-        # Minimum buffer size for good FFT resolution is also a factor, 
+        # Minimum buffer size for good FFT resolution is also a factor,
         # but for sine fit we just need enough cycles.
         # Let's aim for exactly the interval length, or slightly more.
         # We need to know sample rate. If not running, guess 48000 or use current engine rate.
         sr = self.audio_engine.sample_rate
         if sr < 1000: sr = 48000 # Fallback
-        
+
         # Calculate needed samples
         needed_samples = int(sr * interval_ms / 1000)
-        
+
         # Ensure a minimum size (e.g. 8192 for fast updates)
         self.buffer_size = max(8192, needed_samples)
-        
+
         if was_running:
             self.start_analysis()
 
     def process(self):
         if not self.is_running:
             return None
-            
+
         # Ensure buffer is full enough for the requested interval?
         # With ring buffer, it's always "full" with something (zeros initially).
-        
+
         data = self.input_buffer.copy()
         sr = getattr(self.audio_engine, "sample_rate", 48000)
-        
+
         # 1. Check Amplitude (Gate)
         rms = np.sqrt(np.mean(data**2))
         db = 20 * np.log10(rms + 1e-12)
         self.current_amp_db = db
-        
+
         if db < self.gate_threshold_db:
             return None # Signal too low
-            
+
         # 2. Coarse Estimate (FFT)
         window = np.hamming(len(data))
         fft_res = np.fft.rfft(data * window)
         freqs = np.fft.rfftfreq(len(data), 1/sr)
-        
+
         idx = np.argmax(np.abs(fft_res))
         coarse_freq = freqs[idx]
-        
+
         # 3. Fine Estimate (Parabolic)
         # (Already implemented in AudioCalc.analyze_harmonics, but let's do a quick one here or skip to optimization)
         # Optimization is robust enough if coarse is close.
-        
+
         # 4. Precision Estimate (Sine Fit)
         # Only run if we have a reasonable signal
         if coarse_freq > 10: # Avoid DC/VLF noise
             try:
                 precise_freq = AudioCalc.optimize_frequency(data, sr, coarse_freq)
-                
+
                 # Apply Calibration
                 cal_factor = 1.0
                 calibration = getattr(self.audio_engine, "calibration", None)
@@ -181,7 +194,7 @@ class FrequencyCounter(MeasurementModule):
                     cal_factor = 1.0
 
                 precise_freq = float(precise_freq) * cal_factor
-                
+
                 self.current_freq = precise_freq
                 return precise_freq
             except:
@@ -227,10 +240,10 @@ class FrequencyCounter(MeasurementModule):
             return
 
         data = np.array(self.freq_history)
-        
+
         # Standard Deviation (Jitter)
         self.std_dev = np.std(data, ddof=1)
-        
+
         # Allan Deviation (Tau = 1 sample)
         diffs = np.diff(data)
         self.allan_deviation = np.sqrt(0.5 * np.mean(diffs**2))
@@ -245,13 +258,13 @@ class FrequencyCounter(MeasurementModule):
 
         data = np.array(self.freq_history)
         n = len(data)
-        
+
         taus = []
         devs = []
-        
+
         # Calculate for Tau = 1, 2, 4, 8, ... up to N/2
         # m is the averaging factor (Tau = m * dt)
-        
+
         max_m = n // 2
         m = 1
         while m <= max_m:
@@ -260,29 +273,29 @@ class FrequencyCounter(MeasurementModule):
             # But standard Allan Variance definition uses adjacent averages
             # Formula: sigma_y^2(tau) = 0.5 * < (y_{i+1} - y_i)^2 >
             # where y_i are averages over tau
-            
+
             # Efficient implementation:
             # Reshape data to (N//m, m) and take mean along axis 1
             # This gives us the sequence of averages y_k
-            
+
             num_samples = (n // m) * m
             if num_samples < 2 * m:
                 break
-                
+
             y = data[:num_samples].reshape(-1, m).mean(axis=1)
-            
+
             if len(y) < 2:
                 break
-                
+
             diffs = np.diff(y)
             sigma = np.sqrt(0.5 * np.mean(diffs**2))
-            
+
             tau_seconds = m * (self.update_interval_ms / 1000.0)
             taus.append(tau_seconds)
             devs.append(sigma)
-            
+
             m *= 2
-            
+
         self.allan_taus = taus
         self.allan_devs = devs
         self.allan_taus = taus
@@ -296,19 +309,19 @@ class FrequencyCalibrationDialog(QDialog):
         self.setWindowTitle(tr("Frequency Calibration"))
         self.resize(400, 250)
         self.init_ui()
-        
+
         # Measurement state
         self.measurements = []
         self.is_measuring = False
         self.timer = QTimer()
         self.timer.timeout.connect(self.on_measure_tick)
         self.target_samples = 10 # Average over 10 samples
-        
+
     def init_ui(self):
         layout = QVBoxLayout()
-        
+
         layout.addWidget(QLabel(tr("<b>Step 1:</b> Connect a known reference signal.")))
-        
+
         # Reference Input
         form = QFormLayout()
         self.ref_spin = QDoubleSpinBox()
@@ -317,72 +330,72 @@ class FrequencyCalibrationDialog(QDialog):
         self.ref_spin.setValue(1000.0)
         form.addRow(tr("Reference Frequency (Hz):"), self.ref_spin)
         layout.addLayout(form)
-        
+
         layout.addWidget(QLabel(tr("<b>Step 2:</b> Measure current frequency.")))
         self.status_label = QLabel(tr("Status: Idle"))
         layout.addWidget(self.status_label)
-        
+
         self.measure_btn = QPushButton(tr("Measure & Calibrate"))
         self.measure_btn.clicked.connect(self.start_measurement)
         layout.addWidget(self.measure_btn)
-        
+
         # Current Factor
         curr_factor = self.module.audio_engine.calibration.frequency_calibration
         layout.addWidget(QLabel(tr("Current Calibration Factor: {0:.8f}").format(curr_factor)))
-        
+
         self.setLayout(layout)
-        
+
     def start_measurement(self):
         self.measurements = []
         self.is_measuring = True
         self.measure_btn.setEnabled(False)
         self.status_label.setText(tr("Status: Measuring... (0/10)"))
         self.timer.start(int(self.module.update_interval_ms))
-        
+
     def on_measure_tick(self):
         if not self.is_measuring:
             return
-            
+
         # Get raw frequency (without calibration applied yet, or reverse it?)
         # The module.process() returns calibrated frequency if we changed the code.
         # But we want the RAW frequency to calculate the NEW factor.
         # So we should get the current_freq and divide by the OLD factor.
-        
+
         # Wait, if we use process(), it updates current_freq.
         # Let's just use the latest value from module.
-        
+
         calibrated_freq = self.module.current_freq
         current_factor = self.module.audio_engine.calibration.frequency_calibration
-        
+
         if calibrated_freq <= 0:
             return # Wait for valid signal
-            
+
         raw_freq = calibrated_freq / current_factor
         self.measurements.append(raw_freq)
-        
+
         self.status_label.setText(tr("Status: Measuring... ({0}/{1})").format(len(self.measurements), self.target_samples))
-        
+
         if len(self.measurements) >= self.target_samples:
             self.finish_calibration()
-            
+
     def finish_calibration(self):
         self.is_measuring = False
         self.timer.stop()
         self.measure_btn.setEnabled(True)
-        
+
         avg_raw = np.mean(self.measurements)
         target = self.ref_spin.value()
-        
+
         if avg_raw < 1e-6:
             QMessageBox.warning(self, tr("Error"), tr("Measured frequency is too low."))
             return
-            
+
         new_factor = target / avg_raw
-        
-        ret = QMessageBox.question(self, tr("Confirm Calibration"), 
+
+        ret = QMessageBox.question(self, tr("Confirm Calibration"),
                                    tr("Average Raw Freq: {0:.6f} Hz\nTarget Freq: {1:.6f} Hz\nNew Factor: {2:.8f}\n\nApply this calibration?").format(avg_raw, target, new_factor),
                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-                                   
+
         if ret == QMessageBox.StandardButton.Yes:
             self.module.audio_engine.calibration.set_frequency_calibration(new_factor)
             QMessageBox.information(self, tr("Success"), tr("Calibration applied."))
@@ -398,24 +411,24 @@ class FrequencyCounterWidget(QWidget):
         # Display mode: 'frequency' or 'period'
         self.display_mode = 'frequency'
         self.init_ui()
-        
+
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_display)
         self.timer.setInterval(self.module.update_interval_ms)
 
         self._last_hist_update_t = 0.0
-        
+
         # Start time tracking
         self.module.start_time = time.time()
 
     def init_ui(self):
         layout = QVBoxLayout()
-        
+
         # --- Display Area ---
         display_frame = QFrame()
         display_frame.setStyleSheet("background-color: #000; border: 2px solid #444; border-radius: 10px;")
         display_layout = QVBoxLayout(display_frame)
-        
+
         self.freq_label = QLabel(tr("0.00000 Hz"))
         self.freq_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         # Use a monospaced font if available, or just a clean sans-serif
@@ -424,31 +437,31 @@ class FrequencyCounterWidget(QWidget):
         self.freq_label.setFont(font)
         self.freq_label.setStyleSheet("color: #00ff00;") # Green LED style
         display_layout.addWidget(self.freq_label)
-        
+
         self.amp_label = QLabel(tr("-- dBFS"))
         self.amp_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.amp_label.setFont(QFont("Arial", 16))
         self.amp_label.setStyleSheet("color: #888;")
         display_layout.addWidget(self.amp_label)
-        
+
         layout.addWidget(display_frame)
 
         # --- Stats Display ---
         stats_layout = QHBoxLayout()
-        
+
         self.std_label = QLabel(tr("Std Dev: -- Hz"))
         self.std_label.setStyleSheet("color: #aaa; font-size: 14px;")
         stats_layout.addWidget(self.std_label)
-        
+
         self.allan_label = QLabel(tr("Allan Dev: -- Hz"))
         self.allan_label.setStyleSheet("color: #aaa; font-size: 14px;")
         stats_layout.addWidget(self.allan_label)
-        
+
         display_layout.addLayout(stats_layout)
-        
+
         # --- Controls ---
         controls_layout = QHBoxLayout()
-        
+
         # Gate
         gate_layout = QHBoxLayout()
         gate_layout.addWidget(QLabel(tr("Gate (dB):")))
@@ -467,7 +480,7 @@ class FrequencyCounterWidget(QWidget):
         self.ch_combo.currentIndexChanged.connect(lambda idx: setattr(self.module, 'selected_channel', idx))
         ch_layout.addWidget(self.ch_combo)
         controls_layout.addLayout(ch_layout)
-        
+
         # Speed
         speed_layout = QHBoxLayout()
         speed_layout.addWidget(QLabel(tr("Update Rate:")))
@@ -491,25 +504,25 @@ class FrequencyCounterWidget(QWidget):
         self.display_combo.currentIndexChanged.connect(self.on_display_mode_changed)
         display_layout.addWidget(self.display_combo)
         controls_layout.addLayout(display_layout)
-        
+
         # Start/Stop
         self.run_btn = QPushButton(tr("Start"))
         self.run_btn.setCheckable(True)
         self.run_btn.clicked.connect(self.on_run_toggle)
         controls_layout.addWidget(self.run_btn)
-        
+
         # Calibration
         self.cal_btn = QPushButton(tr("Calibrate"))
         self.cal_btn.clicked.connect(self.open_calibration)
         controls_layout.addWidget(self.cal_btn)
-        
+
         controls_layout.addStretch()
         layout.addLayout(controls_layout)
-        
+
         # --- Tabs ---
         self.tab_widget = QTabWidget()
         layout.addWidget(self.tab_widget)
-        
+
         # Tab 1: Frequency Drift
         self.plot_widget = pg.PlotWidget(title=tr("Frequency Drift"))
         self.plot_widget.setLabel('left', tr('Frequency'), units='Hz')
@@ -517,7 +530,7 @@ class FrequencyCounterWidget(QWidget):
         self.plot_widget.showGrid(x=True, y=True)
         self.curve = self.plot_widget.plot(pen='y')
         self.tab_widget.addTab(self.plot_widget, tr("Frequency Drift"))
-        
+
         # Tab 2: Allan Deviation
         self.allan_plot = pg.PlotWidget(title=tr("Allan Deviation"))
         self.allan_plot.setLabel('left', tr('Sigma_y(tau)'))
@@ -600,7 +613,7 @@ class FrequencyCounterWidget(QWidget):
         self.jitter_units_combo.currentIndexChanged.connect(self._on_jitter_settings_changed)
         self.jitter_ref_spin.valueChanged.connect(self._on_jitter_settings_changed)
         self._on_jitter_settings_changed()
-        
+
         self.setLayout(layout)
 
     def _format_frequency_text(self, freq_hz: float) -> str:
@@ -874,7 +887,7 @@ class FrequencyCounterWidget(QWidget):
         if not self.module.is_running:
             QMessageBox.warning(self, tr("Warning"), tr("Please start the counter first."))
             return
-            
+
         dlg = FrequencyCalibrationDialog(self.module, self)
         dlg.exec()
 
@@ -882,7 +895,7 @@ class FrequencyCounterWidget(QWidget):
         interval_ms = self.speed_combo.currentData()
         if interval_ms is None:
             return
-            
+
         self.module.set_update_interval(interval_ms)
         self.timer.setInterval(interval_ms)
 
@@ -917,10 +930,10 @@ class FrequencyCounterWidget(QWidget):
 
     def update_display(self):
         freq = self.module.process()
-        
+
         # Update Amp
         self.amp_label.setText(tr("{0:.1f} dBFS").format(self.module.current_amp_db))
-        
+
         if freq is not None:
             # Update Label
             if self.display_mode == 'period':
@@ -931,7 +944,7 @@ class FrequencyCounterWidget(QWidget):
             # Update History (discard initial warm-up points)
             if not self.module.record_frequency_measurement(freq, time.time()):
                 return
-            
+
             # Update Stats
             self.module.calculate_stats()
             if self.display_mode == 'period':
@@ -945,10 +958,10 @@ class FrequencyCounterWidget(QWidget):
             else:
                 self.std_label.setText(tr("Std Dev: {0:.5f} Hz").format(self.module.std_dev))
                 self.allan_label.setText(tr("Allan Dev: {0:.5f} Hz").format(self.module.allan_deviation))
-            
+
             # Update Plots based on visibility
             current_tab = self.tab_widget.currentIndex()
-            
+
             if current_tab == 0: # Frequency Drift
                 if self.display_mode == 'period':
                     freq_data = np.array(self.module.freq_history, dtype=float)
@@ -957,13 +970,13 @@ class FrequencyCounterWidget(QWidget):
                     self.curve.setData(list(self.module.time_history), period_data)
                 else:
                     self.curve.setData(list(self.module.time_history), list(self.module.freq_history))
-            
+
             elif current_tab == 1: # Allan Deviation
                 # Update Allan Plot
                 # For fast updates, limit to approx 2Hz (every 500ms) to save CPU
                 # For slow updates (>= 1000ms), update every time
                 should_update = self.module.update_interval_ms >= 1000 or (int(time.time() * 10) % 5 == 0)
-                
+
                 if len(self.module.freq_history) > 10 and should_update:
                     if self.display_mode == 'period':
                         dt_seconds = self.module.update_interval_ms / 1000.0

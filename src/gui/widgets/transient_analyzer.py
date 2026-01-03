@@ -1,27 +1,40 @@
+from typing import Optional
+
 import numpy as np
 import pyqtgraph as pg
 import pywt
-from typing import Optional
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
-                             QComboBox, QGroupBox, QSpinBox, QSplitter, QProgressBar, QMessageBox,
-                             QCheckBox, QDoubleSpinBox)
-from PyQt6.QtCore import QTimer, Qt, QRectF
-from PyQt6.QtGui import QTransform
-from src.measurement_modules.base import MeasurementModule
+from PyQt6.QtCore import QRectF, Qt, QTimer
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
+
 from src.core.audio_engine import AudioEngine
 from src.core.localization import tr
 from src.core.utils import format_si
+from src.measurement_modules.base import MeasurementModule
+
 
 class TransientAnalyzer(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
         self.audio_engine = audio_engine
-        
+
         # State
         self.is_recording = False
         self.recorded_data = [] # List of chunks
         self.final_data = None # Numpy array (1D) after stop
         self.fs = 48000
-        
+
         # Settings
         self.input_channel = 'Left'
         self.wavelet_name = 'cmor1.5-1.0'
@@ -43,7 +56,7 @@ class TransientAnalyzer(MeasurementModule):
         self._recorded_samples = 0
         self._triggered = False
         self._prev_trigger_sample = None
-        
+
         self.callback_id = None
         self.widget = None
 
@@ -87,11 +100,11 @@ class TransientAnalyzer(MeasurementModule):
         self._target_samples = None
         self._triggered = False
         self._prev_trigger_sample = None
-        
+
         # Concatenate data
         if self.recorded_data:
             full_raw = np.concatenate(self.recorded_data, axis=0)
-            
+
             # Select channel
             if self.input_channel == 'Left':
                 self.final_data = full_raw[:, 0]
@@ -197,29 +210,29 @@ class TransientAnalyzer(MeasurementModule):
         max_freq = self.max_anal_freq
         if max_freq > self.fs / 2:
             max_freq = self.fs / 2
-        
+
         # Check integrity
         if min_freq <= 0: min_freq = 1
         if min_freq >= max_freq: min_freq = max_freq - 10
-        
+
         # Linear space for frequencies to match linear Y-axis of plot
         freqs = np.linspace(min_freq, max_freq, num_scales)
-        
+
         scales = []
         for f in freqs:
             s = pywt.frequency2scale(self.wavelet_name, f / self.fs)
             scales.append(s)
-        
+
         scales = np.array(scales)
-        
+
         # Run CWT
         cwtmatr, frequencies = pywt.cwt(self.final_data, scales, self.wavelet_name, sampling_period=1.0/self.fs)
-        
+
         # Calculate Magnitude
         mag = np.abs(cwtmatr)
-        
+
         times = np.arange(len(self.final_data)) / self.fs
-        
+
         return times, frequencies, mag
 
 
@@ -234,11 +247,11 @@ class TransientAnalyzerWidget(QWidget):
 
     def init_ui(self):
         layout = QVBoxLayout()
-        
+
         # --- Settings & Controls ---
         ctrl_group = QGroupBox(tr("Controls"))
         ctrl_layout = QHBoxLayout()
-        
+
         # Input Channel
         ctrl_layout.addWidget(QLabel(tr("Channel:")))
         self.chan_combo = QComboBox()
@@ -250,19 +263,19 @@ class TransientAnalyzerWidget(QWidget):
             self.chan_combo.setCurrentIndex(chan_idx)
         self.chan_combo.currentIndexChanged.connect(self.on_channel_changed)
         ctrl_layout.addWidget(self.chan_combo)
-        
+
         # Wavelet
         ctrl_layout.addWidget(QLabel(tr("Wavelet:")))
         self.wavelet_combo = QComboBox()
         # Common continuous wavelets
-        self.wavelet_combo.addItems(['cmor1.5-1.0', 'mexh', 'morl', 'cgau1', 'gaus1']) 
-        self.wavelet_combo.setEditable(True) 
+        self.wavelet_combo.addItems(['cmor1.5-1.0', 'mexh', 'morl', 'cgau1', 'gaus1'])
+        self.wavelet_combo.setEditable(True)
         self.wavelet_combo.currentTextChanged.connect(self.on_wavelet_changed)
         ctrl_layout.addWidget(self.wavelet_combo)
 
         # Param Layout (Freq Range)
         param_layout = QHBoxLayout()
-        
+
         param_layout.addWidget(QLabel(tr("Min Freq:")))
         self.min_freq_spin = QSpinBox()
         self.min_freq_spin.setRange(1, 96000)
@@ -289,21 +302,21 @@ class TransientAnalyzerWidget(QWidget):
         self.rec_time_spin.setSuffix(" s")
         self.rec_time_spin.valueChanged.connect(self.on_record_time_changed)
         param_layout.addWidget(self.rec_time_spin)
-        
+
         ctrl_layout.addLayout(param_layout)
-        
+
         # Buttons
         self.rec_btn = QPushButton(tr("Record"))
         self.rec_btn.setCheckable(True)
         self.rec_btn.clicked.connect(self.on_record_toggle)
         ctrl_layout.addWidget(self.rec_btn)
-        
+
         self.analyze_btn = QPushButton(tr("Analyze"))
         self.analyze_btn.clicked.connect(self.on_analyze)
         self.analyze_btn.setEnabled(False)
         self.analyze_btn.setToolTip(tr("Warning: Analysis can be slow for long recordings.\nComplexity ~ O(N * Scales)."))
         ctrl_layout.addWidget(self.analyze_btn)
-        
+
         ctrl_group.setLayout(ctrl_layout)
         layout.addWidget(ctrl_group)
 
@@ -347,43 +360,43 @@ class TransientAnalyzerWidget(QWidget):
 
         trig_group.setLayout(trig_layout)
         layout.addWidget(trig_group)
-        
+
         # Complexity Note
         note_label = QLabel(tr("Note: CWT analysis is computationally intensive. Long recordings may take time."))
         note_label.setStyleSheet("color: gray; font-style: italic;")
         layout.addWidget(note_label)
-        
+
         # --- Visualization ---
         splitter = QSplitter(Qt.Orientation.Vertical)
-        
+
         # 1. Waveform Plot
         self.wave_plot = pg.PlotWidget(title=tr("Transient Waveform"))
         self.wave_plot.setLabel('left', tr("Amplitude"))
         self.wave_plot.setLabel('bottom', tr("Time"), units='s')
         self.wave_plot.showGrid(x=True, y=True)
         splitter.addWidget(self.wave_plot)
-        
+
         # 2. Scalogram (Image)
         self.scalo_win = pg.GraphicsLayoutWidget()
         self.scalo_plot = self.scalo_win.addPlot(title=tr("Wavelet Scalogram"))
         self.scalo_plot.setLabel('left', tr("Frequency"), units='Hz')
         self.scalo_plot.setLabel('bottom', tr("Time"), units='s')
-        
+
         self.img_item = pg.ImageItem()
         self.scalo_plot.addItem(self.img_item)
-        
+
         # Histogram
         self.hist = pg.HistogramLUTItem()
         self.hist.setImageItem(self.img_item)
         self.hist.gradient.loadPreset('viridis')
         self.scalo_win.addItem(self.hist)
-        
+
         splitter.addWidget(self.scalo_win)
         layout.addWidget(splitter)
-        
+
         # Link X Axes
         self.scalo_plot.setXLink(self.wave_plot)
-        
+
         self.setLayout(layout)
 
     def _set_log_freq_axis(self, min_hz: float, max_hz: float):
@@ -482,29 +495,29 @@ class TransientAnalyzerWidget(QWidget):
 
     def update_waveform_plot(self):
         if self.module.final_data is None: return
-        
+
         t = np.arange(len(self.module.final_data)) / self.module.fs
         self.wave_plot.clear()
         self.wave_plot.plot(t, self.module.final_data, pen='y')
 
     def on_analyze(self):
         if self.module.final_data is None: return
-        
+
         self.analyze_btn.setEnabled(False)
         self.analyze_btn.setText(tr("Analyzing..."))
-        QTimer.singleShot(10, self._perform_analysis) 
+        QTimer.singleShot(10, self._perform_analysis)
 
     def _perform_analysis(self):
         try:
             times, freqs, mag = self.module.analyze()
-            
+
             if times is None:
                 return
 
             img_data = mag.T
-            
+
             self.img_item.setImage(img_data, autoLevels=True)
-            
+
             min_f = np.min(freqs)
             max_f = np.max(freqs)
             duration = times[-1]
@@ -516,10 +529,10 @@ class TransientAnalyzerWidget(QWidget):
             y1 = float(np.log10(max_f))
             self.img_item.setRect(QRectF(0, y0, duration, y1 - y0))
             self._set_log_freq_axis(min_f, max_f)
-            
+
         except Exception as e:
             QMessageBox.critical(self, tr("Error"), str(e))
-        
+
         finally:
             self.analyze_btn.setEnabled(True)
             self.analyze_btn.setText(tr("Analyze"))

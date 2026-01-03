@@ -1,15 +1,28 @@
 import argparse
+import threading
 import time
+
 import numpy as np
 import pyqtgraph as pg
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QProgressBar,
+    QPushButton,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 from scipy import signal
-import threading
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, 
-                             QProgressBar, QGroupBox, QGridLayout, QCheckBox, QTabWidget)
-from PyQt6.QtCore import QTimer, Qt
-from src.measurement_modules.base import MeasurementModule
+
 from src.core.audio_engine import AudioEngine
 from src.core.localization import tr
+from src.measurement_modules.base import MeasurementModule
+
 
 class LufsMeter(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -20,7 +33,7 @@ class LufsMeter(MeasurementModule):
         # Use a deep floor so very low-noise devices don't collapse to -INF.
         # This affects only dBFS-related meters (RMS/Peak and C-weighted variants).
         self._db_floor = -200.0
-        
+
         # Filter states (per-channel for strict BS.1770 energy summation)
         self.zi_shelf_l = None
         self.zi_shelf_r = None
@@ -32,7 +45,7 @@ class LufsMeter(MeasurementModule):
         self.c_a = None
         self.c_zi_l = None
         self.c_zi_r = None
-        
+
         # Buffers / windows
         self.momentary_window = 0.4 # 400ms
         self.short_term_window = 3.0 # 3s
@@ -48,7 +61,7 @@ class LufsMeter(MeasurementModule):
         self._p_filled_s = 0
         self._p_sum_m = 0.0
         self._p_sum_s = 0.0
-        
+
         # Values
         self.momentary_lufs = -100.0
         self.short_term_lufs = -100.0
@@ -63,7 +76,7 @@ class LufsMeter(MeasurementModule):
         self._i_abs_gate_ms = float(10 ** ((-70.0 + 0.691) / 10.0))
         self._i_dirty = False
         self._i_lock = threading.Lock()
-        
+
         # Stereo RMS & Peak
         self.rms_l = self._db_floor
         self.rms_r = self._db_floor
@@ -83,7 +96,7 @@ class LufsMeter(MeasurementModule):
         self.peak_hold_c_r = self._db_floor
         self.crest_c_l = 0.0
         self.crest_c_r = 0.0
-        
+
         self.callback_id = None
 
     @property
@@ -107,7 +120,7 @@ class LufsMeter(MeasurementModule):
         self.a0_shelf = np.array([1.0, -1.69065929318241, 0.73248077421585], dtype=np.float32)
         self.b1_hp = np.array([1.0, -2.0, 1.0], dtype=np.float32)
         self.a1_hp = np.array([1.0, -1.99004745483398, 0.99007225036621], dtype=np.float32)
-        
+
         # Initial filter states (per-channel)
         zi_shelf = signal.lfilter_zi(self.b0_shelf, self.a0_shelf).astype(np.float32, copy=False)
         zi_hp = signal.lfilter_zi(self.b1_hp, self.a1_hp).astype(np.float32, copy=False)
@@ -208,7 +221,7 @@ class LufsMeter(MeasurementModule):
 
         # Reset session accumulators
         self.reset_integration()
-        
+
         # Initialize buffers (ring of per-sample power)
         self.buffer_size_m = int(round(self.momentary_window * float(self.sample_rate)))
         self.buffer_size_s = int(round(self.short_term_window * float(self.sample_rate)))
@@ -251,15 +264,15 @@ class LufsMeter(MeasurementModule):
             pos = end % n
             filled = min(n, filled + m)
             return pos, filled, sum_p
-        
+
         def callback(indata, outdata, frames, time, status):
             if status:
                 print(status)
-            
+
             # --- Stereo RMS & Peak Calculation ---
             # indata is (frames, channels)
             num_channels = indata.shape[1]
-            
+
             if num_channels >= 2:
                 l_channel = indata[:, 0]
                 r_channel = indata[:, 1]
@@ -270,7 +283,7 @@ class LufsMeter(MeasurementModule):
                 # Should not happen if stream is active
                 l_channel = np.zeros(frames)
                 r_channel = np.zeros(frames)
-            
+
             # RMS (Instantaneous for this block)
             # Use dot for low-allocation sumsq
             if frames > 0:
@@ -309,23 +322,23 @@ class LufsMeter(MeasurementModule):
 
                 self.crest_c_l = self.peak_c_l - self.rms_c_l
                 self.crest_c_r = self.peak_c_r - self.rms_c_r
-            
+
             # Peak (Instantaneous)
             peak_l_linear = np.max(np.abs(l_channel))
             peak_r_linear = np.max(np.abs(r_channel))
             self.peak_l = self._to_db(peak_l_linear)
             self.peak_r = self._to_db(peak_r_linear)
-            
+
             # Peak Hold Update
             self.peak_hold_l = max(self.peak_hold_l, self.peak_l)
             self.peak_hold_r = max(self.peak_hold_r, self.peak_r)
-            
+
             # Crest Factor (Peak dB - RMS dB)
             # Ensure we don't subtract -100 from -100 resulting in 0 if both are silence, which is fine.
             # But if RMS is -100 and Peak is -90, CF is 10.
             self.crest_l = self.peak_l - self.rms_l
             self.crest_r = self.peak_r - self.rms_r
-            
+
             # --- LUFS Calculation (Strict stereo: per-channel K-weighting, sum energies) ---
             # For true mono input, avoid double-counting energy (would read +3 dB too hot).
             if num_channels == 1:
@@ -374,7 +387,7 @@ class LufsMeter(MeasurementModule):
                             self._i_dirty = True
             else:
                 self._i_since_last_block += int(frames)
-            
+
             # No output (meter is analysis-only). AudioEngine provides a fresh zeroed buffer.
 
         self.callback_id = self.audio_engine.register_callback(callback)
@@ -410,7 +423,7 @@ class LufsMeterWidget(QWidget):
 
         # Optional SPL display mode (requires SPL calibration)
         self._show_spl = False
-        
+
         # History for plotting
         self.history_size = 400 # 20s at 50ms interval
         self.m_history = np.full(self.history_size, -100.0)
@@ -418,16 +431,16 @@ class LufsMeterWidget(QWidget):
 
         # Session stats (since last reset)
         self._reset_session_stats()
-        
+
         self.init_ui()
-        
+
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_display)
         self.timer.setInterval(50) # 20 FPS
 
     def init_ui(self):
         layout = QVBoxLayout()
-        
+
         # Controls
         controls_layout = QHBoxLayout()
         self.toggle_btn = QPushButton(tr("Start Metering"))
@@ -438,7 +451,7 @@ class LufsMeterWidget(QWidget):
         self.spl_check = QCheckBox(tr("Show SPL"))
         self.spl_check.toggled.connect(self.on_spl_toggled)
         controls_layout.addWidget(self.spl_check)
-        
+
         self.reset_btn = QPushButton(tr("Reset Peaks"))
         self.reset_btn.clicked.connect(self.module.reset_peaks)
         controls_layout.addWidget(self.reset_btn)
@@ -449,11 +462,11 @@ class LufsMeterWidget(QWidget):
         layout.addLayout(controls_layout)
 
         self._sync_spl_checkbox()
-        
+
         # --- Meters Area ---
         meters_group = QGroupBox(tr("Levels"))
         grid = QGridLayout()
-        
+
         # 1. Stereo RMS / Peak Meters
         # Left
         grid.addWidget(QLabel(tr("L")), 0, 0)
@@ -463,14 +476,14 @@ class LufsMeterWidget(QWidget):
         self.l_bar.setOrientation(Qt.Orientation.Vertical)
         self.l_bar.setFixedSize(30, 200)
         grid.addWidget(self.l_bar, 0, 1, 2, 1)
-        
+
         self.l_val_label = QLabel(tr("-INF"))
         grid.addWidget(self.l_val_label, 2, 1, Qt.AlignmentFlag.AlignHCenter)
-        
+
         self.l_peak_label = QLabel(tr("Pk: -INF"))
         self.l_peak_label.setStyleSheet("color: red; font-size: 10px;")
         grid.addWidget(self.l_peak_label, 3, 1, Qt.AlignmentFlag.AlignHCenter)
-        
+
         self.l_cf_label = QLabel(tr("CF: 0.0"))
         self.l_cf_label.setStyleSheet("color: cyan; font-size: 10px;")
         grid.addWidget(self.l_cf_label, 4, 1, Qt.AlignmentFlag.AlignHCenter)
@@ -483,21 +496,21 @@ class LufsMeterWidget(QWidget):
         self.r_bar.setOrientation(Qt.Orientation.Vertical)
         self.r_bar.setFixedSize(30, 200)
         grid.addWidget(self.r_bar, 0, 3, 2, 1)
-        
+
         self.r_val_label = QLabel(tr("-INF"))
         grid.addWidget(self.r_val_label, 2, 3, Qt.AlignmentFlag.AlignHCenter)
-        
+
         self.r_peak_label = QLabel(tr("Pk: -INF"))
         self.r_peak_label.setStyleSheet("color: red; font-size: 10px;")
         grid.addWidget(self.r_peak_label, 3, 3, Qt.AlignmentFlag.AlignHCenter)
-        
+
         self.r_cf_label = QLabel(tr("CF: 0.0"))
         self.r_cf_label.setStyleSheet("color: cyan; font-size: 10px;")
         grid.addWidget(self.r_cf_label, 4, 3, Qt.AlignmentFlag.AlignHCenter)
-        
+
         # Spacer
         grid.setColumnMinimumWidth(4, 30)
-        
+
         # 2. LUFS Meters
         # Momentary
         grid.addWidget(QLabel(tr("M")), 0, 5)
@@ -507,7 +520,7 @@ class LufsMeterWidget(QWidget):
         self.m_bar.setOrientation(Qt.Orientation.Vertical)
         self.m_bar.setFixedSize(30, 200)
         grid.addWidget(self.m_bar, 0, 6, 2, 1)
-        
+
         self.m_val_label = QLabel(tr("-INF"))
         grid.addWidget(self.m_val_label, 2, 6, Qt.AlignmentFlag.AlignHCenter)
         grid.addWidget(QLabel(tr("LUFS(M)")), 3, 6, Qt.AlignmentFlag.AlignHCenter)
@@ -520,7 +533,7 @@ class LufsMeterWidget(QWidget):
         self.s_bar.setOrientation(Qt.Orientation.Vertical)
         self.s_bar.setFixedSize(30, 200)
         grid.addWidget(self.s_bar, 0, 8, 2, 1)
-        
+
         self.s_val_label = QLabel(tr("-INF"))
         grid.addWidget(self.s_val_label, 2, 8, Qt.AlignmentFlag.AlignHCenter)
         grid.addWidget(QLabel(tr("LUFS(S)")), 3, 8, Qt.AlignmentFlag.AlignHCenter)
@@ -584,11 +597,11 @@ class LufsMeterWidget(QWidget):
         self.plot_widget.showGrid(x=True, y=True)
         self.plot_widget.setBackground('k')
         self.plot_widget.setFixedHeight(200)
-        
+
         # Curves
         self.m_curve = self.plot_widget.plot(pen=pg.mkPen('c', width=1), name=tr('Momentary')) # Cyan
         self.s_curve = self.plot_widget.plot(pen=pg.mkPen('y', width=2), name=tr('Short-Term')) # Yellow
-        
+
         # Target Line
         self.target_line = pg.InfiniteLine(angle=0, pos=-23, pen=pg.mkPen('g', style=Qt.PenStyle.DashLine))
         self.plot_widget.addItem(self.target_line)
@@ -605,7 +618,7 @@ class LufsMeterWidget(QWidget):
         tabs.addTab(graph_tab, tr("Graph"))
 
         layout.addWidget(tabs)
-        
+
         layout.addStretch()
         self.setLayout(layout)
 
@@ -669,7 +682,7 @@ class LufsMeterWidget(QWidget):
 
         # Allow calibration to appear/disappear without recreating the widget
         self._sync_spl_checkbox()
-            
+
         # Update RMS/Peak
         if self._show_spl and self._get_spl_offset_db() is not None:
             # Use C-weighted dBFS values (compatible with SPL calibration wizard)
@@ -706,58 +719,58 @@ class LufsMeterWidget(QWidget):
             disp_peak_hold_l = peak_hold_l
             disp_peak_hold_r = peak_hold_r
             disp_unit = "dBFS"
-        
+
         l_min = int(self.l_bar.minimum())
         l_max = int(self.l_bar.maximum())
         r_min = int(self.r_bar.minimum())
         r_max = int(self.r_bar.maximum())
         self.l_bar.setValue(int(max(l_min, min(l_max, rms_l))))
         self.r_bar.setValue(int(max(r_min, min(r_max, rms_r))))
-        
+
         self.l_val_label.setText(tr("{0} {1}").format(self._format_db(disp_rms_l), disp_unit))
         self.r_val_label.setText(tr("{0} {1}").format(self._format_db(disp_rms_r), disp_unit))
-        
+
         self.l_peak_label.setText(tr("Pk: {0} {1}").format(self._format_db(disp_peak_hold_l), disp_unit))
         self.r_peak_label.setText(tr("Pk: {0} {1}").format(self._format_db(disp_peak_hold_r), disp_unit))
-        
+
         self.l_cf_label.setText(tr("CF: {0:.1f}").format(crest_l))
         self.r_cf_label.setText(tr("CF: {0:.1f}").format(crest_r))
-        
+
         # Update LUFS
         m_lufs = self.module.momentary_lufs
         s_lufs = self.module.short_term_lufs
-        
+
         m_min = int(self.m_bar.minimum())
         m_max = int(self.m_bar.maximum())
         s_min = int(self.s_bar.minimum())
         s_max = int(self.s_bar.maximum())
         self.m_bar.setValue(int(max(m_min, min(m_max, m_lufs))))
         self.s_bar.setValue(int(max(s_min, min(s_max, s_lufs))))
-        
+
         self.m_val_label.setText(tr("{0:.1f}").format(m_lufs))
         self.s_val_label.setText(tr("{0:.1f}").format(s_lufs))
 
         # Update session stats
         self._update_session_stats(m_lufs, s_lufs)
         self._update_stats_labels(m_lufs, s_lufs)
-        
+
         # Color coding
         self._set_bar_color(self.l_bar, rms_l)
         self._set_bar_color(self.r_bar, rms_r)
         self._set_lufs_bar_color(self.m_bar, m_lufs)
         self._set_lufs_bar_color(self.s_bar, s_lufs)
-        
+
         # Update Plot
         self.m_history = np.roll(self.m_history, -1)
         self.m_history[-1] = m_lufs
-        
+
         self.s_history = np.roll(self.s_history, -1)
         self.s_history[-1] = s_lufs
-        
+
         # X axis (time)
         # 0 to -20s
         x = np.linspace(-self.history_size * 0.05, 0, self.history_size)
-        
+
         self.m_curve.setData(x, self.m_history)
         self.s_curve.setData(x, self.s_history)
 

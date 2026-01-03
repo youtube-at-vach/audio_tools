@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 import os
-import sys
 import signal
-from PyQt6.QtCore import Qt, QTimer, QObject, QEvent
+import sys
+
+from PyQt6.QtCore import QEvent, QObject, Qt, QTimer
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QApplication, QSplashScreen, QWidget
 
@@ -134,7 +135,7 @@ def main():
         app.setApplicationDisplayName("MeasureLab")
     except Exception:
         pass
-    
+
     window = MainWindow()
 
     # Preload all modules while splash is visible, so module switching feels instant.
@@ -158,7 +159,7 @@ def main():
     window.show()
     app.processEvents()
     QTimer.singleShot(0, lambda: splash.finish(window))
-    
+
     sys.exit(app.exec())
 
 if __name__ == "__main__":

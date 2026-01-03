@@ -1,5 +1,6 @@
-import sys
 import os
+import sys
+
 sys.path.append(os.getcwd())
 
 from src.core.audio_engine import AudioEngine

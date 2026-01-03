@@ -1,6 +1,7 @@
 
 import abc
 
+
 class MeasurementModule(abc.ABC):
     """
     全ての測定モジュールが継承する基底クラス。

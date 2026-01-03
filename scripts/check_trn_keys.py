@@ -1,9 +1,9 @@
 
 import ast
+import glob
 import json
 import os
 import sys
-import glob
 
 # Configuration
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,14 +31,14 @@ def find_duplicate_keys(path):
     # Regex to find "key": at the start of a line (ignoring whitespace)
     # This assumes standard formatting like "key": "value"
     pattern = re.compile(r'^\s*"((?:[^"\\]|\\.)+)"\s*:')
-    
+
     with open(path, 'r', encoding='utf-8') as f:
         for line_num, line in enumerate(f, 1):
             match = pattern.search(line)
             if match:
                 key = match.group(1)
                 # Unescape escaped quotes if necessary (basic handling)
-                key = key.replace('\\"', '"') 
+                key = key.replace('\\"', '"')
                 if key in keys:
                     duplicates.add(key)
                 keys.add(key)
@@ -47,18 +47,18 @@ def find_duplicate_keys(path):
 class TrVisitor(ast.NodeVisitor):
     def __init__(self):
         self.keys = set()
-        
+
     def visit_Call(self, node):
         func_name = ""
         if isinstance(node.func, ast.Name):
             func_name = node.func.id
         elif isinstance(node.func, ast.Attribute):
             func_name = node.func.attr
-            
+
         if func_name == 'tr':
             if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
                 self.keys.add(node.args[0].value)
-        
+
         self.generic_visit(node)
 
 def extract_tr_keys(filepath):
@@ -74,13 +74,13 @@ def extract_tr_keys(filepath):
 
 def main():
     print("=== Translation Check Script ===")
-    
+
     # 1. Load EN JSON (Source of Truth)
     en_path = os.path.join(LANG_DIR, 'en.json')
     if not os.path.exists(en_path):
         print(f"Error: en.json not found at {en_path}")
         sys.exit(1)
-        
+
     en_data = load_json(en_path)
     en_keys = set(en_data.keys())
     print(f"Loaded {len(en_keys)} keys from en.json")
@@ -95,35 +95,35 @@ def main():
     # Main GUI
     if os.path.exists(MAIN_GUI_FILE):
         files_to_scan.append(MAIN_GUI_FILE)
-        
+
     code_keys = set()
     for fp in files_to_scan:
         file_keys = extract_tr_keys(fp)
         code_keys.update(file_keys)
-        
+
     print(f"Found {len(code_keys)} unique tr() keys in {len(files_to_scan)} source files.")
-    
+
     # 3. Check: Code Keys exist in en.json
     missing_in_en = []
     for k in code_keys:
         if k not in en_keys:
             missing_in_en.append(k)
-            
+
     # 4. Check: Other JSONs have all keys from en.json
     json_files = get_json_files()
     missing_translations = {} # filename -> list of missing keys
-    
+
     for jf in json_files:
         fname = os.path.basename(jf)
         if fname == 'en.json':
             continue
-            
+
         data = load_json(jf)
         local_keys = set(data.keys())
         diff = en_keys - local_keys
         if diff:
             missing_translations[fname] = list(diff)
-            
+
     # 5. Check Duplicates (Warning only)
     duplicates_map = {}
     for jf in json_files:
@@ -133,7 +133,7 @@ def main():
 
     # Reporting
     has_error = False
-    
+
     print("\n--- Check 1: Missing keys in en.json (Used in Code) ---")
     if missing_in_en:
         has_error = True
@@ -142,7 +142,7 @@ def main():
             print(f"  - \"{k}\"")
     else:
         print("OK")
-        
+
     print("\n--- Check 2: Missing translations in other languages (Compared to en.json) ---")
     if missing_translations:
         has_error = True

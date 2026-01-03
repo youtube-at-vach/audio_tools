@@ -1,15 +1,17 @@
 import argparse
 import importlib
 import pkgutil
+
 import inquirer
 
 from . import measurement_modules
 from .measurement_modules.base import MeasurementModule
 
+
 def main():
     """メイン関数"""
     parser = argparse.ArgumentParser(description="A command-line tool for various audio measurements.")
-    
+
     # measurement_modulesパッケージ内のモジュールを動的に読み込む
     modules = []
     for _, module_name, _ in pkgutil.iter_modules(measurement_modules.__path__):
@@ -44,7 +46,7 @@ def main():
             # ここで、選択されたモジュールが引数を必要とする場合は、
             # さらに入力を求めるなどの処理を追加できます。
             # この例では、引数なしでrunメソッドを呼び出します。
-            module.run(argparse.Namespace()) 
+            module.run(argparse.Namespace())
             return
 
 if __name__ == '__main__':

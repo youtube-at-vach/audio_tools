@@ -1,8 +1,11 @@
 import unittest
-import numpy as np
 from collections import deque
-from src.gui.widgets.frequency_counter import FrequencyCounter
 from unittest.mock import MagicMock
+
+import numpy as np
+
+from src.gui.widgets.frequency_counter import FrequencyCounter
+
 
 class TestFrequencyCounterStats(unittest.TestCase):
     def setUp(self):
@@ -14,7 +17,7 @@ class TestFrequencyCounterStats(unittest.TestCase):
         # Constant frequency
         self.counter.freq_history.extend([1000.0] * 10)
         self.counter.calculate_stats()
-        
+
         self.assertEqual(self.counter.std_dev, 0.0)
         self.assertEqual(self.counter.allan_deviation, 0.0)
 
@@ -23,13 +26,13 @@ class TestFrequencyCounterStats(unittest.TestCase):
         data = [0.0, 1.0, 2.0, 3.0, 4.0]
         self.counter.freq_history.extend(data)
         self.counter.calculate_stats()
-        
+
         # Std Dev
         # Mean = 2.0
         # Variance (ddof=1) = ((4+1+0+1+4) / 4) = 2.5
         expected_std = np.sqrt(2.5)
         self.assertAlmostEqual(self.counter.std_dev, expected_std, places=5)
-        
+
         # Allan Dev
         # Diffs = [1, 1, 1, 1]
         # Mean(Diffs^2) = 1
@@ -42,13 +45,13 @@ class TestFrequencyCounterStats(unittest.TestCase):
         data = [1000.0, 1002.0, 1000.0, 1002.0]
         self.counter.freq_history.extend(data)
         self.counter.calculate_stats()
-        
+
         # Std Dev
         # Mean = 1001
         # Variance = ((1+1+1+1)/3) = 4/3 = 1.333...
         expected_std = np.sqrt(4/3)
         self.assertAlmostEqual(self.counter.std_dev, expected_std, places=5)
-        
+
         # Allan Dev
         # Diffs = [2, -2, 2]
         # Diffs^2 = [4, 4, 4]
