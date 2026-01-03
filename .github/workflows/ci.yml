@@ -13,6 +13,7 @@ jobs:
       QT_QPA_PLATFORM: offscreen
       AUDIO_TOOLS_ENABLE_HARDWARE_TESTS: "0"
       AUDIO_TOOLS_ENABLE_GUI_TESTS: "0"
+      PYTHONPATH: src
     steps:
       - uses: actions/checkout@v4
 
