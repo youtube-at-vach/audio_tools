@@ -115,6 +115,13 @@ Linux ではそのまま **PortAudio** バックエンドでも通常利用で�
     ```
     以降は `python` / `pip` が venv を指します（`sudo pip` は使わないでください）。
 
+    ※ `activate` を使わずに実行したい場合は、常に venv の Python を直接呼び出してもOKです：
+    ```bash
+    ./.venv/bin/python -m pip install -U pip
+    ./.venv/bin/python -m pip install -c constraints.txt -r requirements.txt
+    ./.venv/bin/python main_gui.py
+    ```
+
 1.  リポジトリをクローンします。
 2.  依存関係をインストールします（再現性のため constraints を利用）：
     ```bash
