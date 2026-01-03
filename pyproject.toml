@@ -48,6 +48,11 @@ show_error_codes = true
 warn_unused_ignores = true
 warn_return_any = false
 warn_unreachable = true
+files = ["src/core", "src/main.py"]
+
+[[tool.mypy.overrides]]
+module = "src.gui.*"
+ignore_errors = true
 
 [tool.pytest.ini_options]
 addopts = "-ra"

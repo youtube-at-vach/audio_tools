@@ -8,7 +8,9 @@ Provides theme detection and switching functionality with support for:
 """
 
 import logging
+import platform
 import sys
+from typing import Any
 
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtGui import QColor, QPalette
@@ -28,18 +30,17 @@ class ThemeManager(QObject):
         self.current_theme = "system"
 
         # Cache original style so we can restore it when leaving dark theme.
-        try:
-            self._original_style_name = self.app.style().objectName()
-        except Exception:
-            self._original_style_name = None
+        style = self.app.style()
+        self._original_style_name = style.objectName() if style is not None else None
 
         # Check if Qt supports colorScheme (Qt 6.5+)
-        self.supports_color_scheme = hasattr(self.app.styleHints(), 'colorScheme')
+        style_hints = self.app.styleHints()
+        self.supports_color_scheme = style_hints is not None and hasattr(style_hints, 'colorScheme')
 
-        if self.supports_color_scheme:
+        if self.supports_color_scheme and style_hints is not None:
             # Connect to system theme changes
             try:
-                self.app.styleHints().colorSchemeChanged.connect(self._on_system_theme_changed)
+                style_hints.colorSchemeChanged.connect(self._on_system_theme_changed)
                 self.logger.info("System theme change detection enabled (Qt 6.5+)")
             except AttributeError:
                 self.logger.warning("colorSchemeChanged signal not available")
@@ -93,10 +94,11 @@ class ThemeManager(QObject):
         Returns:
             'light' or 'dark'
         """
-        if self.supports_color_scheme:
+        style_hints = self.app.styleHints()
+        if self.supports_color_scheme and style_hints is not None:
             try:
                 from PyQt6.QtCore import Qt
-                scheme = self.app.styleHints().colorScheme()
+                scheme = style_hints.colorScheme()
 
                 # Qt.ColorScheme.Dark = 2, Qt.ColorScheme.Light = 1
                 if hasattr(Qt, 'ColorScheme'):
@@ -106,9 +108,13 @@ class ThemeManager(QObject):
                         return 'light'
                 else:
                     # Fallback for different Qt 6.5 versions
-                    if int(scheme) == 2:
+                    raw_scheme: Any = scheme
+                    scheme_val_obj = raw_scheme.value if hasattr(raw_scheme, "value") else raw_scheme
+                    scheme_val = scheme_val_obj if isinstance(scheme_val_obj, int) else -1
+
+                    if scheme_val == 2:
                         return 'dark'
-                    elif int(scheme) == 1:
+                    elif scheme_val == 1:
                         return 'light'
             except Exception as e:
                 self.logger.warning(f"Failed to detect system theme: {e}")
@@ -201,11 +207,12 @@ class ThemeManager(QObject):
 
     def _ensure_fusion_style_on_windows(self) -> None:
         """Force Fusion style on Windows so custom palettes render consistently."""
-        if not sys.platform.startswith("win"):
+        if not platform.system().lower().startswith("win"):
             return
 
         try:
-            current = self.app.style().objectName()
+            style = self.app.style()
+            current = style.objectName() if style is not None else ""
         except Exception:
             current = ""
 
@@ -225,13 +232,14 @@ class ThemeManager(QObject):
 
     def _restore_platform_style_if_needed(self) -> None:
         """Restore the original style if we previously switched it for dark theme."""
-        if not sys.platform.startswith("win"):
+        if not platform.system().lower().startswith("win"):
             return
         if not self._original_style_name:
             return
 
         try:
-            current = self.app.style().objectName()
+            style = self.app.style()
+            current = style.objectName() if style is not None else ""
         except Exception:
             current = ""
 
