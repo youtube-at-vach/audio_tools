@@ -25,7 +25,14 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libxcb-cursor0 libsndfile1
+          sudo apt-get install -y \
+            libegl1-mesa \
+            libegl1-mesa-dev \
+            libasound2 \
+            portaudio19-dev \
+            libasound2-dev \
+            libxcb-cursor0 \
+            libsndfile1
 
       - name: Install Python dependencies
         run: |
