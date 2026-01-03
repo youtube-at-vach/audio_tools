@@ -24,18 +24,43 @@ jobs:
 
       - name: Install system dependencies
         run: |
+          set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y software-properties-common
-          sudo add-apt-repository universe
+          sudo apt-get install -y --no-install-recommends software-properties-common
+          sudo add-apt-repository -y universe
           sudo apt-get update
-          sudo apt-get install -y \
-            libegl1-mesa \
-            libegl1-mesa-dev \
-            libasound2 \
-            portaudio19-dev \
-            libasound2-dev \
-            libxcb-cursor0 \
+
+          packages=(
+            portaudio19-dev
             libsndfile1
+            libxcb-cursor0
+          )
+
+          # Ubuntu 24.04 (noble) migrated several libs to *t64 names.
+          if apt-cache show libasound2 >/dev/null 2>&1; then
+            packages+=(libasound2)
+          elif apt-cache show libasound2t64 >/dev/null 2>&1; then
+            packages+=(libasound2t64)
+          fi
+
+          if apt-cache show libasound2-dev >/dev/null 2>&1; then
+            packages+=(libasound2-dev)
+          fi
+
+          # Mesa EGL package names can differ across Ubuntu/Debian variants.
+          if apt-cache show libegl1-mesa >/dev/null 2>&1; then
+            packages+=(libegl1-mesa)
+          elif apt-cache show libegl-mesa0 >/dev/null 2>&1; then
+            packages+=(libegl-mesa0)
+          fi
+
+          if apt-cache show libegl1-mesa-dev >/dev/null 2>&1; then
+            packages+=(libegl1-mesa-dev)
+          elif apt-cache show libegl-dev >/dev/null 2>&1; then
+            packages+=(libegl-dev)
+          fi
+
+          sudo apt-get install -y --no-install-recommends "${packages[@]}"
 
       - name: Install Python dependencies
         run: |
