@@ -1439,10 +1439,14 @@ class TimecodeMonitorWidget(QWidget):
         self._tz_combos: Dict[str, QComboBox] = {}
         self._in_delay_spins: Dict[str, QSpinBox] = {}
         self._out_delay_spins: Dict[str, QSpinBox] = {}
-        self.init_ui()
-        self.timer = QTimer()
+
+        # UI update timer (runs only while monitoring is active).
+        self.timer = QTimer(self)
+        self.timer.setInterval(50)  # 20Hz UI update
         self.timer.timeout.connect(self.update_ui)
-        self.timer.start(50) # 20Hz UI update
+
+        self._monitor_toggle_btn: Optional[QPushButton] = None
+        self.init_ui()
         
     def init_ui(self):
         layout = QVBoxLayout()
@@ -1509,6 +1513,16 @@ class TimecodeMonitorWidget(QWidget):
         display_row.addWidget(build_display_frame(tr("Right"), "R", self.tc_label_R, self.sync_led_R, self.fps_est_label_R, self.level_label_R))
         layout.addLayout(display_row)
 
+        # Monitor start/stop (ALSA/standard modes can benefit from explicitly stopping).
+        monitor_row = QHBoxLayout()
+        self._monitor_toggle_btn = QPushButton(tr("Start Monitor"))
+        self._monitor_toggle_btn.setCheckable(True)
+        self._monitor_toggle_btn.setChecked(False)
+        self._monitor_toggle_btn.clicked.connect(self._on_monitor_toggled)
+        monitor_row.addWidget(self._monitor_toggle_btn)
+        monitor_row.addStretch()
+        layout.addLayout(monitor_row)
+
         # CH offset visualization (L/R LTC frame difference)
         self.ltc_offset_label = QLabel(tr("CH Δ (R-L): --"))
         self.ltc_offset_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1545,9 +1559,41 @@ class TimecodeMonitorWidget(QWidget):
         
         layout.addStretch()
         self.setLayout(layout)
-        
-        # Start module
-        QTimer.singleShot(100, self.module.start_analysis)
+
+        # Default to stopped; user explicitly starts monitoring.
+        QTimer.singleShot(0, lambda: self._set_monitor_running(False))
+
+    def _set_monitor_running(self, running: bool) -> None:
+        running = bool(running)
+
+        if self._monitor_toggle_btn is not None:
+            # Keep the button state/text in sync even if start/stop is called programmatically.
+            try:
+                self._monitor_toggle_btn.blockSignals(True)
+                self._monitor_toggle_btn.setChecked(running)
+            finally:
+                self._monitor_toggle_btn.blockSignals(False)
+            self._monitor_toggle_btn.setText(tr("Stop Monitor") if running else tr("Start Monitor"))
+
+        if running:
+            self.module.start_analysis()
+            if not self.timer.isActive():
+                self.timer.start()
+        else:
+            self.module.stop_analysis()
+            if self.timer.isActive():
+                self.timer.stop()
+
+    def _on_monitor_toggled(self, checked: bool) -> None:
+        self._set_monitor_running(bool(checked))
+
+    def closeEvent(self, event):
+        # Ensure we don't keep decoding/generating LTC after the widget is closed.
+        try:
+            self._set_monitor_running(False)
+        except Exception:
+            pass
+        return super().closeEvent(event)
         
     def on_link_toggled(self, checked: bool):
         self.module.link_enabled = bool(checked)
