@@ -3,6 +3,16 @@ import os
 import signal
 import sys
 
+# Suppress benign GNOME portal Settings warnings like:
+#   qt.qpa.theme.gnome: dbus reply error: ... org.freedesktop.portal.Settings
+# This must be set before importing Qt/PyQt.
+_qt_rule = "qt.qpa.theme.gnome=false"
+_existing_rules = os.environ.get("QT_LOGGING_RULES", "").strip()
+if _qt_rule not in _existing_rules:
+    os.environ["QT_LOGGING_RULES"] = (
+        _qt_rule if not _existing_rules else f"{_existing_rules};{_qt_rule}"
+    )
+
 from PyQt6.QtCore import QEvent, QObject, Qt, QTimer
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QApplication, QSplashScreen, QWidget
