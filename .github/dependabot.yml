@@ -1,0 +1,25 @@
+# Dependabot configuration
+# Note on forks: Dependabot may run on forks if security updates were ever enabled.
+# See: https://github.com/dependabot/dependabot-core/issues/2804
+
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      github-actions:
+        patterns:
+          - "*"
