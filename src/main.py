@@ -1,11 +1,18 @@
 import argparse
 import importlib
 import pkgutil
+import sys
+from pathlib import Path
 
 import inquirer
 
-from . import measurement_modules
-from .measurement_modules.base import MeasurementModule
+# Allow running this file as a script (python src/main.py) by ensuring the
+# containing directory is on sys.path so absolute imports work.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import measurement_modules
+from measurement_modules.base import MeasurementModule
 
 
 def main():
