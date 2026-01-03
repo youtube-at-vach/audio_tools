@@ -90,6 +90,31 @@ Linux ではそのまま **PortAudio** バックエンドでも通常利用で�
 
 **必要条件**: Python 3.10 以上
 
+#### Linux / Ubuntu（推奨）: 仮想環境 (venv) で実行する
+
+リリース版（AppImage/ZIP）はそのまま動作しますが、ソースコードから実行する場合に **APT（OSパッケージ）の Python 依存（例: PyQt6 など）が古くて動かない**ことがあります。
+そのため Linux では、**システムの Python はそのまま使いつつ、依存パッケージは venv + pip で入れる**運用を推奨します。
+
+1.  OS 依存ライブラリ（最低限）を入れます。
+    - `sounddevice` は PortAudio を利用するため、実行時に `libportaudio2` が必要です。
+    - `soundfile` は libsndfile を利用するため、実行時に `libsndfile1` が必要です。
+    ```bash
+    sudo apt update
+    sudo apt install -y python3 python3-venv python3-pip libportaudio2 libsndfile1
+    ```
+    もし `pip install` でビルドエラーが出る場合のみ、追加で開発ヘッダ等を入れてください：
+    ```bash
+    sudo apt install -y build-essential portaudio19-dev libsndfile1-dev
+    ```
+
+2.  仮想環境を作成して有効化します（例: リポジトリ直下に `.venv`）。
+    ```bash
+    python3 -m venv .venv
+    source .venv/bin/activate
+    python -m pip install -U pip
+    ```
+    以降は `python` / `pip` が venv を指します（`sudo pip` は使わないでください）。
+
 1.  リポジトリをクローンします。
 2.  依存関係をインストールします（再現性のため constraints を利用）：
     ```bash
