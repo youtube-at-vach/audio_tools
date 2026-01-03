@@ -5,6 +5,7 @@ numpy==1.26.4
 scipy==1.11.4
 sounddevice==0.4.6
 PyQt6==6.6.1
+PyQt6-Qt6==6.6.1
 pyqtgraph==0.13.4
 soundfile==0.12.1
 PyWavelets==1.5.0
