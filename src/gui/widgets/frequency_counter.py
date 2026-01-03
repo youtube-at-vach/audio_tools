@@ -35,6 +35,7 @@ class FrequencyCounter(MeasurementModule):
         # Settings
         self.gate_threshold_db = -60.0
         self.update_interval_ms = 100 # Fast: 100ms, Slow: 500ms
+        self.max_update_interval_ms = 5000  # Cap long measurements to keep load reasonable
         self.buffer_size = 8192 # Good resolution
         self.selected_channel = 0 # 0: Ch1, 1: Ch2
 
@@ -124,6 +125,7 @@ class FrequencyCounter(MeasurementModule):
             self._warmup_remaining = 0
 
     def set_update_interval(self, interval_ms):
+        interval_ms = min(interval_ms, self.max_update_interval_ms)
         was_running = self.is_running
         if was_running:
             self.stop_analysis()
@@ -490,7 +492,6 @@ class FrequencyCounterWidget(QWidget):
         self.speed_combo.addItem(tr("1 Sec (1Hz)"), 1000)
         self.speed_combo.addItem(tr("2 Sec (0.5Hz)"), 2000)
         self.speed_combo.addItem(tr("5 Sec (0.2Hz)"), 5000)
-        self.speed_combo.addItem(tr("10 Sec (0.1Hz)"), 10000)
         self.speed_combo.currentIndexChanged.connect(self.on_speed_changed)
         speed_layout.addWidget(self.speed_combo)
         controls_layout.addLayout(speed_layout)
@@ -897,7 +898,7 @@ class FrequencyCounterWidget(QWidget):
             return
 
         self.module.set_update_interval(interval_ms)
-        self.timer.setInterval(interval_ms)
+        self.timer.setInterval(self.module.update_interval_ms)
 
     def on_display_mode_changed(self, idx):
         mode = self.display_combo.currentData()
