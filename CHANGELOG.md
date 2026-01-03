@@ -1,5 +1,33 @@
 # Changelog
 
+## [v0.2.9] - 2026-01-03
+
+### Added
+
+* BNIM Meter モジュールを追加（ステレオ入力から ITD/ILD のニューラルマップを可視化）
+* BNIM Meter に ILD（両耳間レベル差）重み付けオプションを追加
+* スクリーンショット保存機能を追加（出力先ディレクトリを Settings から指定可能）
+* Timecode Monitor に監視の Start/Stop トグルを追加
+
+### Changed
+
+* ThemeManager のテーマ検出と適用を改善し、環境互換性を向上
+* `src` をパッケージとして明示し、起動/テスト時の import 安定性を改善（CI で `PYTHONPATH` を設定）
+* スタンドアロンスクリプト実行時の `sys.path` 調整を改善
+
+### Fixed
+
+* CI 上での PyQt6/Qt6 ランタイム設定と依存関係インストールを修正し、リンク不具合を解消
+* インストールログ `pip_install.out` が追跡されないよう `.gitignore` を更新
+
+### Tests
+
+* BNIM Meter のユニットテストを追加
+
+### Documentation
+
+* AGENT.md を更新（セットアップ手順、ローカライズガイド、環境情報）
+
 ## [v0.2.8] - 2026-01-01
 
 ### Added
