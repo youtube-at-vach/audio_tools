@@ -69,6 +69,22 @@ jobs:
           pip install -c constraints.txt -r requirements.txt
           pip install -c constraints.txt -e .[dev]
 
+      - name: Configure Qt runtime (PyQt6 wheels)
+        run: |
+          set -euxo pipefail
+
+          qt_lib_dir=$(python -c 'import pathlib, PyQt6; print(pathlib.Path(PyQt6.__file__).resolve().parent / "Qt6" / "lib")')
+          qt_plugins_dir=$(python -c 'import pathlib, PyQt6; print(pathlib.Path(PyQt6.__file__).resolve().parent / "Qt6" / "plugins")')
+
+          echo "LD_LIBRARY_PATH=${qt_lib_dir}:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+          echo "QT_PLUGIN_PATH=${qt_plugins_dir}" >> "$GITHUB_ENV"
+
+          export LD_LIBRARY_PATH="${qt_lib_dir}:${LD_LIBRARY_PATH:-}"
+          export QT_PLUGIN_PATH="${qt_plugins_dir}"
+
+          # Fail fast if Qt/PyQt cannot be imported on the runner.
+          python -c "import PyQt6.QtGui"
+
       - name: Lint (ruff)
         run: |
           ruff check src scripts tests
