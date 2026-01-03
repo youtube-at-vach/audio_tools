@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69,<71", "wheel"]
+requires = ["setuptools>=69,<81", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -13,13 +13,13 @@ authors = [
   {name = "MeasureLab maintainers"}
 ]
 dependencies = [
-  "numpy>=1.24,<2.0",
-  "scipy>=1.11,<1.13",
-  "sounddevice>=0.4.6,<0.5",
-  "PyQt6>=6.6,<6.8",
-  "pyqtgraph>=0.13,<0.14",
-  "soundfile>=0.12,<0.13",
-  "PyWavelets>=1.5,<1.6",
+  "numpy>=1.24,<3.0",
+  "scipy>=1.11,<1.16",
+  "sounddevice>=0.4.6,<0.6",
+  "PyQt6>=6.6,<6.11",
+  "pyqtgraph>=0.13,<0.15",
+  "soundfile>=0.12,<0.14",
+  "PyWavelets>=1.5,<1.9",
   "inquirer>=3.1,<4.0",
 ]
 
