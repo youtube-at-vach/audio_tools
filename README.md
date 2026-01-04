@@ -152,5 +152,3 @@ pip install -c constraints.txt -e .[dev]
 営利・非営利を問わず、自由にコピー、変更、配布、使用することができます。
 
 > **Note**: This is free and unencumbered software released into the public domain.
-
-Hi
