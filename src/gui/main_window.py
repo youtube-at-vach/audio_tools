@@ -217,7 +217,7 @@ class MainWindow(QMainWindow):
             # Try default if specific failed
             try:
                 self.audio_engine.set_devices(None, None)
-            except:
+            except Exception:
                 pass
 
             # Even if device selection failed, honor resident setting best-effort.

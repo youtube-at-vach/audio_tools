@@ -88,7 +88,7 @@ def test_ltc_issues():
             hh, mm, ss, ff = map(int, tc.split(':'))
             # Construct dt using ref_dt date
             return ref_dt.replace(hour=hh, minute=mm, second=ss, microsecond=0)
-        except:
+        except Exception:
             return None
 
     dt_from_tc_utc = tc_to_dt(last_tc, now_utc)

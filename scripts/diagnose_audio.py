@@ -32,7 +32,7 @@ def main():
         print(sd.query_devices())
         try:
             device_id = int(input("Enter Device ID: "))
-        except:
+        except Exception:
             print("Invalid ID")
             return
 
