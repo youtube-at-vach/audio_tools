@@ -15,7 +15,7 @@ jobs:
       AUDIO_TOOLS_ENABLE_GUI_TESTS: "0"
       PYTHONPATH: src
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.1
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v6
