@@ -146,6 +146,7 @@ class LoopbackFinderWidget(QWidget):
     def __init__(self, module: LoopbackFinder):
         super().__init__()
         self.module = module
+        self._scan_available = True
         self.init_ui()
 
     def init_ui(self):
@@ -183,7 +184,33 @@ class LoopbackFinderWidget(QWidget):
 
         self.setLayout(layout)
 
+        self._update_availability()
+
+    def _update_availability(self):
+        # Loopback scan relies on PortAudio playrec behavior that is unreliable when
+        # the app runs in PipeWire/JACK resident mode (routing persistence).
+        self._scan_available = not bool(getattr(self.module.audio_engine, "pipewire_jack_resident", False))
+
+        if not self._scan_available:
+            self.start_btn.setEnabled(False)
+            self.stop_btn.setEnabled(False)
+            self.progress_bar.setValue(0)
+            self.status_label.setText(
+                tr("Loopback Finder is not available in PipeWire/JACK mode. Disable 'PipeWire / JACK Mode (Resident)' in Settings to use this tool.")
+            )
+        else:
+            self.start_btn.setEnabled(True)
+            self.status_label.setText(tr("Ready"))
+
     def start_scan(self):
+        if not self._scan_available:
+            QMessageBox.warning(
+                self,
+                tr("Unavailable"),
+                tr("Loopback Finder is not available in PipeWire/JACK mode. Please disable 'PipeWire / JACK Mode (Resident)' in Settings."),
+            )
+            return
+
         # Stop main engine if running
         if self.module.audio_engine.stream and self.module.audio_engine.stream.active:
             self.module.audio_engine.stop_stream()
@@ -241,6 +268,6 @@ class LoopbackFinderWidget(QWidget):
         self.scan_finished()
 
     def scan_finished(self):
-        self.start_btn.setEnabled(True)
+        self.start_btn.setEnabled(self._scan_available)
         self.stop_btn.setEnabled(False)
         self.progress_bar.setValue(100)
