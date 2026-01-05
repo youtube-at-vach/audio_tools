@@ -934,5 +934,10 @@
     "Saved: Mem {0}": "저장됨: 메모리 {0}",
     "Slot": "슬롯",
     "TC I/O Delay Calibration": "TC 입출력 지연 보정",
-    "UTC": "UTC"
+    "UTC": "UTC",
+    "Start Monitor": "Start Monitor",
+    "Stop Monitor": "Stop Monitor",
+    "Loopback Finder is not available in PipeWire/JACK mode. Disable 'PipeWire / JACK Mode (Resident)' in Settings to use this tool.": "Loopback Finder is not available in PipeWire/JACK mode. Disable 'PipeWire / JACK Mode (Resident)' in Settings to use this tool.",
+    "Loopback Finder is not available in PipeWire/JACK mode. Please disable 'PipeWire / JACK Mode (Resident)' in Settings.": "Loopback Finder is not available in PipeWire/JACK mode. Please disable 'PipeWire / JACK Mode (Resident)' in Settings.",
+    "Unavailable": "Unavailable"
 }
