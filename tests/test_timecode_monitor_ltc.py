@@ -71,9 +71,53 @@ def test_timecode_monitor_input_delay_applies_to_display():
     m = TimecodeMonitor(_AE())
     m.set_fps(30.0)
 
-    # Interpret decoded as a time-of-day; add +1000ms should advance by 1 second.
-    m.decoded_tc = "00:00:00:00"
-    m.input_offset_ms = 1000.0
-    m.display_tz_enabled = False
+    # Interpret decoded as a time-of-day; add +1 second should advance by 1 second.
+    # The implementation uses an offset in frames, not milliseconds.
+    m.channels["L"].decoded_tc = "00:00:00:00"
+    m.channels["L"].input_offset_frames = 30  # 30fps => 30 frames = 1 second
+    m.channels["L"].display_tz_enabled = False
 
-    assert m._get_display_timecode() == "00:00:01:00"
+    assert m._get_display_timecode(key="L") == "00:00:01:00"
+
+
+def test_timecode_monitor_stop_start_unregisters_callback_id_zero():
+    from src.gui.widgets.timecode_monitor import TimecodeMonitor
+
+    class _MockAE:
+        sample_rate = 48_000
+
+        def __init__(self):
+            import threading
+
+            self.lock = threading.Lock()
+            self.callbacks = {}
+            self.next_callback_id = 0
+            self.unregistered = []
+
+        def register_callback(self, cb):
+            with self.lock:
+                cid = self.next_callback_id
+                self.next_callback_id += 1
+                self.callbacks[cid] = cb
+                return cid
+
+        def unregister_callback(self, callback_id):
+            with self.lock:
+                self.callbacks.pop(callback_id, None)
+                self.unregistered.append(callback_id)
+
+    ae = _MockAE()
+    m = TimecodeMonitor(ae)
+
+    m.start_analysis()
+    assert m.callback_id == 0
+    assert 0 in ae.callbacks
+
+    m.stop_analysis()
+    assert m.callback_id is None
+    assert ae.callbacks == {}
+    assert 0 in ae.unregistered
+
+    m.start_analysis()
+    assert m.callback_id == 1
+    assert 1 in ae.callbacks

@@ -415,6 +415,7 @@ class TimecodeMonitor(MeasurementModule):
         self.audio_engine = audio_engine
         self.is_running = False
         self.callback_id = None
+        self._registered_callback = None
 
         # Settings (legacy convenience, maps to Left channel)
         self.fps = 30.0
@@ -567,6 +568,11 @@ class TimecodeMonitor(MeasurementModule):
     def start_analysis(self):
         if self.is_running:
             return
+
+        # Be defensive: if a callback is still registered (e.g. from a previous
+        # stop/start cycle), ensure it's cleaned up before registering another.
+        if (self.callback_id is not None) or (self._registered_callback is not None):
+            self.stop_analysis()
 
         self.is_running = True
 
@@ -769,7 +775,43 @@ class TimecodeMonitor(MeasurementModule):
                                 continue
 
                             outdata[:, out_idx] = gen
+
+        # Keep a reference to the exact callback function object so we can
+        # locate/unregister it even if the numeric ID is lost.
+        self._registered_callback = callback
         self.callback_id = self.audio_engine.register_callback(callback)
+
+    def _find_registered_callback_id(self) -> Optional[int]:
+        """Best-effort lookup of our registered callback ID.
+
+        This is a defensive fallback for cases where the numeric callback ID was
+        lost (e.g. a historical bug where callback_id=0 was treated as falsy).
+        """
+        cb = getattr(self, "_registered_callback", None)
+        if cb is None:
+            return None
+
+        engine = getattr(self, "audio_engine", None)
+        callbacks = getattr(engine, "callbacks", None)
+        lock = getattr(engine, "lock", None)
+        if callbacks is None:
+            return None
+
+        try:
+            if lock is None:
+                for cid, fn in list(callbacks.items()):
+                    if fn is cb:
+                        return int(cid)
+                return None
+
+            with lock:
+                for cid, fn in list(callbacks.items()):
+                    if fn is cb:
+                        return int(cid)
+        except Exception:
+            return None
+
+        return None
 
     def _get_generator_samples(self, ch: _TimecodeChannelState, frames: int) -> np.ndarray:
         """Return exactly `frames` samples of generated LTC (mono)."""
@@ -924,9 +966,20 @@ class TimecodeMonitor(MeasurementModule):
         ch.gen.gen_tc_buffer.append(tc)
 
     def stop_analysis(self):
-        if self.callback_id:
-            self.audio_engine.unregister_callback(self.callback_id)
-            self.callback_id = None
+        cid = self.callback_id
+
+        # callback_id can be 0 (valid). Use explicit None checks.
+        if cid is None:
+            cid = self._find_registered_callback_id()
+
+        if cid is not None:
+            try:
+                self.audio_engine.unregister_callback(cid)
+            except Exception:
+                pass
+
+        self.callback_id = None
+        self._registered_callback = None
         self.is_running = False
 
     def process(self):
