@@ -935,9 +935,9 @@
     "Slot": "Ranura",
     "TC I/O Delay Calibration": "Calibración de retardo de E/S TC",
     "UTC": "UTC",
-    "Start Monitor": "Start Monitor",
-    "Stop Monitor": "Stop Monitor",
-    "Loopback Finder is not available in PipeWire/JACK mode. Disable 'PipeWire / JACK Mode (Resident)' in Settings to use this tool.": "Loopback Finder is not available in PipeWire/JACK mode. Disable 'PipeWire / JACK Mode (Resident)' in Settings to use this tool.",
-    "Loopback Finder is not available in PipeWire/JACK mode. Please disable 'PipeWire / JACK Mode (Resident)' in Settings.": "Loopback Finder is not available in PipeWire/JACK mode. Please disable 'PipeWire / JACK Mode (Resident)' in Settings.",
-    "Unavailable": "Unavailable"
+    "Start Monitor": "Iniciar monitorización",
+    "Stop Monitor": "Detener monitorización",
+    "Loopback Finder is not available in PipeWire/JACK mode. Disable 'PipeWire / JACK Mode (Resident)' in Settings to use this tool.": "Loopback Finder no está disponible en modo PipeWire/JACK. Desactiva 'Modo PipeWire / JACK (Residente)' en Ajustes para usar esta herramienta.",
+    "Loopback Finder is not available in PipeWire/JACK mode. Please disable 'PipeWire / JACK Mode (Resident)' in Settings.": "Loopback Finder no está disponible en modo PipeWire/JACK. Por favor desactiva 'Modo PipeWire / JACK (Residente)' en Ajustes.",
+    "Unavailable": "No disponible"
 }

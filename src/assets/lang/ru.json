@@ -935,9 +935,9 @@
     "Slot": "Слот",
     "TC I/O Delay Calibration": "Калибровка задержки TC I/O",
     "UTC": "UTC",
-    "Start Monitor": "Start Monitor",
-    "Stop Monitor": "Stop Monitor",
-    "Loopback Finder is not available in PipeWire/JACK mode. Disable 'PipeWire / JACK Mode (Resident)' in Settings to use this tool.": "Loopback Finder is not available in PipeWire/JACK mode. Disable 'PipeWire / JACK Mode (Resident)' in Settings to use this tool.",
-    "Loopback Finder is not available in PipeWire/JACK mode. Please disable 'PipeWire / JACK Mode (Resident)' in Settings.": "Loopback Finder is not available in PipeWire/JACK mode. Please disable 'PipeWire / JACK Mode (Resident)' in Settings.",
-    "Unavailable": "Unavailable"
+    "Start Monitor": "Запустить мониторинг",
+    "Stop Monitor": "Остановить мониторинг",
+    "Loopback Finder is not available in PipeWire/JACK mode. Disable 'PipeWire / JACK Mode (Resident)' in Settings to use this tool.": "Loopback Finder недоступен в режиме PipeWire/JACK. Отключите 'Режим PipeWire / JACK (Resident)' в настройках, чтобы использовать этот инструмент.",
+    "Loopback Finder is not available in PipeWire/JACK mode. Please disable 'PipeWire / JACK Mode (Resident)' in Settings.": "Loopback Finder недоступен в режиме PipeWire/JACK. Пожалуйста, отключите 'Режим PipeWire / JACK (Resident)' в настройках.",
+    "Unavailable": "Недоступно"
 }

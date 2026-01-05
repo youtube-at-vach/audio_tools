@@ -935,9 +935,9 @@
     "Slot": "スロット",
     "TC I/O Delay Calibration": "TC入出力遅延キャリブレーション",
     "UTC": "UTC",
-    "Start Monitor": "Start Monitor",
-    "Stop Monitor": "Stop Monitor",
-    "Loopback Finder is not available in PipeWire/JACK mode. Disable 'PipeWire / JACK Mode (Resident)' in Settings to use this tool.": "Loopback Finder is not available in PipeWire/JACK mode. Disable 'PipeWire / JACK Mode (Resident)' in Settings to use this tool.",
-    "Loopback Finder is not available in PipeWire/JACK mode. Please disable 'PipeWire / JACK Mode (Resident)' in Settings.": "Loopback Finder is not available in PipeWire/JACK mode. Please disable 'PipeWire / JACK Mode (Resident)' in Settings.",
-    "Unavailable": "Unavailable"
+    "Start Monitor": "モニター開始",
+    "Stop Monitor": "モニター停止",
+    "Loopback Finder is not available in PipeWire/JACK mode. Disable 'PipeWire / JACK Mode (Resident)' in Settings to use this tool.": "PipeWire/JACK モードでは Loopback Finder を利用できません。設定で「PipeWire / JACK モード (Resident)」を無効にしてから使用してください。",
+    "Loopback Finder is not available in PipeWire/JACK mode. Please disable 'PipeWire / JACK Mode (Resident)' in Settings.": "PipeWire/JACK モードでは Loopback Finder を利用できません。設定の「PipeWire / JACK モード (Resident)」を無効にしてください。",
+    "Unavailable": "利用できません"
 }
