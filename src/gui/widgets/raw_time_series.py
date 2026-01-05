@@ -5,6 +5,7 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QGroupBox,
     QHBoxLayout,
@@ -16,6 +17,7 @@ from PyQt6.QtWidgets import (
 
 from src.core.audio_engine import AudioEngine
 from src.core.localization import tr
+from src.core.utils import format_si
 from src.measurement_modules.base import MeasurementModule
 
 
@@ -33,6 +35,7 @@ class RawTimeSeries(MeasurementModule):
         self.time_span_s = 10.0  # 10 / 60 / 300
         self.vscale = 1.0
         self.paused = False
+        self.show_dc_offset = False
 
         # Storage settings
         self.max_span_s = 300.0
@@ -277,6 +280,19 @@ class RawTimeSeriesWidget(QWidget):
         self.btn_pause.clicked.connect(self._on_pause_toggled)
         ctrl.addWidget(self.btn_pause)
 
+        # DC offset display (optional)
+        self.chk_dc = QCheckBox(tr("Show DC Offset"))
+        self.chk_dc.setChecked(bool(getattr(self.module, "show_dc_offset", False)))
+        self.chk_dc.toggled.connect(self._on_dc_toggled)
+        ctrl.addWidget(self.chk_dc)
+
+        self.lbl_dc_title = QLabel(tr("DC Offset (mean):"))
+        self.lbl_dc_ch1 = QLabel("CH1: -")
+        self.lbl_dc_ch2 = QLabel("CH2: -")
+        ctrl.addWidget(self.lbl_dc_title)
+        ctrl.addWidget(self.lbl_dc_ch1)
+        ctrl.addWidget(self.lbl_dc_ch2)
+
         right.addWidget(ctrl_group)
         right.addStretch(1)
 
@@ -284,6 +300,13 @@ class RawTimeSeriesWidget(QWidget):
 
         # Apply defaults
         self._apply_view_ranges()
+        self._apply_dc_visibility()
+
+    def _apply_dc_visibility(self):
+        show = bool(getattr(self.module, "show_dc_offset", False))
+        self.lbl_dc_title.setVisible(show)
+        self.lbl_dc_ch1.setVisible(show)
+        self.lbl_dc_ch2.setVisible(show)
 
     def _on_start_toggled(self, checked: bool):
         if checked:
@@ -306,6 +329,10 @@ class RawTimeSeriesWidget(QWidget):
         self.module.paused = bool(checked)
         self.btn_pause.setText(tr("Pause") if not checked else tr("Pause"))
         # Keep capture running; only freeze display.
+
+    def _on_dc_toggled(self, checked: bool):
+        self.module.show_dc_offset = bool(checked)
+        self._apply_dc_visibility()
 
     def _apply_view_ranges(self):
         span = float(getattr(self.module, "time_span_s", 10.0))
@@ -337,6 +364,13 @@ class RawTimeSeriesWidget(QWidget):
 
         self._last_frame = frame
         t, data = frame
+
+        if bool(getattr(self.module, "show_dc_offset", False)):
+            # DC offset in original units (V), independent of display scale.
+            dc1 = float(np.mean(data[:, 0].astype(np.float64, copy=False)))
+            dc2 = float(np.mean(data[:, 1].astype(np.float64, copy=False)))
+            self.lbl_dc_ch1.setText(f"CH1: {format_si(dc1, 'V', sig_figs=4)}")
+            self.lbl_dc_ch2.setText(f"CH2: {format_si(dc2, 'V', sig_figs=4)}")
 
         scale = float(getattr(self.module, "vscale", 1.0))
         y1 = data[:, 0] * scale
