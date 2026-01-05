@@ -37,6 +37,8 @@ class RawTimeSeries(MeasurementModule):
         self.vscale = 1.0
         self.paused = False
         self.show_dc_offset = False
+        # Default to showing raw FS values; volts is optional.
+        self.show_volts = False
 
         # Storage settings
         self.max_span_s = 300.0
@@ -185,8 +187,9 @@ class RawTimeSeriesWidget(QWidget):
         self.plot_ch1.showGrid(x=True, y=True)
         self.plot_ch2.showGrid(x=True, y=True)
 
-        self.plot_ch1.setLabel("left", tr("Amplitude"), units="V")
-        self.plot_ch2.setLabel("left", tr("Amplitude"), units="V")
+        # Default to FS display; volts is optional.
+        self.plot_ch1.setLabel("left", tr("Amplitude"), units="FS")
+        self.plot_ch2.setLabel("left", tr("Amplitude"), units="FS")
         self.plot_ch2.setLabel("bottom", tr("Time"), units="s")
 
         self.plot_ch1.setTitle(tr("CH1"))
@@ -275,6 +278,12 @@ class RawTimeSeriesWidget(QWidget):
         v_row.addWidget(self.combo_v)
         ctrl.addLayout(v_row)
 
+        # Units
+        self.chk_volts = QCheckBox(tr("Show Volts"))
+        self.chk_volts.setChecked(bool(getattr(self.module, "show_volts", False)))
+        self.chk_volts.toggled.connect(self._on_volts_toggled)
+        ctrl.addWidget(self.chk_volts)
+
         # Pause
         self.btn_pause = QPushButton(tr("Pause"))
         self.btn_pause.setCheckable(True)
@@ -300,8 +309,39 @@ class RawTimeSeriesWidget(QWidget):
         root.addWidget(right_widget)
 
         # Apply defaults
+        self._apply_unit_settings()
         self._apply_view_ranges()
         self._apply_dc_visibility()
+
+    def _get_unit_factor(self) -> float:
+        """Returns multiplier to convert stored samples (FS) into display units."""
+        if bool(getattr(self.module, "show_volts", False)):
+            try:
+                return float(self.module.audio_engine.calibration.input_sensitivity)
+            except Exception:
+                return 1.0
+        return 1.0
+
+    def _get_unit_label(self) -> str:
+        return "V" if bool(getattr(self.module, "show_volts", False)) else "FS"
+
+    def _format_amplitude(self, value: float) -> str:
+        unit = self._get_unit_label()
+        if unit == "V":
+            return format_si(value, "V", sig_figs=4)
+        # For FS (dimensionless), prefer plain numeric rather than SI prefixes.
+        try:
+            x = float(value)
+        except Exception:
+            return "-"
+        if not np.isfinite(x):
+            return "-"
+        return f"{x:.6g} FS"
+
+    def _apply_unit_settings(self):
+        unit = self._get_unit_label()
+        self.plot_ch1.setLabel("left", tr("Amplitude"), units=unit)
+        self.plot_ch2.setLabel("left", tr("Amplitude"), units=unit)
 
     def _apply_dc_visibility(self):
         show = bool(getattr(self.module, "show_dc_offset", False))
@@ -331,15 +371,21 @@ class RawTimeSeriesWidget(QWidget):
         self.btn_pause.setText(tr("Pause") if not checked else tr("Pause"))
         # Keep capture running; only freeze display.
 
+    def _on_volts_toggled(self, checked: bool):
+        self.module.show_volts = bool(checked)
+        self._apply_unit_settings()
+        self._apply_view_ranges()
+
     def _on_dc_toggled(self, checked: bool):
         self.module.show_dc_offset = bool(checked)
         self._apply_dc_visibility()
 
     def _apply_view_ranges(self):
         span = float(getattr(self.module, "time_span_s", 10.0))
+        unit_factor = float(self._get_unit_factor())
         # Fixed vertical view range; amplitude scaling is applied to data.
         self.plot_ch1.setXRange(-span, 0)
-        self.plot_ch1.setYRange(-1.1, 1.1)
+        self.plot_ch1.setYRange(-1.1 * unit_factor, 1.1 * unit_factor)
 
     @staticmethod
     def _decimate_for_plot(t: np.ndarray, y: np.ndarray, max_points: int) -> tuple[np.ndarray, np.ndarray]:
@@ -366,16 +412,18 @@ class RawTimeSeriesWidget(QWidget):
         self._last_frame = frame
         t, data = frame
 
+        unit_factor = float(self._get_unit_factor())
+
         if bool(getattr(self.module, "show_dc_offset", False)):
-            # DC offset in original units (V), independent of display scale.
-            dc1 = float(np.mean(data[:, 0].astype(np.float64, copy=False)))
-            dc2 = float(np.mean(data[:, 1].astype(np.float64, copy=False)))
-            self.lbl_dc_ch1.setText(f"CH1: {format_si(dc1, 'V', sig_figs=4)}")
-            self.lbl_dc_ch2.setText(f"CH2: {format_si(dc2, 'V', sig_figs=4)}")
+            # DC offset in display units, independent of display scale.
+            dc1 = float(np.mean(data[:, 0].astype(np.float64, copy=False)) * unit_factor)
+            dc2 = float(np.mean(data[:, 1].astype(np.float64, copy=False)) * unit_factor)
+            self.lbl_dc_ch1.setText(f"CH1: {self._format_amplitude(dc1)}")
+            self.lbl_dc_ch2.setText(f"CH2: {self._format_amplitude(dc2)}")
 
         scale = float(getattr(self.module, "vscale", 1.0))
-        y1 = data[:, 0] * scale
-        y2 = data[:, 1] * scale
+        y1 = data[:, 0] * unit_factor * scale
+        y2 = data[:, 1] * unit_factor * scale
 
         # Decimate for drawing load.
         max_points = 6000 if span <= 60 else 8000
