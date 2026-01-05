@@ -1,5 +1,34 @@
 # Changelog
 
+## [v0.3.0] - 2026-01-05
+
+### Changed
+
+* Loopback Finder が PipeWire/JACK 常駐モード中は使用不可である旨を UI に明示し、開始/停止ボタンを自動で無効化するように変更
+* Frequency Counter の更新間隔に上限を設け、極端な遅延やリフレッシュ停滞を防止
+
+### Fixed
+
+* Timecode Monitor の start/stop サイクルでコールバック登録を確実に解除し、ID=0 や失われた ID を含めてクリーンアップできるように改善
+* Timecode Monitor の開始時に残存コールバックを検出して安全に停止してから再登録するディフェンシブ処理を追加
+* エラーハンドリングで例外型を明示し、ログ/メッセージの診断精度を向上
+
+### Localization
+
+* Loopback Finder の利用可否メッセージを各言語の翻訳に追加・更新
+
+### Tests
+
+* Timecode Monitor の LTC 表示オフセット計算とコールバック解除に関するユニットテストを追加し、pytest から `src` を直接 import できるよう tests/conftest を追加
+
+### CI/CD
+
+* GitHub Actions ワークフローを最新の actions バージョンと権限設定に更新
+
+### Documentation
+
+* README から不要な文言を削除
+
 ## [v0.2.9] - 2026-01-03
 
 ### Added
