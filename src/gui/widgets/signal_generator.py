@@ -17,11 +17,13 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QSlider,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from src.core.audio_engine import AudioEngine
+from src.core.dsp import FractionalDelayLine
 from src.core.localization import tr
 from src.measurement_modules.base import MeasurementModule
 
@@ -80,6 +82,17 @@ class SignalGenerator(MeasurementModule):
 
         # Output Routing: 'L', 'R', 'STEREO'
         self.output_mode = 'STEREO'
+
+        # Optional post-effect: delayed copy mixing (for BNIM analysis etc.)
+        self.delay_copy_enabled: bool = False
+        self.delay_copy_alpha: float = 0.1
+        # ms; can be linked (same L/R) or separate for stereo group-delay differences.
+        self.delay_copy_tau_ms_L: float = 0.0
+        self.delay_copy_tau_ms_R: float = 0.0
+        self.delay_copy_link_lr: bool = True
+
+        self._delay_L = FractionalDelayLine()
+        self._delay_R = FractionalDelayLine()
 
         self.is_playing = False
         self.callback_id = None
@@ -311,6 +324,10 @@ class SignalGenerator(MeasurementModule):
             params._fm_phase_rad = 0.0
             self._prepare_buffer(params, sample_rate)
 
+        # Reset effect state
+        self._delay_L.reset()
+        self._delay_R.reset()
+
         def _phase_from_instantaneous_frequency(params: SignalParameters, f_inst_hz: np.ndarray, sample_rate: float):
             """Integrate instantaneous frequency to phase (radians) with continuity across blocks."""
             # Prevent negative frequencies from flipping waveforms in unexpected ways.
@@ -481,6 +498,10 @@ class SignalGenerator(MeasurementModule):
             # Left Channel
             if self.output_mode in ['L', 'STEREO']:
                 sig_l = generate_channel_signal(self.params_L, frames, t)
+                if self.delay_copy_enabled and self.delay_copy_alpha != 0.0:
+                    tau_ms = float(self.delay_copy_tau_ms_L)
+                    d_samp = (tau_ms / 1000.0) * sample_rate
+                    sig_l = sig_l + float(self.delay_copy_alpha) * self._delay_L.process(sig_l, d_samp)
                 if outdata.shape[1] >= 1:
                     outdata[:, 0] = sig_l
 
@@ -491,6 +512,13 @@ class SignalGenerator(MeasurementModule):
                 # So we always use params_R for Right channel.
                 # If the user wants them same, they copy settings in UI.
                 sig_r = generate_channel_signal(self.params_R, frames, t)
+                if self.delay_copy_enabled and self.delay_copy_alpha != 0.0:
+                    if self.delay_copy_link_lr:
+                        tau_ms = float(self.delay_copy_tau_ms_L)
+                    else:
+                        tau_ms = float(self.delay_copy_tau_ms_R)
+                    d_samp = (tau_ms / 1000.0) * sample_rate
+                    sig_r = sig_r + float(self.delay_copy_alpha) * self._delay_R.process(sig_r, d_samp)
                 if outdata.shape[1] >= 2:
                     outdata[:, 1] = sig_r
 
@@ -752,12 +780,15 @@ class SignalGeneratorWidget(QWidget):
         basic_group.setLayout(basic_layout)
         layout.addWidget(basic_group)
 
-        # --- Sweep Controls ---
+        # --- Options Tabs (Sweep / FM / Delayed Copy) ---
+        tabs = QTabWidget()
+
+        # Sweep tab
         sweep_group = QGroupBox(tr("Frequency Sweep (Sine Only)"))
         sweep_group.setCheckable(True)
         sweep_group.setChecked(False)
         sweep_group.toggled.connect(lambda v: self.update_param('sweep_enabled', v))
-        self.sweep_group = sweep_group # Store ref to update checked state
+        self.sweep_group = sweep_group
 
         sweep_layout = QFormLayout()
 
@@ -781,9 +812,9 @@ class SignalGeneratorWidget(QWidget):
         sweep_layout.addRow(self.log_check)
 
         sweep_group.setLayout(sweep_layout)
-        layout.addWidget(sweep_group)
+        tabs.addTab(sweep_group, tr("Sweep"))
 
-        # --- FM Controls ---
+        # FM tab
         fm_group = QGroupBox(tr("FM (Frequency Modulation)"))
         fm_group.setCheckable(True)
         fm_group.setChecked(False)
@@ -807,7 +838,52 @@ class SignalGeneratorWidget(QWidget):
         fm_layout.addRow(tr("Deviation Δf (Hz):"), self.fm_dev_spin)
 
         fm_group.setLayout(fm_layout)
-        layout.addWidget(fm_group)
+        tabs.addTab(fm_group, tr("FM"))
+
+        # Delayed Copy tab (global option)
+        delay_group = QGroupBox(tr("Delayed Copy (y = x + α·x[n−τ])"))
+        delay_group.setCheckable(True)
+        delay_group.setChecked(False)
+        delay_group.toggled.connect(self.on_delay_copy_toggled)
+        self.delay_group = delay_group
+
+        delay_layout = QFormLayout()
+
+        self.delay_alpha_spin = QDoubleSpinBox()
+        self.delay_alpha_spin.setRange(-1.0, 1.0)
+        self.delay_alpha_spin.setSingleStep(0.01)
+        self.delay_alpha_spin.setDecimals(3)
+        self.delay_alpha_spin.setValue(0.1)
+        self.delay_alpha_spin.valueChanged.connect(self.on_delay_alpha_changed)
+        delay_layout.addRow(tr("α (mix):"), self.delay_alpha_spin)
+
+        self.delay_link_check = QCheckBox(tr("Link L/R τ"))
+        self.delay_link_check.setChecked(True)
+        self.delay_link_check.toggled.connect(self.on_delay_link_toggled)
+        delay_layout.addRow(self.delay_link_check)
+
+        self.delay_tau_l_spin = QDoubleSpinBox()
+        self.delay_tau_l_spin.setRange(0.0, 500.0)
+        self.delay_tau_l_spin.setDecimals(3)
+        self.delay_tau_l_spin.setSingleStep(0.1)
+        self.delay_tau_l_spin.setSuffix(" ms")
+        self.delay_tau_l_spin.setValue(0.0)
+        self.delay_tau_l_spin.valueChanged.connect(self.on_delay_tau_l_changed)
+        delay_layout.addRow(tr("τ Left:"), self.delay_tau_l_spin)
+
+        self.delay_tau_r_spin = QDoubleSpinBox()
+        self.delay_tau_r_spin.setRange(0.0, 500.0)
+        self.delay_tau_r_spin.setDecimals(3)
+        self.delay_tau_r_spin.setSingleStep(0.1)
+        self.delay_tau_r_spin.setSuffix(" ms")
+        self.delay_tau_r_spin.setValue(0.0)
+        self.delay_tau_r_spin.valueChanged.connect(self.on_delay_tau_r_changed)
+        delay_layout.addRow(tr("τ Right:"), self.delay_tau_r_spin)
+
+        delay_group.setLayout(delay_layout)
+        tabs.addTab(delay_group, tr("Delay Copy"))
+
+        layout.addWidget(tabs)
 
         layout.addStretch()
         self.setLayout(layout)
@@ -865,6 +941,14 @@ class SignalGeneratorWidget(QWidget):
         self.fm_freq_spin.setValue(params.fm_frequency)
         self.fm_dev_spin.setValue(params.fm_deviation)
 
+        # Global delayed-copy state
+        self.delay_group.setChecked(bool(self.module.delay_copy_enabled))
+        self.delay_alpha_spin.setValue(float(self.module.delay_copy_alpha))
+        self.delay_link_check.setChecked(bool(self.module.delay_copy_link_lr))
+        self.delay_tau_l_spin.setValue(float(self.module.delay_copy_tau_ms_L))
+        self.delay_tau_r_spin.setValue(float(self.module.delay_copy_tau_ms_R))
+        self.delay_tau_r_spin.setEnabled(not bool(self.module.delay_copy_link_lr))
+
         self.on_wave_changed(params.waveform) # Update visibility
 
         self.block_all_signals(False)
@@ -881,6 +965,44 @@ class SignalGeneratorWidget(QWidget):
         ]
         for w in widgets:
             w.blockSignals(block)
+
+        # Delay copy controls are global.
+        for w in [
+            getattr(self, 'delay_group', None),
+            getattr(self, 'delay_alpha_spin', None),
+            getattr(self, 'delay_link_check', None),
+            getattr(self, 'delay_tau_l_spin', None),
+            getattr(self, 'delay_tau_r_spin', None),
+        ]:
+            if w is not None:
+                w.blockSignals(block)
+
+    def on_delay_copy_toggled(self, v: bool):
+        self.module.delay_copy_enabled = bool(v)
+
+    def on_delay_alpha_changed(self, v: float):
+        self.module.delay_copy_alpha = float(v)
+
+    def on_delay_link_toggled(self, v: bool):
+        self.module.delay_copy_link_lr = bool(v)
+        self.delay_tau_r_spin.setEnabled(not bool(v))
+        if v:
+            # Keep R in sync when linked.
+            self.module.delay_copy_tau_ms_R = float(self.module.delay_copy_tau_ms_L)
+            self.block_all_signals(True)
+            self.delay_tau_r_spin.setValue(float(self.module.delay_copy_tau_ms_R))
+            self.block_all_signals(False)
+
+    def on_delay_tau_l_changed(self, v: float):
+        self.module.delay_copy_tau_ms_L = float(v)
+        if self.module.delay_copy_link_lr:
+            self.module.delay_copy_tau_ms_R = float(v)
+            self.block_all_signals(True)
+            self.delay_tau_r_spin.setValue(float(v))
+            self.block_all_signals(False)
+
+    def on_delay_tau_r_changed(self, v: float):
+        self.module.delay_copy_tau_ms_R = float(v)
 
     def on_target_changed(self, btn):
         if self.target_l.isChecked():
