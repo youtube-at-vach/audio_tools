@@ -33,6 +33,11 @@ class SignalParameters:
     amplitude: float = 0.5
     noise_color: str = 'white'
 
+    # FM parameters (frequency modulation)
+    fm_enabled: bool = False
+    fm_frequency: float = 5.0  # Hz (modulator frequency)
+    fm_deviation: float = 100.0  # Hz (peak deviation)
+
     # Sweep parameters
     sweep_enabled: bool = False
     start_freq: float = 20.0
@@ -61,6 +66,10 @@ class SignalParameters:
     _sweep_time: float = 0.0
     _buffer: Optional[np.ndarray] = None
     _buffer_index: int = 0
+
+    # FM/phase-accumulator state (radians)
+    _carrier_phase_rad: float = 0.0
+    _fm_phase_rad: float = 0.0
 
 class SignalGenerator(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -298,7 +307,29 @@ class SignalGenerator(MeasurementModule):
         for params in [self.params_L, self.params_R]:
             params._phase = 0
             params._sweep_time = 0
+            params._carrier_phase_rad = 0.0
+            params._fm_phase_rad = 0.0
             self._prepare_buffer(params, sample_rate)
+
+        def _phase_from_instantaneous_frequency(params: SignalParameters, f_inst_hz: np.ndarray, sample_rate: float):
+            """Integrate instantaneous frequency to phase (radians) with continuity across blocks."""
+            # Prevent negative frequencies from flipping waveforms in unexpected ways.
+            # Clamp to >= 0 Hz; users can set deviation to 0 if they want no FM.
+            if f_inst_hz.size == 0:
+                return np.zeros(0, dtype=float)
+
+            f_safe = np.maximum(f_inst_hz, 0.0)
+            dphi = (2.0 * np.pi * f_safe) / sample_rate
+
+            # phase[0] should start at current carrier phase.
+            phase0 = float(params._carrier_phase_rad)
+            phase = phase0 + np.cumsum(dphi) - dphi[0]
+
+            # Advance phase accumulator for next block.
+            params._carrier_phase_rad = float(phase0 + np.sum(dphi))
+            # Keep bounded to avoid numerical growth.
+            params._carrier_phase_rad = float(np.fmod(params._carrier_phase_rad, 2.0 * np.pi))
+            return phase
 
         def generate_channel_signal(params: SignalParameters, frames, t_global):
             signal = np.zeros(frames)
@@ -329,10 +360,37 @@ class SignalGenerator(MeasurementModule):
                 current_times = params._sweep_time + t_global
                 current_times = np.mod(current_times, params.sweep_duration)
 
+                # If FM is enabled, integrate instantaneous frequency (sweep + FM).
+                # Otherwise, preserve legacy analytic sweep phase.
+                if params.fm_enabled and params.fm_frequency > 0 and params.fm_deviation != 0:
+                    if params.log_sweep:
+                        # f(t) = f0 * exp(k t)
+                        k = np.log(params.end_freq / params.start_freq) / params.sweep_duration
+                        f_base = params.start_freq * np.exp(k * current_times) if k != 0 else np.full_like(current_times, params.start_freq)
+                    else:
+                        # f(t) = f0 + k t
+                        k = (params.end_freq - params.start_freq) / params.sweep_duration
+                        f_base = params.start_freq + k * current_times
+
+                    # Modulator phase advances continuously across blocks.
+                    mod_phase0 = float(params._fm_phase_rad)
+                    mod_phase = mod_phase0 + 2.0 * np.pi * params.fm_frequency * t_global
+                    params._fm_phase_rad = float(np.fmod(mod_phase0 + 2.0 * np.pi * params.fm_frequency * (frames / sample_rate), 2.0 * np.pi))
+
+                    f_inst = f_base + params.fm_deviation * np.sin(mod_phase)
+                    phase = _phase_from_instantaneous_frequency(params, f_inst, sample_rate)
+
+                    offset_rad = np.radians(params.phase_offset)
+                    signal = params.amplitude * np.sin(phase + offset_rad)
+                    params._sweep_time += frames / sample_rate
+                    return signal
+
                 if params.log_sweep:
                     k = np.log(params.end_freq / params.start_freq) / params.sweep_duration
-                    if k == 0: phase = 2 * np.pi * params.start_freq * current_times
-                    else: phase = 2 * np.pi * params.start_freq * (np.exp(k * current_times) - 1) / k
+                    if k == 0:
+                        phase = 2 * np.pi * params.start_freq * current_times
+                    else:
+                        phase = 2 * np.pi * params.start_freq * (np.exp(k * current_times) - 1) / k
                 else:
                     k = (params.end_freq - params.start_freq) / params.sweep_duration
                     phase = 2 * np.pi * (params.start_freq * current_times + 0.5 * k * current_times**2)
@@ -342,41 +400,74 @@ class SignalGenerator(MeasurementModule):
                 return signal
 
             # Standard waveforms
-            phase_t = (np.arange(frames) + params._phase) / sample_rate
-            params._phase += frames
-
-            # Apply Phase Offset
-            # We add phase offset to the argument of sin/cos functions.
-            # phase_t * freq gives cycles. 2*pi converts to radians.
-            # We add offset in radians.
             offset_rad = np.radians(params.phase_offset)
 
-            if params.waveform == 'sine':
-                signal = params.amplitude * np.sin(2 * np.pi * params.frequency * phase_t + offset_rad)
-            elif params.waveform == 'square':
-                signal = params.amplitude * np.sign(np.sin(2 * np.pi * params.frequency * phase_t + offset_rad))
-            elif params.waveform == 'triangle':
-                # Triangle wave depends on phase.
-                # (2 * abs(2 * ((t * f + off) % 1) - 1) - 1)
-                # We need to add offset to the cycle count part.
-                # offset in cycles = offset_deg / 360
-                off_cycles = params.phase_offset / 360.0
-                signal = params.amplitude * (2 * np.abs(2 * ((phase_t * params.frequency + off_cycles) % 1) - 1) - 1)
-            elif params.waveform == 'sawtooth':
-                off_cycles = params.phase_offset / 360.0
-                raw_saw = 2 * ((phase_t * params.frequency + off_cycles) % 1) - 1
-                if params.sawtooth_type == 'Falling':
-                    raw_saw *= -1
-                signal = params.amplitude * raw_saw
-            elif params.waveform == 'pulse':
-                duty = params.pulse_width / 100.0
-                off_cycles = params.phase_offset / 360.0
-                ramp = (phase_t * params.frequency + off_cycles) % 1
-                signal = params.amplitude * np.where(ramp < duty, 1.0, -1.0)
-            elif params.waveform == 'tone_noise':
-                signal = params.amplitude * np.sin(2 * np.pi * params.frequency * phase_t + offset_rad)
-                noise = params.noise_amplitude * np.random.uniform(-1, 1, size=frames)
-                signal += noise
+            # Optional FM (works for periodic waveforms only)
+            use_fm = bool(params.fm_enabled and params.fm_frequency > 0 and params.fm_deviation != 0 and params.waveform in [
+                'sine', 'square', 'triangle', 'sawtooth', 'pulse', 'tone_noise'
+            ])
+
+            if use_fm:
+                # Modulator phase advances continuously across blocks.
+                t = t_global
+                mod_phase0 = float(params._fm_phase_rad)
+                mod_phase = mod_phase0 + 2.0 * np.pi * params.fm_frequency * t
+                params._fm_phase_rad = float(np.fmod(mod_phase0 + 2.0 * np.pi * params.fm_frequency * (frames / sample_rate), 2.0 * np.pi))
+
+                f_inst = params.frequency + params.fm_deviation * np.sin(mod_phase)
+                phase = _phase_from_instantaneous_frequency(params, f_inst, sample_rate)
+
+                if params.waveform == 'sine':
+                    signal = params.amplitude * np.sin(phase + offset_rad)
+                elif params.waveform == 'square':
+                    signal = params.amplitude * np.sign(np.sin(phase + offset_rad))
+                else:
+                    # Use cycle-based definitions for the remaining waves.
+                    cycles = phase / (2.0 * np.pi)
+                    off_cycles = params.phase_offset / 360.0
+
+                    if params.waveform == 'triangle':
+                        signal = params.amplitude * (2 * np.abs(2 * ((cycles + off_cycles) % 1) - 1) - 1)
+                    elif params.waveform == 'sawtooth':
+                        raw_saw = 2 * ((cycles + off_cycles) % 1) - 1
+                        if params.sawtooth_type == 'Falling':
+                            raw_saw *= -1
+                        signal = params.amplitude * raw_saw
+                    elif params.waveform == 'pulse':
+                        duty = params.pulse_width / 100.0
+                        ramp = (cycles + off_cycles) % 1
+                        signal = params.amplitude * np.where(ramp < duty, 1.0, -1.0)
+                    elif params.waveform == 'tone_noise':
+                        signal = params.amplitude * np.sin(phase + offset_rad)
+                        noise = params.noise_amplitude * np.random.uniform(-1, 1, size=frames)
+                        signal += noise
+            else:
+                # Legacy fixed-frequency phase calculation
+                phase_t = (np.arange(frames) + params._phase) / sample_rate
+                params._phase += frames
+
+                if params.waveform == 'sine':
+                    signal = params.amplitude * np.sin(2 * np.pi * params.frequency * phase_t + offset_rad)
+                elif params.waveform == 'square':
+                    signal = params.amplitude * np.sign(np.sin(2 * np.pi * params.frequency * phase_t + offset_rad))
+                elif params.waveform == 'triangle':
+                    off_cycles = params.phase_offset / 360.0
+                    signal = params.amplitude * (2 * np.abs(2 * ((phase_t * params.frequency + off_cycles) % 1) - 1) - 1)
+                elif params.waveform == 'sawtooth':
+                    off_cycles = params.phase_offset / 360.0
+                    raw_saw = 2 * ((phase_t * params.frequency + off_cycles) % 1) - 1
+                    if params.sawtooth_type == 'Falling':
+                        raw_saw *= -1
+                    signal = params.amplitude * raw_saw
+                elif params.waveform == 'pulse':
+                    duty = params.pulse_width / 100.0
+                    off_cycles = params.phase_offset / 360.0
+                    ramp = (phase_t * params.frequency + off_cycles) % 1
+                    signal = params.amplitude * np.where(ramp < duty, 1.0, -1.0)
+                elif params.waveform == 'tone_noise':
+                    signal = params.amplitude * np.sin(2 * np.pi * params.frequency * phase_t + offset_rad)
+                    noise = params.noise_amplitude * np.random.uniform(-1, 1, size=frames)
+                    signal += noise
 
             return signal
 
@@ -692,6 +783,32 @@ class SignalGeneratorWidget(QWidget):
         sweep_group.setLayout(sweep_layout)
         layout.addWidget(sweep_group)
 
+        # --- FM Controls ---
+        fm_group = QGroupBox(tr("FM (Frequency Modulation)"))
+        fm_group.setCheckable(True)
+        fm_group.setChecked(False)
+        fm_group.toggled.connect(lambda v: self.update_param('fm_enabled', v))
+        self.fm_group = fm_group
+
+        fm_layout = QFormLayout()
+
+        self.fm_freq_spin = QDoubleSpinBox()
+        self.fm_freq_spin.setRange(0.01, 20000.0)
+        self.fm_freq_spin.setDecimals(3)
+        self.fm_freq_spin.setValue(5.0)
+        self.fm_freq_spin.valueChanged.connect(lambda v: self.update_param('fm_frequency', v))
+        fm_layout.addRow(tr("Mod Freq (Hz):"), self.fm_freq_spin)
+
+        self.fm_dev_spin = QDoubleSpinBox()
+        self.fm_dev_spin.setRange(0.0, 20000.0)
+        self.fm_dev_spin.setDecimals(3)
+        self.fm_dev_spin.setValue(100.0)
+        self.fm_dev_spin.valueChanged.connect(lambda v: self.update_param('fm_deviation', v))
+        fm_layout.addRow(tr("Deviation Δf (Hz):"), self.fm_dev_spin)
+
+        fm_group.setLayout(fm_layout)
+        layout.addWidget(fm_group)
+
         layout.addStretch()
         self.setLayout(layout)
 
@@ -744,6 +861,10 @@ class SignalGeneratorWidget(QWidget):
         self.duration_spin.setValue(params.sweep_duration)
         self.log_check.setChecked(params.log_sweep)
 
+        self.fm_group.setChecked(params.fm_enabled)
+        self.fm_freq_spin.setValue(params.fm_frequency)
+        self.fm_dev_spin.setValue(params.fm_deviation)
+
         self.on_wave_changed(params.waveform) # Update visibility
 
         self.block_all_signals(False)
@@ -755,7 +876,8 @@ class SignalGeneratorWidget(QWidget):
             self.prbs_order_combo, self.prbs_seed_spin,
             self.freq_spin, self.freq_slider, self.phase_spin, self.phase_slider,
             self.amp_spin, self.amp_slider, self.sweep_group, self.start_freq_spin,
-            self.end_freq_spin, self.duration_spin, self.log_check
+            self.end_freq_spin, self.duration_spin, self.log_check,
+            self.fm_group, self.fm_freq_spin, self.fm_dev_spin
         ]
         for w in widgets:
             w.blockSignals(block)
@@ -780,6 +902,9 @@ class SignalGeneratorWidget(QWidget):
         dst.frequency = src.frequency
         dst.amplitude = src.amplitude
         dst.noise_color = src.noise_color
+        dst.fm_enabled = src.fm_enabled
+        dst.fm_frequency = src.fm_frequency
+        dst.fm_deviation = src.fm_deviation
         dst.sweep_enabled = src.sweep_enabled
         dst.start_freq = src.start_freq
         dst.end_freq = src.end_freq
