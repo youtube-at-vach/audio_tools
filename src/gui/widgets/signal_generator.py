@@ -363,10 +363,16 @@ class SignalGenerator(MeasurementModule):
                     buf_len = len(buf)
                     if buf_len > 0:
                         delay_samples = float(params.delay_ms) * float(sample_rate) / 1000.0
-                        idx = (float(params._buffer_index) + np.arange(frames, dtype=float) - delay_samples) % float(buf_len)
+                        # Use remainder + explicit wrapping to avoid rare float edge cases
+                        # where floor(idx) can equal buf_len.
+                        idx = np.remainder(
+                            (float(params._buffer_index) + np.arange(frames, dtype=float) - delay_samples),
+                            float(buf_len),
+                        )
 
-                        i0 = np.floor(idx).astype(np.int64, copy=False)
-                        frac = (idx - i0).astype(float, copy=False)
+                        floor_idx = np.floor(idx)
+                        i0 = np.mod(floor_idx.astype(np.int64, copy=False), buf_len)
+                        frac = (idx - floor_idx).astype(float, copy=False)
                         i1 = (i0 + 1) % buf_len
 
                         signal = (1.0 - frac) * buf[i0] + frac * buf[i1]
