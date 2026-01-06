@@ -56,12 +56,16 @@ class SignalParameters:
     mls_order: int = 15
     burst_on_cycles: int = 10
     burst_off_cycles: int = 90
+    burst_windowed: bool = False
 
     # New Parameters
     pulse_width: float = 50.0 # %
     sawtooth_type: str = 'Raising'
     noise_amplitude: float = 0.1
     phase_offset: float = 0.0 # Degrees
+
+    # Inter-channel time alignment (positive = delay this channel)
+    delay_ms: float = 0.0 # ms
 
     # PRBS Parameters
     prbs_order: int = 15
@@ -248,7 +252,16 @@ class SignalGenerator(MeasurementModule):
         on_samples = int(on_duration * sample_rate)
 
         envelope = np.zeros(num_samples)
-        envelope[:on_samples] = 1.0
+        on_samples = int(np.clip(on_samples, 0, num_samples))
+
+        if on_samples <= 0:
+            return envelope
+
+        if params.burst_windowed and on_samples >= 2:
+            # Hann window makes the ON segment start/end at 0 (reduces clicks).
+            envelope[:on_samples] = np.hanning(on_samples)
+        else:
+            envelope[:on_samples] = 1.0
 
         return sine * envelope
 
@@ -343,6 +356,23 @@ class SignalGenerator(MeasurementModule):
             signal = np.zeros(frames)
 
             if params._buffer is not None:
+                # For burst, support per-channel fractional delay at readout time.
+                # This avoids rebuilding buffers and lets users adjust delay live.
+                if params.waveform == 'burst' and getattr(params, 'delay_ms', 0.0) != 0.0:
+                    buf = params._buffer
+                    buf_len = len(buf)
+                    if buf_len > 0:
+                        delay_samples = float(params.delay_ms) * float(sample_rate) / 1000.0
+                        idx = (float(params._buffer_index) + np.arange(frames, dtype=float) - delay_samples) % float(buf_len)
+
+                        i0 = np.floor(idx).astype(np.int64, copy=False)
+                        frac = (idx - i0).astype(float, copy=False)
+                        i1 = (i0 + 1) % buf_len
+
+                        signal = (1.0 - frac) * buf[i0] + frac * buf[i1]
+                        params._buffer_index = int((params._buffer_index + frames) % buf_len)
+                        return signal * params.amplitude
+
                 # Buffer based generation
                 chunk_size = frames
                 buf_len = len(params._buffer)
@@ -701,6 +731,11 @@ class SignalGeneratorWidget(QWidget):
         self.burst_off_spin.valueChanged.connect(lambda v: self.update_param('burst_off_cycles', int(v)))
         burst_form.addRow(tr("Off Cycles:"), self.burst_off_spin)
 
+        self.burst_window_check = QCheckBox(tr("Windowed (fade in/out)"))
+        self.burst_window_check.setChecked(False)
+        self.burst_window_check.toggled.connect(lambda v: self.update_param('burst_windowed', bool(v)))
+        burst_form.addRow(self.burst_window_check)
+
         # 5. Pulse Params
         self.pulse_widget = QWidget()
         pulse_form = QFormLayout(self.pulse_widget)
@@ -799,6 +834,26 @@ class SignalGeneratorWidget(QWidget):
         phase_layout.addWidget(self.phase_spin)
         phase_layout.addWidget(self.phase_slider)
         basic_layout.addRow(tr("Phase Offset:"), phase_layout)
+
+        # Delay (ms)
+        delay_layout = QHBoxLayout()
+        self.delay_spin = QDoubleSpinBox()
+        self.delay_spin.setRange(-2.0, 2.0)
+        self.delay_spin.setDecimals(3)
+        self.delay_spin.setSingleStep(0.01)
+        self.delay_spin.setValue(0.0)
+        self.delay_spin.setSuffix(" ms")
+        self.delay_spin.valueChanged.connect(self.on_delay_spin_changed)
+
+        self.delay_slider = QSlider(Qt.Orientation.Horizontal)
+        # microseconds in slider units for fine control
+        self.delay_slider.setRange(-2000, 2000)
+        self.delay_slider.setValue(0)
+        self.delay_slider.valueChanged.connect(self.on_delay_slider_changed)
+
+        delay_layout.addWidget(self.delay_spin)
+        delay_layout.addWidget(self.delay_slider)
+        basic_layout.addRow(tr("Delay (ms):"), delay_layout)
 
         # Amplitude
         amp_layout = QHBoxLayout()
@@ -943,6 +998,7 @@ class SignalGeneratorWidget(QWidget):
         self.mls_order_combo.setCurrentText(str(params.mls_order))
         self.burst_on_spin.setValue(params.burst_on_cycles)
         self.burst_off_spin.setValue(params.burst_off_cycles)
+        self.burst_window_check.setChecked(bool(getattr(params, 'burst_windowed', False)))
         self.pulse_width_spin.setValue(params.pulse_width)
         self.saw_type_combo.setCurrentText(params.sawtooth_type)
         self.noise_amp_spin.setValue(params.noise_amplitude)
@@ -954,6 +1010,9 @@ class SignalGeneratorWidget(QWidget):
 
         self.phase_spin.setValue(params.phase_offset)
         self.phase_slider.setValue(int(params.phase_offset))
+
+        self.delay_spin.setValue(float(getattr(params, 'delay_ms', 0.0)))
+        self.delay_slider.setValue(int(round(float(getattr(params, 'delay_ms', 0.0)) * 1000.0)))
 
         self.update_amp_display_value(params.amplitude)
 
@@ -978,9 +1037,9 @@ class SignalGeneratorWidget(QWidget):
     def block_all_signals(self, block):
         widgets = [
             self.wave_combo, self.noise_combo, self.mt_count_spin, self.mls_order_combo,
-            self.burst_on_spin, self.burst_off_spin, self.pulse_width_spin, self.saw_type_combo, self.noise_amp_spin,
+            self.burst_on_spin, self.burst_off_spin, self.burst_window_check, self.pulse_width_spin, self.saw_type_combo, self.noise_amp_spin,
             self.prbs_order_combo, self.prbs_seed_spin,
-            self.freq_spin, self.freq_slider, self.phase_spin, self.phase_slider,
+            self.freq_spin, self.freq_slider, self.phase_spin, self.phase_slider, self.delay_spin, self.delay_slider,
             self.amp_spin, self.amp_slider, self.sweep_group, self.start_freq_spin,
             self.end_freq_spin, self.duration_spin, self.log_check,
             self.fm_group, self.fm_freq_spin, self.fm_dev_spin,
@@ -1024,10 +1083,12 @@ class SignalGeneratorWidget(QWidget):
         dst.mls_order = src.mls_order
         dst.burst_on_cycles = src.burst_on_cycles
         dst.burst_off_cycles = src.burst_off_cycles
+        dst.burst_windowed = src.burst_windowed
         dst.pulse_width = src.pulse_width
         dst.sawtooth_type = src.sawtooth_type
         dst.noise_amplitude = src.noise_amplitude
         dst.phase_offset = src.phase_offset
+        dst.delay_ms = src.delay_ms
         dst.prbs_order = src.prbs_order
         dst.prbs_seed = src.prbs_seed
 
@@ -1098,6 +1159,19 @@ class SignalGeneratorWidget(QWidget):
         self.phase_spin.blockSignals(True)
         self.phase_spin.setValue(float(val))
         self.phase_spin.blockSignals(False)
+
+    def on_delay_spin_changed(self, val):
+        self.update_param('delay_ms', float(val))
+        self.delay_slider.blockSignals(True)
+        self.delay_slider.setValue(int(round(float(val) * 1000.0)))
+        self.delay_slider.blockSignals(False)
+
+    def on_delay_slider_changed(self, val):
+        ms = float(val) / 1000.0
+        self.update_param('delay_ms', ms)
+        self.delay_spin.blockSignals(True)
+        self.delay_spin.setValue(ms)
+        self.delay_spin.blockSignals(False)
 
     # --- Amplitude Helpers ---
     def on_unit_changed(self, unit):
