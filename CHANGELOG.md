@@ -1,5 +1,27 @@
 # Changelog
 
+## [v0.3.1] - 2026-01-06
+
+### Added
+
+* Signal Generator に AM（振幅変調）を追加し、深さ設定付き UI を実装
+* Signal Generator に FM（周波数変調）を追加し、UI コントロールを拡充
+* Signal Generator にバーストウィンドウとチャネル別ディレイ／ディレイ設定 UI を追加
+* Signal Generator にディレイドコピー機能を追加し、UI 操作を実装
+
+### Changed
+
+* SignalGeneratorWidget の波形選択と動的 UI 更新を改善
+* FractionalDelayLine を削除し、ディレイ実装を整理
+
+### Fixed
+
+* SignalGenerator のバッファインデックス計算を調整し、浮動小数の端境値を避けるよう改善
+
+### Localization
+
+* AM 変調と深さ設定、FM やディレイ関連の新機能を多言語翻訳に追加
+
 ## [v0.3.0] - 2026-01-05
 
 ### Changed
