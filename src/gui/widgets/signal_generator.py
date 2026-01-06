@@ -645,6 +645,62 @@ class SignalGeneratorWidget(QWidget):
         self.current_target = 'L' # 'L', 'R', 'LINK'
         self.init_ui()
 
+    def _set_wave_combo_key(self, key: str):
+        for i in range(self.wave_combo.count()):
+            if self.wave_combo.itemData(i) == key:
+                self.wave_combo.setCurrentIndex(i)
+                return
+
+    def _apply_waveform_key(self, key: str, *, update_params: bool):
+        # Map UI selection to internal params
+        if update_params:
+            if key == 'burst_windowed':
+                self.update_param('waveform', 'burst')
+                self.update_param('burst_windowed', True)
+            else:
+                self.update_param('waveform', key)
+                if key == 'burst':
+                    self.update_param('burst_windowed', False)
+
+        # Dynamic widgets
+        self.noise_widget.hide()
+        self.multitone_widget.hide()
+        self.mls_widget.hide()
+        self.mls_widget.hide()
+        self.burst_widget.hide()
+        self.pulse_widget.hide()
+        self.tn_widget.hide()
+        self.tn_widget.hide()
+        self.sawtooth_widget.hide()
+        self.prbs_widget.hide()
+
+        if key == 'noise':
+            self.noise_widget.show()
+        elif key == 'multitone':
+            self.multitone_widget.show()
+        elif key == 'mls':
+            self.mls_widget.show()
+        elif key in ['burst', 'burst_windowed']:
+            self.burst_widget.show()
+        elif key == 'pulse':
+            self.pulse_widget.show()
+        elif key == 'tone_noise':
+            self.tn_widget.show()
+        elif key == 'sawtooth':
+            self.sawtooth_widget.show()
+        elif key == 'prbs':
+            self.prbs_widget.show()
+
+        use_freq = key not in ['noise', 'mls', 'prbs']
+        self.freq_spin.setEnabled(use_freq)
+        self.freq_slider.setEnabled(use_freq)
+
+        # Delay UI is only relevant for burst variants (engine applies delay for burst only).
+        show_delay = key in ['burst', 'burst_windowed']
+        self.delay_label.setVisible(show_delay)
+        self.delay_spin.setVisible(show_delay)
+        self.delay_slider.setVisible(show_delay)
+
     def init_ui(self):
         layout = QVBoxLayout()
 
@@ -719,8 +775,23 @@ class SignalGeneratorWidget(QWidget):
 
         # Waveform
         self.wave_combo = QComboBox()
-        self.wave_combo.addItems(['sine', 'square', 'triangle', 'sawtooth', 'pulse', 'tone_noise', 'noise', 'multitone', 'mls', 'burst', 'prbs'])
-        self.wave_combo.currentTextChanged.connect(self.on_wave_changed)
+        waveform_items = [
+            ('sine', 'sine'),
+            ('square', 'square'),
+            ('triangle', 'triangle'),
+            ('sawtooth', 'sawtooth'),
+            ('pulse', 'pulse'),
+            ('tone_noise', 'tone_noise'),
+            ('noise', 'noise'),
+            ('multitone', 'multitone'),
+            ('mls', 'mls'),
+            ('burst', 'burst'),
+            ('burst (windowed)', 'burst_windowed'),
+            ('prbs', 'prbs'),
+        ]
+        for label, key in waveform_items:
+            self.wave_combo.addItem(label, key)
+        self.wave_combo.currentIndexChanged.connect(self.on_wave_changed)
         basic_layout.addRow(tr("Waveform:"), self.wave_combo)
 
         # Dynamic Parameters Stack
@@ -764,11 +835,6 @@ class SignalGeneratorWidget(QWidget):
         self.burst_off_spin.setDecimals(0); self.burst_off_spin.setRange(1, 10000); self.burst_off_spin.setValue(90)
         self.burst_off_spin.valueChanged.connect(lambda v: self.update_param('burst_off_cycles', int(v)))
         burst_form.addRow(tr("Off Cycles:"), self.burst_off_spin)
-
-        self.burst_window_check = QCheckBox(tr("Windowed (fade in/out)"))
-        self.burst_window_check.setChecked(False)
-        self.burst_window_check.toggled.connect(lambda v: self.update_param('burst_windowed', bool(v)))
-        burst_form.addRow(self.burst_window_check)
 
         # 5. Pulse Params
         self.pulse_widget = QWidget()
@@ -1055,13 +1121,15 @@ class SignalGeneratorWidget(QWidget):
         # Block signals to prevent feedback loops
         self.block_all_signals(True)
 
-        self.wave_combo.setCurrentText(params.waveform)
+        waveform_key = params.waveform
+        if params.waveform == 'burst' and bool(getattr(params, 'burst_windowed', False)):
+            waveform_key = 'burst_windowed'
+        self._set_wave_combo_key(waveform_key)
         self.noise_combo.setCurrentText(params.noise_color)
         self.mt_count_spin.setValue(params.multitone_count)
         self.mls_order_combo.setCurrentText(str(params.mls_order))
         self.burst_on_spin.setValue(params.burst_on_cycles)
         self.burst_off_spin.setValue(params.burst_off_cycles)
-        self.burst_window_check.setChecked(bool(getattr(params, 'burst_windowed', False)))
         self.pulse_width_spin.setValue(params.pulse_width)
         self.saw_type_combo.setCurrentText(params.sawtooth_type)
         self.noise_amp_spin.setValue(params.noise_amplitude)
@@ -1097,14 +1165,14 @@ class SignalGeneratorWidget(QWidget):
         self.pm_freq_spin.setValue(params.pm_frequency)
         self.pm_dev_spin.setValue(params.pm_deviation_deg)
 
-        self.on_wave_changed(params.waveform) # Update visibility
+        self._apply_waveform_key(waveform_key, update_params=False) # Update visibility
 
         self.block_all_signals(False)
 
     def block_all_signals(self, block):
         widgets = [
             self.wave_combo, self.noise_combo, self.mt_count_spin, self.mls_order_combo,
-            self.burst_on_spin, self.burst_off_spin, self.burst_window_check, self.pulse_width_spin, self.saw_type_combo, self.noise_amp_spin,
+            self.burst_on_spin, self.burst_off_spin, self.pulse_width_spin, self.saw_type_combo, self.noise_amp_spin,
             self.prbs_order_combo, self.prbs_seed_spin,
             self.freq_spin, self.freq_slider, self.phase_spin, self.phase_slider, self.delay_spin, self.delay_slider,
             self.amp_spin, self.amp_slider, self.sweep_group, self.start_freq_spin,
@@ -1171,38 +1239,9 @@ class SignalGeneratorWidget(QWidget):
         elif self.route_stereo.isChecked():
             self.module.output_mode = 'STEREO'
 
-    def on_wave_changed(self, val):
-        self.update_param('waveform', val)
-
-        self.noise_widget.hide()
-        self.multitone_widget.hide()
-        self.mls_widget.hide()
-        self.mls_widget.hide()
-        self.burst_widget.hide()
-        self.pulse_widget.hide()
-        self.tn_widget.hide()
-        self.tn_widget.hide()
-        self.sawtooth_widget.hide()
-        self.prbs_widget.hide()
-
-        if val == 'noise': self.noise_widget.show()
-        elif val == 'multitone': self.multitone_widget.show()
-        elif val == 'mls': self.mls_widget.show()
-        elif val == 'burst': self.burst_widget.show()
-        elif val == 'pulse': self.pulse_widget.show()
-        elif val == 'tone_noise': self.tn_widget.show()
-        elif val == 'sawtooth': self.sawtooth_widget.show()
-        elif val == 'prbs': self.prbs_widget.show()
-
-        use_freq = val not in ['noise', 'mls', 'prbs']
-        self.freq_spin.setEnabled(use_freq)
-        self.freq_slider.setEnabled(use_freq)
-
-        # Delay UI is only relevant for burst (engine applies delay for burst only).
-        show_delay = val == 'burst'
-        self.delay_label.setVisible(show_delay)
-        self.delay_spin.setVisible(show_delay)
-        self.delay_slider.setVisible(show_delay)
+    def on_wave_changed(self, _index):
+        key = self.wave_combo.currentData() or self.wave_combo.currentText()
+        self._apply_waveform_key(str(key), update_params=True)
 
     # --- Frequency Helpers ---
     def _freq_to_slider(self, freq):
