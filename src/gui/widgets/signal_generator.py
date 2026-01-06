@@ -44,6 +44,11 @@ class SignalParameters:
     pm_frequency: float = 5.0  # Hz (modulator frequency)
     pm_deviation_deg: float = 30.0  # degrees (peak phase deviation)
 
+    # AM parameters (amplitude modulation)
+    am_enabled: bool = False
+    am_frequency: float = 5.0  # Hz (modulator frequency)
+    am_depth: float = 50.0  # % (0..100)
+
     # Sweep parameters
     sweep_enabled: bool = False
     start_freq: float = 20.0
@@ -81,6 +86,7 @@ class SignalParameters:
     _carrier_phase_rad: float = 0.0
     _fm_phase_rad: float = 0.0
     _pm_phase_rad: float = 0.0
+    _am_phase_rad: float = 0.0
 
 class SignalGenerator(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -330,6 +336,7 @@ class SignalGenerator(MeasurementModule):
             params._carrier_phase_rad = 0.0
             params._fm_phase_rad = 0.0
             params._pm_phase_rad = 0.0
+            params._am_phase_rad = 0.0
             self._prepare_buffer(params, sample_rate)
 
         def _phase_from_instantaneous_frequency(params: SignalParameters, f_inst_hz: np.ndarray, sample_rate: float):
@@ -353,6 +360,27 @@ class SignalGenerator(MeasurementModule):
             return phase
 
         def generate_channel_signal(params: SignalParameters, frames, t_global):
+            def _am_apply(x: np.ndarray) -> np.ndarray:
+                """Apply simple AM (DSB-LC) envelope: x(t) * (1 + m*sin(2π*f_am*t))."""
+                if not (params.am_enabled and params.am_frequency > 0 and params.am_depth != 0):
+                    return x
+
+                m = float(np.clip(params.am_depth, 0.0, 100.0)) / 100.0
+                if m == 0.0:
+                    return x
+
+                am_phase0 = float(params._am_phase_rad)
+                am_phase = am_phase0 + 2.0 * np.pi * float(params.am_frequency) * t_global
+                params._am_phase_rad = float(
+                    np.fmod(
+                        am_phase0 + 2.0 * np.pi * float(params.am_frequency) * (frames / sample_rate),
+                        2.0 * np.pi,
+                    )
+                )
+
+                env = 1.0 + m * np.sin(am_phase)
+                return x * env
+
             signal = np.zeros(frames)
 
             if params._buffer is not None:
@@ -377,7 +405,7 @@ class SignalGenerator(MeasurementModule):
 
                         signal = (1.0 - frac) * buf[i0] + frac * buf[i1]
                         params._buffer_index = int((params._buffer_index + frames) % buf_len)
-                        return signal * params.amplitude
+                        return _am_apply(signal * params.amplitude)
 
                 # Buffer based generation
                 chunk_size = frames
@@ -397,7 +425,7 @@ class SignalGenerator(MeasurementModule):
                     if params._buffer_index >= buf_len:
                         params._buffer_index = 0
 
-                return signal * params.amplitude
+                return _am_apply(signal * params.amplitude)
 
             if params.sweep_enabled:
                 # Sweep generation
@@ -435,7 +463,7 @@ class SignalGenerator(MeasurementModule):
                     offset_rad = np.radians(params.phase_offset)
                     signal = params.amplitude * np.sin(phase + offset_rad)
                     params._sweep_time += frames / sample_rate
-                    return signal
+                    return _am_apply(signal)
 
                 if params.log_sweep:
                     k = np.log(params.end_freq / params.start_freq) / params.sweep_duration
@@ -457,7 +485,7 @@ class SignalGenerator(MeasurementModule):
 
                 signal = params.amplitude * np.sin(phase)
                 params._sweep_time += frames / sample_rate
-                return signal
+                return _am_apply(signal)
 
             # Standard waveforms
             offset_rad = np.radians(params.phase_offset)
@@ -576,7 +604,7 @@ class SignalGenerator(MeasurementModule):
                     noise = params.noise_amplitude * np.random.uniform(-1, 1, size=frames)
                     signal += noise
 
-            return signal
+            return _am_apply(signal)
 
         def callback(indata, outdata, frames, time, status):
             if status:
@@ -918,6 +946,34 @@ class SignalGeneratorWidget(QWidget):
         sweep_group.setLayout(sweep_layout)
         tabs.addTab(sweep_group, tr("Sweep"))
 
+        # AM tab
+        am_group = QGroupBox(tr("AM (Amplitude Modulation)"))
+        am_group.setCheckable(True)
+        am_group.setChecked(False)
+        am_group.toggled.connect(lambda v: self.update_param('am_enabled', v))
+        self.am_group = am_group
+
+        am_layout = QFormLayout()
+
+        self.am_freq_spin = QDoubleSpinBox()
+        self.am_freq_spin.setRange(0.01, 20000.0)
+        self.am_freq_spin.setDecimals(3)
+        self.am_freq_spin.setValue(5.0)
+        self.am_freq_spin.valueChanged.connect(lambda v: self.update_param('am_frequency', v))
+        am_layout.addRow(tr("Mod Freq (Hz):"), self.am_freq_spin)
+
+        self.am_depth_spin = QDoubleSpinBox()
+        self.am_depth_spin.setRange(0.0, 100.0)
+        self.am_depth_spin.setDecimals(1)
+        self.am_depth_spin.setSingleStep(1.0)
+        self.am_depth_spin.setValue(50.0)
+        self.am_depth_spin.setSuffix("%")
+        self.am_depth_spin.valueChanged.connect(lambda v: self.update_param('am_depth', v))
+        am_layout.addRow(tr("Depth (m):"), self.am_depth_spin)
+
+        am_group.setLayout(am_layout)
+        tabs.addTab(am_group, tr("AM"))
+
         # FM tab
         fm_group = QGroupBox(tr("FM (Frequency Modulation)"))
         fm_group.setCheckable(True)
@@ -1028,6 +1084,10 @@ class SignalGeneratorWidget(QWidget):
         self.duration_spin.setValue(params.sweep_duration)
         self.log_check.setChecked(params.log_sweep)
 
+        self.am_group.setChecked(getattr(params, 'am_enabled', False))
+        self.am_freq_spin.setValue(getattr(params, 'am_frequency', 5.0))
+        self.am_depth_spin.setValue(getattr(params, 'am_depth', 50.0))
+
         self.fm_group.setChecked(params.fm_enabled)
         self.fm_freq_spin.setValue(params.fm_frequency)
         self.fm_dev_spin.setValue(params.fm_deviation)
@@ -1048,6 +1108,7 @@ class SignalGeneratorWidget(QWidget):
             self.freq_spin, self.freq_slider, self.phase_spin, self.phase_slider, self.delay_spin, self.delay_slider,
             self.amp_spin, self.amp_slider, self.sweep_group, self.start_freq_spin,
             self.end_freq_spin, self.duration_spin, self.log_check,
+            self.am_group, self.am_freq_spin, self.am_depth_spin,
             self.fm_group, self.fm_freq_spin, self.fm_dev_spin,
             self.pm_group, self.pm_freq_spin, self.pm_dev_spin
         ]
@@ -1080,6 +1141,9 @@ class SignalGeneratorWidget(QWidget):
         dst.pm_enabled = src.pm_enabled
         dst.pm_frequency = src.pm_frequency
         dst.pm_deviation_deg = src.pm_deviation_deg
+        dst.am_enabled = src.am_enabled
+        dst.am_frequency = src.am_frequency
+        dst.am_depth = src.am_depth
         dst.sweep_enabled = src.sweep_enabled
         dst.start_freq = src.start_freq
         dst.end_freq = src.end_freq
