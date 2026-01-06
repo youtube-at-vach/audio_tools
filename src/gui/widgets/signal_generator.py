@@ -870,6 +870,7 @@ class SignalGeneratorWidget(QWidget):
         basic_layout.addRow(tr("Phase Offset:"), phase_layout)
 
         # Delay (ms)
+        self.delay_label = QLabel(tr("Delay (ms):"))
         delay_layout = QHBoxLayout()
         self.delay_spin = QDoubleSpinBox()
         self.delay_spin.setRange(-2.0, 2.0)
@@ -887,7 +888,7 @@ class SignalGeneratorWidget(QWidget):
 
         delay_layout.addWidget(self.delay_spin)
         delay_layout.addWidget(self.delay_slider)
-        basic_layout.addRow(tr("Delay (ms):"), delay_layout)
+        basic_layout.addRow(self.delay_label, delay_layout)
 
         # Amplitude
         amp_layout = QHBoxLayout()
@@ -1196,6 +1197,12 @@ class SignalGeneratorWidget(QWidget):
         use_freq = val not in ['noise', 'mls', 'prbs']
         self.freq_spin.setEnabled(use_freq)
         self.freq_slider.setEnabled(use_freq)
+
+        # Delay UI is only relevant for burst (engine applies delay for burst only).
+        show_delay = val == 'burst'
+        self.delay_label.setVisible(show_delay)
+        self.delay_spin.setVisible(show_delay)
+        self.delay_slider.setVisible(show_delay)
 
     # --- Frequency Helpers ---
     def _freq_to_slider(self, freq):
