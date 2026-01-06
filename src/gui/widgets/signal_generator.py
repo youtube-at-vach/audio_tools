@@ -23,7 +23,6 @@ from PyQt6.QtWidgets import (
 )
 
 from src.core.audio_engine import AudioEngine
-from src.core.dsp import FractionalDelayLine
 from src.core.localization import tr
 from src.measurement_modules.base import MeasurementModule
 
@@ -39,6 +38,11 @@ class SignalParameters:
     fm_enabled: bool = False
     fm_frequency: float = 5.0  # Hz (modulator frequency)
     fm_deviation: float = 100.0  # Hz (peak deviation)
+
+    # ΦM parameters (phase modulation)
+    pm_enabled: bool = False
+    pm_frequency: float = 5.0  # Hz (modulator frequency)
+    pm_deviation_deg: float = 30.0  # degrees (peak phase deviation)
 
     # Sweep parameters
     sweep_enabled: bool = False
@@ -72,6 +76,7 @@ class SignalParameters:
     # FM/phase-accumulator state (radians)
     _carrier_phase_rad: float = 0.0
     _fm_phase_rad: float = 0.0
+    _pm_phase_rad: float = 0.0
 
 class SignalGenerator(MeasurementModule):
     def __init__(self, audio_engine: AudioEngine):
@@ -82,17 +87,6 @@ class SignalGenerator(MeasurementModule):
 
         # Output Routing: 'L', 'R', 'STEREO'
         self.output_mode = 'STEREO'
-
-        # Optional post-effect: delayed copy mixing (for BNIM analysis etc.)
-        self.delay_copy_enabled: bool = False
-        self.delay_copy_alpha: float = 0.1
-        # ms; can be linked (same L/R) or separate for stereo group-delay differences.
-        self.delay_copy_tau_ms_L: float = 0.0
-        self.delay_copy_tau_ms_R: float = 0.0
-        self.delay_copy_link_lr: bool = True
-
-        self._delay_L = FractionalDelayLine()
-        self._delay_R = FractionalDelayLine()
 
         self.is_playing = False
         self.callback_id = None
@@ -322,11 +316,8 @@ class SignalGenerator(MeasurementModule):
             params._sweep_time = 0
             params._carrier_phase_rad = 0.0
             params._fm_phase_rad = 0.0
+            params._pm_phase_rad = 0.0
             self._prepare_buffer(params, sample_rate)
-
-        # Reset effect state
-        self._delay_L.reset()
-        self._delay_R.reset()
 
         def _phase_from_instantaneous_frequency(params: SignalParameters, f_inst_hz: np.ndarray, sample_rate: float):
             """Integrate instantaneous frequency to phase (radians) with continuity across blocks."""
@@ -397,6 +388,14 @@ class SignalGenerator(MeasurementModule):
                     f_inst = f_base + params.fm_deviation * np.sin(mod_phase)
                     phase = _phase_from_instantaneous_frequency(params, f_inst, sample_rate)
 
+                    # Optional ΦM (phase modulation) applied as additional phase term.
+                    if params.pm_enabled and params.pm_frequency > 0 and params.pm_deviation_deg != 0:
+                        pm_phase0 = float(params._pm_phase_rad)
+                        pm_phase = pm_phase0 + 2.0 * np.pi * params.pm_frequency * t_global
+                        params._pm_phase_rad = float(np.fmod(pm_phase0 + 2.0 * np.pi * params.pm_frequency * (frames / sample_rate), 2.0 * np.pi))
+                        beta = float(np.radians(params.pm_deviation_deg))
+                        phase = phase + beta * np.sin(pm_phase)
+
                     offset_rad = np.radians(params.phase_offset)
                     signal = params.amplitude * np.sin(phase + offset_rad)
                     params._sweep_time += frames / sample_rate
@@ -412,12 +411,25 @@ class SignalGenerator(MeasurementModule):
                     k = (params.end_freq - params.start_freq) / params.sweep_duration
                     phase = 2 * np.pi * (params.start_freq * current_times + 0.5 * k * current_times**2)
 
+                # Optional ΦM (phase modulation) for analytic sweep phase.
+                if params.pm_enabled and params.pm_frequency > 0 and params.pm_deviation_deg != 0:
+                    pm_phase0 = float(params._pm_phase_rad)
+                    pm_phase = pm_phase0 + 2.0 * np.pi * params.pm_frequency * t_global
+                    params._pm_phase_rad = float(np.fmod(pm_phase0 + 2.0 * np.pi * params.pm_frequency * (frames / sample_rate), 2.0 * np.pi))
+                    beta = float(np.radians(params.pm_deviation_deg))
+                    phase = phase + beta * np.sin(pm_phase)
+
                 signal = params.amplitude * np.sin(phase)
                 params._sweep_time += frames / sample_rate
                 return signal
 
             # Standard waveforms
             offset_rad = np.radians(params.phase_offset)
+
+            # Optional ΦM (works for periodic waveforms only)
+            use_pm = bool(params.pm_enabled and params.pm_frequency > 0 and params.pm_deviation_deg != 0 and params.waveform in [
+                'sine', 'square', 'triangle', 'sawtooth', 'pulse', 'tone_noise'
+            ])
 
             # Optional FM (works for periodic waveforms only)
             use_fm = bool(params.fm_enabled and params.fm_frequency > 0 and params.fm_deviation != 0 and params.waveform in [
@@ -433,6 +445,13 @@ class SignalGenerator(MeasurementModule):
 
                 f_inst = params.frequency + params.fm_deviation * np.sin(mod_phase)
                 phase = _phase_from_instantaneous_frequency(params, f_inst, sample_rate)
+
+                if use_pm:
+                    pm_phase0 = float(params._pm_phase_rad)
+                    pm_phase = pm_phase0 + 2.0 * np.pi * params.pm_frequency * t
+                    params._pm_phase_rad = float(np.fmod(pm_phase0 + 2.0 * np.pi * params.pm_frequency * (frames / sample_rate), 2.0 * np.pi))
+                    beta = float(np.radians(params.pm_deviation_deg))
+                    phase = phase + beta * np.sin(pm_phase)
 
                 if params.waveform == 'sine':
                     signal = params.amplitude * np.sin(phase + offset_rad)
@@ -462,6 +481,41 @@ class SignalGenerator(MeasurementModule):
                 # Legacy fixed-frequency phase calculation
                 phase_t = (np.arange(frames) + params._phase) / sample_rate
                 params._phase += frames
+
+                # If ΦM is enabled, construct explicit phase and use the phase-based definitions.
+                if use_pm:
+                    t = t_global
+                    pm_phase0 = float(params._pm_phase_rad)
+                    pm_phase = pm_phase0 + 2.0 * np.pi * params.pm_frequency * t
+                    params._pm_phase_rad = float(np.fmod(pm_phase0 + 2.0 * np.pi * params.pm_frequency * (frames / sample_rate), 2.0 * np.pi))
+                    beta = float(np.radians(params.pm_deviation_deg))
+                    phase = 2.0 * np.pi * params.frequency * phase_t + beta * np.sin(pm_phase)
+
+                    if params.waveform == 'sine':
+                        signal = params.amplitude * np.sin(phase + offset_rad)
+                    elif params.waveform == 'square':
+                        signal = params.amplitude * np.sign(np.sin(phase + offset_rad))
+                    else:
+                        cycles = phase / (2.0 * np.pi)
+                        off_cycles = params.phase_offset / 360.0
+
+                        if params.waveform == 'triangle':
+                            signal = params.amplitude * (2 * np.abs(2 * ((cycles + off_cycles) % 1) - 1) - 1)
+                        elif params.waveform == 'sawtooth':
+                            raw_saw = 2 * ((cycles + off_cycles) % 1) - 1
+                            if params.sawtooth_type == 'Falling':
+                                raw_saw *= -1
+                            signal = params.amplitude * raw_saw
+                        elif params.waveform == 'pulse':
+                            duty = params.pulse_width / 100.0
+                            ramp = (cycles + off_cycles) % 1
+                            signal = params.amplitude * np.where(ramp < duty, 1.0, -1.0)
+                        elif params.waveform == 'tone_noise':
+                            signal = params.amplitude * np.sin(phase + offset_rad)
+                            noise = params.noise_amplitude * np.random.uniform(-1, 1, size=frames)
+                            signal += noise
+
+                    return signal
 
                 if params.waveform == 'sine':
                     signal = params.amplitude * np.sin(2 * np.pi * params.frequency * phase_t + offset_rad)
@@ -498,10 +552,6 @@ class SignalGenerator(MeasurementModule):
             # Left Channel
             if self.output_mode in ['L', 'STEREO']:
                 sig_l = generate_channel_signal(self.params_L, frames, t)
-                if self.delay_copy_enabled and self.delay_copy_alpha != 0.0:
-                    tau_ms = float(self.delay_copy_tau_ms_L)
-                    d_samp = (tau_ms / 1000.0) * sample_rate
-                    sig_l = sig_l + float(self.delay_copy_alpha) * self._delay_L.process(sig_l, d_samp)
                 if outdata.shape[1] >= 1:
                     outdata[:, 0] = sig_l
 
@@ -512,13 +562,6 @@ class SignalGenerator(MeasurementModule):
                 # So we always use params_R for Right channel.
                 # If the user wants them same, they copy settings in UI.
                 sig_r = generate_channel_signal(self.params_R, frames, t)
-                if self.delay_copy_enabled and self.delay_copy_alpha != 0.0:
-                    if self.delay_copy_link_lr:
-                        tau_ms = float(self.delay_copy_tau_ms_L)
-                    else:
-                        tau_ms = float(self.delay_copy_tau_ms_R)
-                    d_samp = (tau_ms / 1000.0) * sample_rate
-                    sig_r = sig_r + float(self.delay_copy_alpha) * self._delay_R.process(sig_r, d_samp)
                 if outdata.shape[1] >= 2:
                     outdata[:, 1] = sig_r
 
@@ -840,48 +883,31 @@ class SignalGeneratorWidget(QWidget):
         fm_group.setLayout(fm_layout)
         tabs.addTab(fm_group, tr("FM"))
 
-        # Delayed Copy tab (global option)
-        delay_group = QGroupBox(tr("Delayed Copy (y = x + α·x[n−τ])"))
-        delay_group.setCheckable(True)
-        delay_group.setChecked(False)
-        delay_group.toggled.connect(self.on_delay_copy_toggled)
-        self.delay_group = delay_group
+        # ΦM tab
+        pm_group = QGroupBox(tr("ΦM (Phase Modulation)"))
+        pm_group.setCheckable(True)
+        pm_group.setChecked(False)
+        pm_group.toggled.connect(lambda v: self.update_param('pm_enabled', v))
+        self.pm_group = pm_group
 
-        delay_layout = QFormLayout()
+        pm_layout = QFormLayout()
 
-        self.delay_alpha_spin = QDoubleSpinBox()
-        self.delay_alpha_spin.setRange(-1.0, 1.0)
-        self.delay_alpha_spin.setSingleStep(0.01)
-        self.delay_alpha_spin.setDecimals(3)
-        self.delay_alpha_spin.setValue(0.1)
-        self.delay_alpha_spin.valueChanged.connect(self.on_delay_alpha_changed)
-        delay_layout.addRow(tr("α (mix):"), self.delay_alpha_spin)
+        self.pm_freq_spin = QDoubleSpinBox()
+        self.pm_freq_spin.setRange(0.01, 20000.0)
+        self.pm_freq_spin.setDecimals(3)
+        self.pm_freq_spin.setValue(5.0)
+        self.pm_freq_spin.valueChanged.connect(lambda v: self.update_param('pm_frequency', v))
+        pm_layout.addRow(tr("Mod Freq (Hz):"), self.pm_freq_spin)
 
-        self.delay_link_check = QCheckBox(tr("Link L/R τ"))
-        self.delay_link_check.setChecked(True)
-        self.delay_link_check.toggled.connect(self.on_delay_link_toggled)
-        delay_layout.addRow(self.delay_link_check)
+        self.pm_dev_spin = QDoubleSpinBox()
+        self.pm_dev_spin.setRange(0.0, 180.0)
+        self.pm_dev_spin.setDecimals(3)
+        self.pm_dev_spin.setValue(30.0)
+        self.pm_dev_spin.valueChanged.connect(lambda v: self.update_param('pm_deviation_deg', v))
+        pm_layout.addRow(tr("Deviation Δφ (deg):"), self.pm_dev_spin)
 
-        self.delay_tau_l_spin = QDoubleSpinBox()
-        self.delay_tau_l_spin.setRange(0.0, 500.0)
-        self.delay_tau_l_spin.setDecimals(3)
-        self.delay_tau_l_spin.setSingleStep(0.1)
-        self.delay_tau_l_spin.setSuffix(" ms")
-        self.delay_tau_l_spin.setValue(0.0)
-        self.delay_tau_l_spin.valueChanged.connect(self.on_delay_tau_l_changed)
-        delay_layout.addRow(tr("τ Left:"), self.delay_tau_l_spin)
-
-        self.delay_tau_r_spin = QDoubleSpinBox()
-        self.delay_tau_r_spin.setRange(0.0, 500.0)
-        self.delay_tau_r_spin.setDecimals(3)
-        self.delay_tau_r_spin.setSingleStep(0.1)
-        self.delay_tau_r_spin.setSuffix(" ms")
-        self.delay_tau_r_spin.setValue(0.0)
-        self.delay_tau_r_spin.valueChanged.connect(self.on_delay_tau_r_changed)
-        delay_layout.addRow(tr("τ Right:"), self.delay_tau_r_spin)
-
-        delay_group.setLayout(delay_layout)
-        tabs.addTab(delay_group, tr("Delay Copy"))
+        pm_group.setLayout(pm_layout)
+        tabs.addTab(pm_group, tr("ΦM"))
 
         layout.addWidget(tabs)
 
@@ -941,13 +967,9 @@ class SignalGeneratorWidget(QWidget):
         self.fm_freq_spin.setValue(params.fm_frequency)
         self.fm_dev_spin.setValue(params.fm_deviation)
 
-        # Global delayed-copy state
-        self.delay_group.setChecked(bool(self.module.delay_copy_enabled))
-        self.delay_alpha_spin.setValue(float(self.module.delay_copy_alpha))
-        self.delay_link_check.setChecked(bool(self.module.delay_copy_link_lr))
-        self.delay_tau_l_spin.setValue(float(self.module.delay_copy_tau_ms_L))
-        self.delay_tau_r_spin.setValue(float(self.module.delay_copy_tau_ms_R))
-        self.delay_tau_r_spin.setEnabled(not bool(self.module.delay_copy_link_lr))
+        self.pm_group.setChecked(params.pm_enabled)
+        self.pm_freq_spin.setValue(params.pm_frequency)
+        self.pm_dev_spin.setValue(params.pm_deviation_deg)
 
         self.on_wave_changed(params.waveform) # Update visibility
 
@@ -961,48 +983,11 @@ class SignalGeneratorWidget(QWidget):
             self.freq_spin, self.freq_slider, self.phase_spin, self.phase_slider,
             self.amp_spin, self.amp_slider, self.sweep_group, self.start_freq_spin,
             self.end_freq_spin, self.duration_spin, self.log_check,
-            self.fm_group, self.fm_freq_spin, self.fm_dev_spin
+            self.fm_group, self.fm_freq_spin, self.fm_dev_spin,
+            self.pm_group, self.pm_freq_spin, self.pm_dev_spin
         ]
         for w in widgets:
             w.blockSignals(block)
-
-        # Delay copy controls are global.
-        for w in [
-            getattr(self, 'delay_group', None),
-            getattr(self, 'delay_alpha_spin', None),
-            getattr(self, 'delay_link_check', None),
-            getattr(self, 'delay_tau_l_spin', None),
-            getattr(self, 'delay_tau_r_spin', None),
-        ]:
-            if w is not None:
-                w.blockSignals(block)
-
-    def on_delay_copy_toggled(self, v: bool):
-        self.module.delay_copy_enabled = bool(v)
-
-    def on_delay_alpha_changed(self, v: float):
-        self.module.delay_copy_alpha = float(v)
-
-    def on_delay_link_toggled(self, v: bool):
-        self.module.delay_copy_link_lr = bool(v)
-        self.delay_tau_r_spin.setEnabled(not bool(v))
-        if v:
-            # Keep R in sync when linked.
-            self.module.delay_copy_tau_ms_R = float(self.module.delay_copy_tau_ms_L)
-            self.block_all_signals(True)
-            self.delay_tau_r_spin.setValue(float(self.module.delay_copy_tau_ms_R))
-            self.block_all_signals(False)
-
-    def on_delay_tau_l_changed(self, v: float):
-        self.module.delay_copy_tau_ms_L = float(v)
-        if self.module.delay_copy_link_lr:
-            self.module.delay_copy_tau_ms_R = float(v)
-            self.block_all_signals(True)
-            self.delay_tau_r_spin.setValue(float(v))
-            self.block_all_signals(False)
-
-    def on_delay_tau_r_changed(self, v: float):
-        self.module.delay_copy_tau_ms_R = float(v)
 
     def on_target_changed(self, btn):
         if self.target_l.isChecked():
@@ -1027,6 +1012,9 @@ class SignalGeneratorWidget(QWidget):
         dst.fm_enabled = src.fm_enabled
         dst.fm_frequency = src.fm_frequency
         dst.fm_deviation = src.fm_deviation
+        dst.pm_enabled = src.pm_enabled
+        dst.pm_frequency = src.pm_frequency
+        dst.pm_deviation_deg = src.pm_deviation_deg
         dst.sweep_enabled = src.sweep_enabled
         dst.start_freq = src.start_freq
         dst.end_freq = src.end_freq
