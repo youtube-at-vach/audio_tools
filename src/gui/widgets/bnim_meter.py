@@ -1,9 +1,11 @@
 import threading
+import time
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QEvent
 from PyQt6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -432,8 +434,14 @@ class BNIMMeterWidget(QWidget):
         self.module = module
         self.init_ui()
 
-        # Plot click handler (optional test-signal playback)
-        self.plot_widget.scene().sigMouseClicked.connect(self.on_plot_clicked)
+        # Disable default plot interactions (pan/zoom) and use our own click/drag handling.
+        self.plot_widget.setMouseEnabled(x=False, y=False)
+        self.plot_widget.setMenuEnabled(False)
+        self.plot_widget.viewport().installEventFilter(self)
+
+        self._dragging = False
+        self._last_drag_update_t = 0.0
+        self._drag_update_interval_s = 0.03  # ~33 Hz
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_display)
@@ -646,6 +654,64 @@ class BNIMMeterWidget(QWidget):
             ild_atten_db=float(self.module.play_ild_atten_db),
         )
         self.play_last_label.setText(tr("Last: {freq:.0f} Hz, {itd:+.3f} ms").format(freq=freq_hz, itd=itd_ms))
+
+    def _handle_plot_point(self, *, scene_pos, *, force: bool):
+        if not self.module.is_running:
+            return
+        if not bool(self.module.play_enable_click):
+            return
+
+        # Convert scene position to data coordinates.
+        p = self.plot_widget.plotItem.vb.mapSceneToView(scene_pos)
+        itd_ms = float(p.x())
+        freq_hz = float(p.y())
+
+        # Clamp to display range.
+        itd_ms = float(np.clip(itd_ms, -float(self.module.max_itd_ms), float(self.module.max_itd_ms)))
+        freq_hz = float(np.clip(freq_hz, float(self.module.freq_min), float(self.module.freq_max)))
+
+        # If we're dragging, only update continuously when loop is enabled.
+        if not force and not bool(self.module.play_loop):
+            return
+
+        self.module.trigger_click_test_playback(
+            freq_hz=freq_hz,
+            itd_ms=itd_ms,
+            on_cycles=int(self.module.play_on_cycles),
+            off_cycles=int(self.module.play_off_cycles),
+            ild_atten_db=float(self.module.play_ild_atten_db),
+        )
+        self.play_last_label.setText(tr("Last: {freq:.0f} Hz, {itd:+.3f} ms").format(freq=freq_hz, itd=itd_ms))
+
+    def eventFilter(self, obj, event):
+        # Capture mouse events from the plot viewport so the plot doesn't pan.
+        if obj is self.plot_widget.viewport():
+            et = event.type()
+
+            if et == QEvent.Type.MouseButtonPress:
+                if event.button() == Qt.MouseButton.LeftButton:
+                    self._dragging = True
+                    self._last_drag_update_t = 0.0
+                    # Map viewport pos -> scene pos
+                    scene_pos = self.plot_widget.mapToScene(event.pos())
+                    self._handle_plot_point(scene_pos=scene_pos, force=True)
+                    return True
+
+            if et == QEvent.Type.MouseMove:
+                if self._dragging:
+                    now = time.monotonic()
+                    if (now - self._last_drag_update_t) >= self._drag_update_interval_s:
+                        self._last_drag_update_t = now
+                        scene_pos = self.plot_widget.mapToScene(event.pos())
+                        self._handle_plot_point(scene_pos=scene_pos, force=False)
+                    return True
+
+            if et == QEvent.Type.MouseButtonRelease:
+                if event.button() == Qt.MouseButton.LeftButton and self._dragging:
+                    self._dragging = False
+                    return True
+
+        return super().eventFilter(obj, event)
 
     def update_display(self):
         if not self.module.is_running: return
