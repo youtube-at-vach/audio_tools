@@ -5,7 +5,6 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt, QTimer, QEvent
 from PyQt6.QtWidgets import (
-    QApplication,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -442,6 +441,7 @@ class BNIMMeterWidget(QWidget):
         self._dragging = False
         self._last_drag_update_t = 0.0
         self._drag_update_interval_s = 0.03  # ~33 Hz
+        self._loop_before_drag = None
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_display)
@@ -655,7 +655,7 @@ class BNIMMeterWidget(QWidget):
         )
         self.play_last_label.setText(tr("Last: {freq:.0f} Hz, {itd:+.3f} ms").format(freq=freq_hz, itd=itd_ms))
 
-    def _handle_plot_point(self, *, scene_pos, *, force: bool):
+    def _handle_plot_point(self, scene_pos, force: bool):
         if not self.module.is_running:
             return
         if not bool(self.module.play_enable_click):
@@ -669,10 +669,6 @@ class BNIMMeterWidget(QWidget):
         # Clamp to display range.
         itd_ms = float(np.clip(itd_ms, -float(self.module.max_itd_ms), float(self.module.max_itd_ms)))
         freq_hz = float(np.clip(freq_hz, float(self.module.freq_min), float(self.module.freq_max)))
-
-        # If we're dragging, only update continuously when loop is enabled.
-        if not force and not bool(self.module.play_loop):
-            return
 
         self.module.trigger_click_test_playback(
             freq_hz=freq_hz,
@@ -692,6 +688,9 @@ class BNIMMeterWidget(QWidget):
                 if event.button() == Qt.MouseButton.LeftButton:
                     self._dragging = True
                     self._last_drag_update_t = 0.0
+                    # While dragging, force loop so parameters change continuously.
+                    self._loop_before_drag = bool(self.module.play_loop)
+                    self.module.play_loop = True
                     # Map viewport pos -> scene pos
                     scene_pos = self.plot_widget.mapToScene(event.pos())
                     self._handle_plot_point(scene_pos=scene_pos, force=True)
@@ -709,6 +708,10 @@ class BNIMMeterWidget(QWidget):
             if et == QEvent.Type.MouseButtonRelease:
                 if event.button() == Qt.MouseButton.LeftButton and self._dragging:
                     self._dragging = False
+                    # Restore previous loop setting.
+                    if self._loop_before_drag is not None:
+                        self.module.play_loop = bool(self._loop_before_drag)
+                        self._loop_before_drag = None
                     return True
 
         return super().eventFilter(obj, event)
